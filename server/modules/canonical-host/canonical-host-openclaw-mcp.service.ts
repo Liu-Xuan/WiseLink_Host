@@ -622,6 +622,17 @@ export class CanonicalHostOpenClawMcpService {
       annotations: beginAnnotations,
     }, async input => textResult(await this.problemAssessment.recordProgramProgress(input)));
 
+    server.registerTool('validate_assessment_work', {
+      title: '校验程序评估候选',
+      description: '仅 PROGRAM_AGENT_V1：在同一保存授权、来源、工作版本和有效 lease 下只读校验候选，返回有界语义字段路径。不会保存、登记已读、续租或正式采用；VALID 不替代后续 SAVE 的重新授权和 CAS。',
+      inputSchema: z.object({
+        attemptRef, workItemId: mcpWorkItemId, leaseToken, leaseGeneration,
+        expectedWorkRevision: z.number().int().min(0),
+        workJson: z.string().min(2).max(1_000_000),
+      }).strict(),
+      annotations: resumeAnnotations,
+    }, async input => textResult(await this.problemAssessment.validateWork(input)));
+
     server.registerTool(
       'save_assessment_work',
       {

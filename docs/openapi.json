@@ -1625,6 +1625,27 @@
       "post": {
         "operationId": "handleOpenClawMcp",
         "summary": "OpenClaw 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "x-wiselink-assessment-validation": {
+          "tool": "validate_assessment_work",
+          "executionMode": "PROGRAM_AGENT_V1",
+          "input": {
+            "required": ["attemptRef", "workItemId", "leaseToken", "leaseGeneration", "expectedWorkRevision", "workJson"],
+            "additionalProperties": false,
+            "binding": "可信 Native 编排层注入准确 WorkItem/attempt/lease 与工作版本；workJson 最多 1000000 字符。actor、tenant、方法、来源、历史与已读集合均由 Host 获取，调用方不得传入。",
+            "schemaAuthority": "tools/list 中该工具的严格 JSON Schema；共享类型 JobAidWorkValidationRequest"
+          },
+          "result": {
+            "schemaVersion": "wiselink.jobaid-work-validation.v1",
+            "status": ["VALID", "REPAIR_REQUIRED"],
+            "contentValidationVersion": "jobaid-semantic.v1",
+            "bindingFields": ["attemptRef", "actionAttemptId", "workItemId", "documentVersionId", "inputRevision", "baseRevision", "expectedWorkRevision", "previousWorkRevisionRef"],
+            "violations": "最多32条现有 semantic v1 的 code、候选 fieldPaths 和固定修复说明；omittedViolationCount 明确剩余条数，不返回来源正文或历史内容。",
+            "schemaAuthority": "共享类型 JobAidWorkValidationResult"
+          },
+          "authorization": "复用 SAVE_ASSESSMENT_WORK 服务授权、actor/RLS 与 source→grant→attempt 锁顺序；核对封存方法/来源、准确历史工作、持久读取回执、有效 lease、WorkItem base revision 与工作 revision，返回前重新授权并检查状态。",
+          "behavior": "纯预检：不保存、不记录来源或工作已读、不写进度、不续租、不正式采用。Native 仍须使用本 run 已成功持久化工具结果的 delivered 集合，不把 Host 初始交付或私有目录当成 Agent 已读。VALID 仅针对当前候选和检查时点，最终候选与正式 SAVE 均需独立检查；无权、来源/版本变化、过期、取消、CAS 和技术错误保持失败，不能返回 VALID 或可修内容结果。",
+          "recovery": "不接受旧请求重写、终态或已保存工作的恢复预检；原 SAVE request 幂等与精确读回恢复不变。Host 与 Native 能力需协调切换，缺能力不可静默降级。"
+        },
         "x-wiselink-automatic-work-item-queue": {
           "discover": "POST /openapi/wiselink/next-work-item",
           "resumeExpiredLease": "POST /openapi/wiselink/next-work-item {resumeWorkItemId}",
@@ -1737,6 +1758,27 @@
       "post": {
         "operationId": "handleCodexMcp",
         "summary": "Codex 专用 ActionAttempt 队列与候选评估 MCP 入口",
+        "x-wiselink-assessment-validation": {
+          "tool": "validate_assessment_work",
+          "executionMode": "PROGRAM_AGENT_V1",
+          "input": {
+            "required": ["attemptRef", "workItemId", "leaseToken", "leaseGeneration", "expectedWorkRevision", "workJson"],
+            "additionalProperties": false,
+            "binding": "可信 Native 编排层注入准确 WorkItem/attempt/lease 与工作版本；workJson 最多 1000000 字符。actor、tenant、方法、来源、历史与已读集合均由 Host 获取，调用方不得传入。",
+            "schemaAuthority": "tools/list 中该工具的严格 JSON Schema；共享类型 JobAidWorkValidationRequest"
+          },
+          "result": {
+            "schemaVersion": "wiselink.jobaid-work-validation.v1",
+            "status": ["VALID", "REPAIR_REQUIRED"],
+            "contentValidationVersion": "jobaid-semantic.v1",
+            "bindingFields": ["attemptRef", "actionAttemptId", "workItemId", "documentVersionId", "inputRevision", "baseRevision", "expectedWorkRevision", "previousWorkRevisionRef"],
+            "violations": "最多32条现有 semantic v1 的 code、候选 fieldPaths 和固定修复说明；omittedViolationCount 明确剩余条数，不返回来源正文或历史内容。",
+            "schemaAuthority": "共享类型 JobAidWorkValidationResult"
+          },
+          "authorization": "复用 SAVE_ASSESSMENT_WORK 服务授权、actor/RLS 与 source→grant→attempt 锁顺序；核对封存方法/来源、准确历史工作、持久读取回执、有效 lease、WorkItem base revision 与工作 revision，返回前重新授权并检查状态。",
+          "behavior": "纯预检：不保存、不记录来源或工作已读、不写进度、不续租、不正式采用。Native 仍须使用本 run 已成功持久化工具结果的 delivered 集合，不把 Host 初始交付或私有目录当成 Agent 已读。VALID 仅针对当前候选和检查时点，最终候选与正式 SAVE 均需独立检查；无权、来源/版本变化、过期、取消、CAS 和技术错误保持失败，不能返回 VALID 或可修内容结果。",
+          "recovery": "不接受旧请求重写、终态或已保存工作的恢复预检；原 SAVE request 幂等与精确读回恢复不变。Host 与 Native 能力需协调切换，缺能力不可静默降级。"
+        },
         "x-wiselink-automatic-work-item-queue": {
           "discover": "POST /openapi/wiselink/codex-next-work-item",
           "resumeExpiredLease": "POST /openapi/wiselink/codex-next-work-item {resumeWorkItemId}",

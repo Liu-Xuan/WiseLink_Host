@@ -394,9 +394,16 @@ test(
             await sql`INSERT INTO work_item (work_item_id,tenant_id,requested_by_user_id,revision,document_version_id,projection_json)
               VALUES (${candidate.workItemId},${scope.tenantId},${scope.actorUserId},1,'dv-job',${JSON.stringify(candidate)})`;
           }
+          const modelSettings = fixedModelSettings();
+          const { CanonicalModelSettingsRepository } = require('../../server/modules/model-settings/canonical-model-settings.repository.ts');
+          const storedModelSettings = new CanonicalModelSettingsRepository(db);
+          // Keep the offline selection, but persist it at the real pin call.
+          // Pre-filling the WorkItem would bypass the lifecycle binding under test.
+          modelSettings.repository.pinWorkItemModel = (tenantId, workItemId, model) =>
+            storedModelSettings.pinWorkItemModel(tenantId, workItemId, model);
           const lifecycle = new ActionAttemptLifecycleService(
             new ActionAttemptRepository(db),
-            fixedModelSettings(),
+            modelSettings,
           );
           const workItems = new MiaodaWorkItemRepository(db);
           const original = originalFixture(); original.binding.documentVersionId='dv-job';
@@ -513,9 +520,11 @@ test(
             }, db)), null);
           }
           await sql`UPDATE work_item SET projection_json=${JSON.stringify(initial)} WHERE work_item_id=${initial.workItemId}`;
+          assert.equal((await sql`SELECT analysis_model_json FROM work_item WHERE work_item_id=${initial.workItemId}`)[0].analysis_model_json, null);
           const first = await begin(initial);
           assert.equal(first.status, 'RUNNING');
           assert.equal(first.task.modelInput.actorUserId, scope.actorUserId);
+          assert.deepEqual(JSON.parse((await sql`SELECT analysis_model_json FROM work_item WHERE work_item_id=${initial.workItemId}`)[0].analysis_model_json), first.task.executionModel);
           const replay = await begin(initial);
           assert.equal(replay.attemptRef, first.attemptRef);
           assert.equal(replay.leaseToken, first.leaseToken);
@@ -727,6 +736,104 @@ test(
         content: materializeJobAidWork(raw, context),
       });
 
+      await t.test('validation snapshot is actor-scoped, fenced and read-only before any SAVE', async () => {
+        const input = { row, actorUserId: scope.actorUserId, fence, sourceBindings,
+          expectedWorkRevision: 0, expectedPreviousWorkRevisionRef: null };
+        const state = async () => ({
+          attempt: await sql`SELECT * FROM action_attempt WHERE attempt_id='ATT-initial'`,
+          workItem: await sql`SELECT * FROM work_item WHERE work_item_id='WI-job'`,
+          revisions: await sql`SELECT * FROM assessment_work_revision WHERE work_item_id='WI-job'`,
+        });
+        const before = await state();
+        const snapshot = await hosted(() => repository.readValidationSnapshot(input));
+        assert.equal(snapshot.previous, null);
+        assert.equal(snapshot.reviewActivityJson, row.reviewActivityJson);
+        for (const changed of [
+          { actorUserId: 'actor-other' },
+          { row: { ...row, tenantId: 'other-tenant' } },
+          { fence: { ...fence, principalId: 'other-service' } },
+          { fence: { ...fence, leaseToken: 'wrong-token' } },
+          { fence: { ...fence, leaseGeneration: 2 } },
+          { fence: { ...fence, automaticLeaseRequired: true } },
+          { row: { ...row, taskInputHash: 'changed-task' } },
+          { sourceBindings: [{ ...sourceBindings[0], artifactSha256: 'b'.repeat(64) }] },
+          { expectedWorkRevision: 1 },
+          { expectedPreviousWorkRevisionRef: 'JAWR-unrelated' },
+        ]) await assert.rejects(hosted(() => repository.readValidationSnapshot({ ...input, ...changed })));
+        await assert.rejects(hosted(() => repository.readValidationSnapshot({ ...input,
+          assertNativeAuthorized: async () => { throw new Error('SYNTHETIC_NATIVE_REVOKED'); },
+        })), /SYNTHETIC_NATIVE_REVOKED/u);
+        assert.deepEqual(await state(), before, 'preview must not write receipts, revisions, progress or lease timestamps');
+      });
+
+      await t.test('validation rejects a grant that expires while waiting for the attempt lock without writing',
+        { timeout: 20000 }, async () => {
+          const workItemId = 'WI-preview-expiring-grant';
+          const attemptId = 'ATT-preview-expiring-grant';
+          const projection = initialProjection(workItemId);
+          const automaticWorkItemLease = { requestId: projection.requestId, leaseGeneration: 1 };
+          await sql`INSERT INTO work_item(work_item_id,tenant_id,requested_by_user_id,revision,document_id,
+            document_version_id,request_id,source_artifact_id,source_file_sha256,source_byte_length,projection_json)
+            VALUES (${workItemId},${scope.tenantId},${scope.actorUserId},1,'doc-job','dv-job',${projection.requestId},
+              'ART-TEST',${hash},1234,${JSON.stringify(projection)})`;
+          await sql`INSERT INTO action_attempt(attempt_id,operation_ref,work_item_id,tenant_id,actor_user_id,
+            subject_kind,action_type,request_origin,status,input_revision,base_revision,document_version_id,
+            task_input_hash,task_envelope_json,lease_owner,lease_token,lease_generation,lease_expires_at,deadline_at)
+            VALUES (${attemptId},'AQ-preview-expiring-grant',${workItemId},${scope.tenantId},${scope.actorUserId},
+              'WORK_ITEM','OPENCLAW_DYNAMIC_EVALUATION','OPENCLAW_MCP_V1','RUNNING',1,1,'dv-job',${hash},
+              ${JSON.stringify({ modelInput: { automaticWorkItemLease } })},${fence.principalId},${fence.leaseToken},1,
+              now()+interval '1 hour',now()+interval '2 hours')`;
+          const grantExpiresAt = new Date(Date.now() + 5000);
+          await sql`INSERT INTO auto_work_item_authorization(tenant_id,work_item_id,request_id,actor_user_id,
+            document_id,document_version_id,source_artifact_id,source_file_sha256,source_byte_length,grant_kind,
+            status,lease_owner,lease_token,lease_generation,lease_expires_at)
+            VALUES (${scope.tenantId},${workItemId},${projection.requestId},${scope.actorUserId},'doc-job','dv-job',
+              'ART-TEST',${hash},1234,'MIAODA_CANONICAL_PARSE_REQUEST','LEASED',${fence.principalId},
+              '00000000-0000-4000-8000-000000000001',1,${grantExpiresAt.toISOString()})`;
+          const snapshotRow = await attempt(db, attemptId);
+          const state = async () => ({
+            attempt: await sql`SELECT * FROM action_attempt WHERE attempt_id=${attemptId}`,
+            workItem: await sql`SELECT * FROM work_item WHERE work_item_id=${workItemId}`,
+            grant: await sql`SELECT * FROM auto_work_item_authorization WHERE work_item_id=${workItemId}`,
+            revisions: await sql`SELECT * FROM assessment_work_revision WHERE work_item_id=${workItemId}`,
+          });
+          const before = await state();
+          let releaseWriter;
+          const release = new Promise(resolve => { releaseWriter = resolve; });
+          let held;
+          const locked = new Promise(resolve => { held = resolve; });
+          const writer = sql.begin(async transaction => {
+            await transaction`SELECT attempt_id FROM action_attempt WHERE attempt_id=${attemptId} FOR UPDATE`;
+            held((await transaction`SELECT pg_backend_pid() AS pid`)[0].pid);
+            await release;
+          });
+          const writerResult = writer.then(() => ({ status: 'fulfilled' }), reason => ({ status: 'rejected', reason }));
+          const writerPid = await Promise.race([locked, writer.then(() => assert.fail('writer did not hold its lock'))]);
+          const preview = hosted(() => repository.readValidationSnapshot({
+            row: snapshotRow, actorUserId: scope.actorUserId, fence: { ...fence, automaticLeaseRequired: true },
+            sourceBindings: [{ ...sourceBindings[0], workItemId }], expectedWorkRevision: 0,
+            expectedPreviousWorkRevisionRef: null,
+          })).then(value => ({ status: 'fulfilled', value }), reason => ({ status: 'rejected', reason }));
+          let observedWaiting = false;
+          try {
+            // Reaching the attempt row lock proves the first real grant check passed.
+            while (Date.now() < grantExpiresAt.getTime()) {
+              const waiting = await sql`SELECT pid FROM pg_stat_activity WHERE wait_event_type='Lock'
+                AND query LIKE '%"action_attempt"%' AND ${writerPid} = ANY(pg_blocking_pids(pid))`;
+              if (waiting.length) { observedWaiting = true; break; }
+              await new Promise(resolve => setTimeout(resolve, 10));
+            }
+            if (observedWaiting)
+              await new Promise(resolve => setTimeout(resolve, Math.max(0, grantExpiresAt.getTime() - Date.now()) + 25));
+          } finally { releaseWriter(); }
+          const [result, write] = await Promise.all([preview, writerResult]);
+          assert.equal(observedWaiting, true, 'preview must actually wait after its initial grant check');
+          assert.equal(write.status, 'fulfilled', write.reason?.message);
+          assert.equal(result.status, 'rejected', 'an expired automatic grant must never produce a snapshot');
+          assert.match(result.reason?.cause?.message ?? result.reason?.message ?? '', /AUTO_WORK_ITEM_ATTEMPT_LEASE_REJECTED/u);
+          assert.deepEqual(await state(), before, 'failed preview and lock-only writer must not change any persisted state');
+        });
+
       await sql.unsafe(`CREATE FUNCTION fail_test_projection() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN RAISE EXCEPTION 'TEST_PROJECTION_SQL_FAILURE'; END $$;
         CREATE TRIGGER fail_test_projection BEFORE INSERT ON engineering_search_projection
@@ -752,8 +859,16 @@ test(
           );
           saved = concurrent.find((result) => result.status === 'fulfilled')
             .value.revision;
+          await assert.rejects(hosted(() => repository.readValidationSnapshot({
+            row, actorUserId: scope.actorUserId, fence, sourceBindings,
+            expectedWorkRevision: 0, expectedPreviousWorkRevisionRef: null,
+          })), /JOBAID_WORK_REVISION_CONFLICT/u);
           const replayArgs = saveArgs(saved.requestId, 0);
           await sql`UPDATE action_attempt SET status = 'SUCCEEDED' WHERE attempt_id = 'ATT-initial'`;
+          await assert.rejects(hosted(() => repository.readValidationSnapshot({
+            row, actorUserId: scope.actorUserId, fence, sourceBindings,
+            expectedWorkRevision: saved.workRevision, expectedPreviousWorkRevisionRef: saved.workRevisionRef,
+          })), /JOBAID_WORK_LEASE_FENCE_REJECTED/u);
           const replay = await hosted(() => repository.save(replayArgs));
           assert.equal(replay.replayed, true);
           assert.deepEqual(replay.revision, saved);
@@ -1380,6 +1495,9 @@ async function reset(sql) {
     }
     await migration.unsafe(await readFile(new URL('../../migrations/0038_document_parse_run.sql',import.meta.url),'utf8'));
     for (const name of ['0039_engineering_search_projection.sql', '0042_engineering_search_projection_pending.sql', '0043_engineering_search_hosted_actor_scope.sql', '0050_document_source_projection_progress.sql']) {
+      await migration.unsafe(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
+    }
+    for (const name of ['0062_auto_work_item_authorization.sql', '0063_auto_work_item_lease_ack.sql', '0064_auto_work_item_block_receipt.sql']) {
       await migration.unsafe(await readFile(new URL(`../../migrations/${name}`, import.meta.url), 'utf8'));
     }
   } finally {

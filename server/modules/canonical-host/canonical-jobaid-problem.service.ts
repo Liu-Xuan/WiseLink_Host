@@ -4,7 +4,7 @@ import { assertProgramCompleteIssueCoverage, parseProgramMaterialSnapshot, progr
 import { exactProgramWorkRead, latestProgramProgress } from './program-controlled-assessment';
 import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller, type TdmsReviewIngress } from '../tdms-source/tdms-review-delegation';
 import type { TdmsReviewSavedContext, TdmsReviewContext } from './tdms-review-saved-context';
-import { assertJobAidSemanticContent } from './jobaid-semantic-content';
+import { assertJobAidSemanticContent, JobAidSemanticValidationError } from './jobaid-semantic-content';
 import {
   buildJobAidPreparationView, preparationAfterSavedWork, unavailableJobAidPreparationFacts,
   type JobAidEngineerPreparationFacts, type JobAidPreparationScope,
@@ -50,6 +50,8 @@ import type {
   CanonicalOpenClawOverallProjection,
   CanonicalOverallRegenerationRequestProjection,
   CanonicalWorkItemProjection,
+  JobAidWorkValidationRequest,
+  JobAidWorkValidationResult,
 } from '@shared/api.interface';
 import {
   JOBAID_PROBLEM_RESULT_SCHEMA,
@@ -131,6 +133,7 @@ import {
   jobAidReadingResult,
   materializeJobAidWork,
   assertJobAidIssueEditScope,
+  type JobAidWorkValidationContext,
 } from './jobaid-problem-work';
 import {
   JobAidWorkRepository,
@@ -2357,38 +2360,7 @@ export class CanonicalJobAidProblemService {
           (item) => item.workRevisionRef === replay.previousWorkRevisionRef,
         ) ?? null)
       : (history[0] ?? taskInput.previousWork);
-    const readRefs = [
-      ...new Set([
-        ...taskInput.initiallyDeliveredRefs,
-        ...resolvedAssessmentSources(row.reviewActivityJson),
-        ...(previous?.content.readSourceRefs ?? []),
-      ]),
-    ];
-    const nativeReads = resolvedTdmsReadEvidence(row.reviewActivityJson);
-    if (nativeReads.some(item=>item.nativeReadReceipt.taskContextRef!==row.operationRef)) throw new Error('JOBAID_TDMS_READ_BINDING_INVALID');
-    await verifyTdmsNativeEvidence(nativeReads,{tenantId:scope.tenantId,actorUserId:taskInput.actorUserId},this.nativeVerifier);
-    await this.assertNativeTaskAuthorized(taskInput,scope);
-    const content = materializeJobAidWork(command, {
-      contentValidationVersion: taskInput.contentValidationVersion,
-      methodBinding: taskInput.modelInput.methodBinding,
-      workItemId: scope.workItemId,
-      previous: previous?.content ?? null,
-      evidence: [
-        ...mergeTdmsReadEvidence(taskInput.sourceCatalog,nativeReads),
-        ...((await this.knowledge?.saved(
-          {
-            tenantId: scope.tenantId,
-            actorId: taskInput.actorUserId,
-            workItemId: scope.workItemId,
-          },
-          row.attemptId,
-        )) ?? []),
-      ],
-      readSourceRefs: readRefs,
-      currentDeliveredSourceRefs:[...new Set([...taskInput.initiallyDeliveredRefs,...resolvedAssessmentSources(row.reviewActivityJson)])],
-      capabilities: taskInput.modelInput.capabilities,
-      history: taskInput.modelInput.historyReview,
-    });
+    const content = materializeJobAidWork(command, await this.workValidationContext(row, taskInput, scope, previous));
     const saved = await this.work.save({
       row,
       actorUserId: taskInput.actorUserId,
@@ -2418,6 +2390,122 @@ export class CanonicalJobAidProblemService {
       currentUnderstanding: saved.revision.content.understanding,
       preparation:preparationAfterSavedWork(preparation,
         saved.revision.workRevision >= (history[0]?.workRevision ?? 0) ? saved.revision : history[0]),
+    };
+  }
+
+  /** SAVE and preview share Host-owned context; no caller supplies evidence or actors. */
+  private async workValidationContext(row: ActionAttemptRow, taskInput: JobAidProblemTaskInput,
+    scope: CanonicalVerifiedOpenClawAttemptScope, previous: JobAidWorkRevision | null): Promise<JobAidWorkValidationContext> {
+    const readRefs = [
+      ...new Set([
+        ...taskInput.initiallyDeliveredRefs,
+        ...resolvedAssessmentSources(row.reviewActivityJson),
+        ...(previous?.content.readSourceRefs ?? []),
+      ]),
+    ];
+    const nativeReads = resolvedTdmsReadEvidence(row.reviewActivityJson);
+    if (nativeReads.some(item=>item.nativeReadReceipt.taskContextRef!==row.operationRef)) throw new Error('JOBAID_TDMS_READ_BINDING_INVALID');
+    await verifyTdmsNativeEvidence(nativeReads,{tenantId:scope.tenantId,actorUserId:taskInput.actorUserId},this.nativeVerifier);
+    await this.assertNativeTaskAuthorized(taskInput,scope);
+    return {
+      contentValidationVersion: taskInput.contentValidationVersion,
+      methodBinding: taskInput.modelInput.methodBinding,
+      workItemId: scope.workItemId,
+      previous: previous?.content ?? null,
+      evidence: [
+        ...mergeTdmsReadEvidence(taskInput.sourceCatalog,nativeReads),
+        ...((await this.knowledge?.saved(
+          {
+            tenantId: scope.tenantId,
+            actorId: taskInput.actorUserId,
+            workItemId: scope.workItemId,
+          },
+          row.attemptId,
+        )) ?? []),
+      ],
+      readSourceRefs: readRefs,
+      currentDeliveredSourceRefs:[...new Set([...taskInput.initiallyDeliveredRefs,...resolvedAssessmentSources(row.reviewActivityJson)])],
+      capabilities: taskInput.modelInput.capabilities,
+      history: taskInput.modelInput.historyReview,
+    };
+  }
+
+  /** Current candidate check only: no SAVE replay, read receipt, heartbeat or adoption. */
+  async validateWork(input: JobAidWorkValidationRequest): Promise<JobAidWorkValidationResult> {
+    const { row, task, taskInput, scope } = await this.authorizedAttempt(
+      input.attemptRef, 'SAVE_ASSESSMENT_WORK', input.workItemId,
+    );
+    if (task.operationRef !== row.operationRef || task.actionAttemptId !== row.attemptId ||
+        task.tenantId !== scope.tenantId || task.workItemId !== scope.workItemId ||
+        task.documentVersionId !== row.documentVersionId || task.inputRevision !== row.inputRevision ||
+        task.baseRevision !== row.baseRevision || task.inputHash !== row.taskInputHash)
+      throw new Error('JOBAID_VALIDATION_TASK_BINDING_CHANGED');
+    if (taskInput.executionMode !== 'PROGRAM_AGENT_V1' || taskInput.contentValidationVersion !== 'jobaid-semantic.v1' ||
+        taskInput.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || taskInput.successorReviewTurnRef)
+      throw new Error('JOBAID_PROGRAM_VALIDATION_MODE_REQUIRED');
+    if (input.expectedWorkRevision !== taskInput.modelInput.expectedWorkRevision)
+      throw new Error('JOBAID_WORK_REVISION_CONFLICT');
+    const snapshotInput = {
+      row, actorUserId: taskInput.actorUserId, sourceBindings: taskInput.sourceBindings,
+      fence: { principalId: scope.principalId, leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration,
+        automaticLeaseRequired: !!scope.automaticWorkItemLease },
+      expectedWorkRevision: input.expectedWorkRevision,
+      expectedPreviousWorkRevisionRef: taskInput.previousWork?.workRevisionRef ?? null,
+    };
+    const snapshot = await this.work.readValidationSnapshot(snapshotInput);
+    if (canonicalJson(snapshot.previous) !== canonicalJson(taskInput.previousWork))
+      throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
+    const context = await this.workValidationContext(
+      { ...row, reviewActivityJson: snapshot.reviewActivityJson }, taskInput, scope, snapshot.previous,
+    );
+    // The private catalog and historical/native/knowledge material all retain their ACLs.
+    await this.assertSourcesAuthorized(context.evidence, taskInput, scope.tenantId, scope.workItemId, scope);
+    let violations: JobAidWorkValidationResult['violations'] = [];
+    let omittedViolationCount = 0;
+    try {
+      const command: unknown = JSON.parse(input.workJson);
+      assertProgramCompleteIssueCoverage(command, taskInput);
+      materializeJobAidWork(command, context);
+    } catch (error) {
+      // A JOBAID prefix never turns an authorization, lease, CAS or technical error into feedback.
+      if (!(error instanceof JobAidSemanticValidationError)) throw error;
+      violations = error.violations;
+      omittedViolationCount = error.omittedViolationCount;
+    }
+    const current = await this.authorizedAttempt(input.attemptRef, 'SAVE_ASSESSMENT_WORK', input.workItemId);
+    if (current.scope.principalId !== scope.principalId || current.scope.appId !== scope.appId ||
+        current.scope.tenantId !== scope.tenantId || current.scope.workItemId !== scope.workItemId ||
+        current.scope.authorizationFingerprint !== scope.authorizationFingerprint ||
+        !!current.scope.automaticWorkItemLease !== !!scope.automaticWorkItemLease ||
+        current.row.taskInputHash !== row.taskInputHash)
+      throw new Error('JOBAID_VALIDATION_SCOPE_CHANGED');
+    // Return neither VALID nor candidate hints after source revocation or a concurrent SAVE.
+    await this.assertSourcesAuthorized(context.evidence, taskInput, scope.tenantId, scope.workItemId, current.scope);
+    const confirmed = await this.work.readValidationSnapshot({
+      ...snapshotInput,
+      ...(taskInput.tdmsContext ? { assertNativeAuthorized: async (database: PostgresJsDatabase): Promise<void> => {
+        await assertTdmsNativeInTransaction({ actor: { tenantId: scope.tenantId, actorUserId: taskInput.actorUserId },
+          ...this.nativeTransactionCaller(current.scope, taskInput.actorUserId, taskInput.tdmsContext!),
+          evidence: context.evidence, database }, this.nativeVerifier);
+      } } : {}),
+    });
+    if (canonicalJson(confirmed.previous) !== canonicalJson(snapshot.previous))
+      throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
+    const confirmedDelivered = new Set([
+      ...taskInput.initiallyDeliveredRefs, ...resolvedAssessmentSources(confirmed.reviewActivityJson),
+    ]);
+    if (context.currentDeliveredSourceRefs?.some(ref => !confirmedDelivered.has(ref)))
+      throw new Error('JOBAID_VALIDATION_DELIVERY_CHANGED');
+    return {
+      schemaVersion: 'wiselink.jobaid-work-validation.v1',
+      status: violations.length ? 'REPAIR_REQUIRED' : 'VALID',
+      contentValidationVersion: 'jobaid-semantic.v1',
+      binding: {
+        attemptRef: input.attemptRef, actionAttemptId: row.attemptId, workItemId: scope.workItemId,
+        documentVersionId: task.documentVersionId, inputRevision: task.inputRevision, baseRevision: task.baseRevision,
+        expectedWorkRevision: input.expectedWorkRevision, previousWorkRevisionRef: snapshot.previous?.workRevisionRef ?? null,
+      },
+      violations, omittedViolationCount,
     };
   }
 

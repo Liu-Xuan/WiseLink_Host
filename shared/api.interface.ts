@@ -1,4 +1,8 @@
-export type { JobAidProgramMaterialsRead } from './jobaid-problem-assessment.interface';
+export type {
+  JobAidProgramMaterialsRead,
+  JobAidWorkValidationRequest,
+  JobAidWorkValidationResult,
+} from './jobaid-problem-assessment.interface';
 import type { DocumentOriginalBinding } from './document-original.interface';
 export type { LcmNativeMatrix, LcmNativeMatrixResponse } from './lcm-native-matrix.interface';
 export type {

@@ -496,6 +496,38 @@ export class JobAidWorkRepository {
     )).orderBy(desc(assessmentWorkRevision.workRevision)).limit(JOBAID_ACTIVITY_WINDOW + 1);
   }
 
+  /** Read only: use SAVE's source/grant/attempt lock order, without receipts or lease updates. */
+  async readValidationSnapshot(input: JobAidSaveScope & {
+    expectedWorkRevision: number;
+    expectedPreviousWorkRevisionRef: string | null;
+    assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
+  }): Promise<{ reviewActivityJson: string | null; previous: JobAidWorkRevision | null }> {
+    if (!Number.isSafeInteger(input.expectedWorkRevision) || input.expectedWorkRevision < 0)
+      throw new Error('JOBAID_SAVE_IDENTITY_INVALID');
+    return this.withActorTransaction(input.actorUserId, async (database: PostgresJsDatabase) => {
+      // Keep the same native-verifier placement and source/grant/attempt order as SAVE.
+      await input.assertNativeAuthorized?.(database);
+      const { primary, attempt } = await this.lockSaveScope(input, database);
+      assertJobAidWorkFence(attempt, input.fence);
+      if (attempt.operationRef !== input.row.operationRef || attempt.inputRevision !== input.row.inputRevision)
+        throw new Error('JOBAID_SAVE_ATTEMPT_CHANGED');
+      if (primary.revision !== attempt.baseRevision) throw new Error('JOBAID_SAVE_WORK_ITEM_CHANGED');
+      const previous = await this.latest({
+        tenantId: input.row.tenantId, workItemId: input.row.workItemId,
+      }, database);
+      if ((previous?.workRevision ?? 0) !== input.expectedWorkRevision)
+        throw new Error('JOBAID_WORK_REVISION_CONFLICT');
+      if ((previous?.workRevisionRef ?? null) !== input.expectedPreviousWorkRevisionRef)
+        throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
+      // All three locks are already held. Reuse the same grant predicate because
+      // its expiry can pass while waiting for the attempt lock or reading work.
+      await assertAutomaticWorkItemAttemptLease(database, input.row, input.fence.principalId, input.fence.automaticLeaseRequired);
+      // Snapshot reads can await I/O; expiry during them is still a failed preview.
+      assertJobAidWorkFence(attempt, input.fence);
+      return { reviewActivityJson: attempt.reviewActivityJson, previous };
+    });
+  }
+
   async save(
     input: {
       row: ActionAttemptRow;

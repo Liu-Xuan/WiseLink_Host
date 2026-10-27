@@ -17,6 +17,55 @@ export const JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA =
 export const JOBAID_PROBLEM_RESULT_SCHEMA =
   'wiselink.jobaid-problem-result.v2' as const;
 
+/** Trusted runtime supplies the existing attempt fence; this command never saves. */
+export interface JobAidWorkValidationRequest {
+  attemptRef: string;
+  workItemId: string;
+  leaseToken: string;
+  leaseGeneration: number;
+  expectedWorkRevision: number;
+  workJson: string;
+}
+
+export type JobAidSemanticViolationCode =
+  | 'JOBAID_SEMANTIC_SEVERITY_DEFINITION_REQUIRED'
+  | 'JOBAID_SEMANTIC_LIKELIHOOD_DEFINITION_REQUIRED'
+  | 'JOBAID_SEMANTIC_SEVERITY_DEFINITION_NOT_DELIVERED'
+  | 'JOBAID_SEMANTIC_LIKELIHOOD_DEFINITION_NOT_DELIVERED'
+  | 'JOBAID_SEMANTIC_SEVERITY_BUSINESS_BASIS_REQUIRED'
+  | 'JOBAID_SEMANTIC_LIKELIHOOD_BUSINESS_BASIS_REQUIRED'
+  | 'JOBAID_SEMANTIC_IMPORTANT_EVENT_SCENARIO_REQUIRED'
+  | 'JOBAID_SEMANTIC_IMPORTANT_EVENT_BUSINESS_BASIS_REQUIRED'
+  | 'JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED'
+  | 'JOBAID_SEMANTIC_REQUIREMENT_BUSINESS_BASIS_REQUIRED'
+  | 'JOBAID_SEMANTIC_USED_METHOD_DISPOSITION_REQUIRED'
+  | 'JOBAID_SEMANTIC_UNRESOLVED_QUESTION_REQUIRED';
+
+/** Paths refer only to the submitted candidate; no source or historical text is returned. */
+export interface JobAidSemanticViolation {
+  code: JobAidSemanticViolationCode;
+  fieldPaths: string[];
+  message: string;
+}
+
+export interface JobAidWorkValidationResult {
+  schemaVersion: 'wiselink.jobaid-work-validation.v1';
+  status: 'VALID' | 'REPAIR_REQUIRED';
+  contentValidationVersion: 'jobaid-semantic.v1';
+  binding: {
+    attemptRef: string;
+    actionAttemptId: string;
+    workItemId: string;
+    documentVersionId: string;
+    inputRevision: number;
+    baseRevision: number;
+    expectedWorkRevision: number;
+    previousWorkRevisionRef: string | null;
+  };
+  violations: JobAidSemanticViolation[];
+  omittedViolationCount: number;
+}
+
 /** Model-facing context saved in the existing versioned assessment task input. */
 export interface JobAidAssessmentContextPackage {
   basedOnWorkItemRevision: number;
