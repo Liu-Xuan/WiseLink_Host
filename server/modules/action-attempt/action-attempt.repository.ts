@@ -1,3 +1,4 @@
+import { checklistTaskSelection } from '../canonical-host/jobaid-checklist-reading';
 import { isProgramAssessmentMode } from '../canonical-host/program-agent-policy';
 import { assertAutomaticWorkItemAttemptLeaseBinding, automaticWorkItemTaskLease } from './automatic-work-item-attempt-lease';
 import { assertCancelledInitialContinuation, cancelledContinuationConflict, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
@@ -253,11 +254,12 @@ export class ActionAttemptRepository {
   async readLatestByExactIdempotency(input: {
     tenantId: string;
     idempotencyKey: string;
-  }, metadataOnly=false): Promise<ActionAttemptRow | null> {
+  }, metadataOnly=false): Promise<(ActionAttemptRow & { checklistContext?: unknown }) | null> {
     const [row] = await this.db
       .select(metadataOnly ? {...getTableColumns(actionAttempt),
         taskEnvelopeJson:sql<string|null>`NULL`,resultEnvelopeJson:sql<string|null>`NULL`,
         reviewActivityJson:reviewActivityMetadata(),
+        checklistContext: checklistTaskSelection(),
       } : getTableColumns(actionAttempt))
       .from(actionAttempt)
       .where(

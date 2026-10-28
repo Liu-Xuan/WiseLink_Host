@@ -334,6 +334,8 @@ export interface JobAidWorkingReadModel {
   } | null;
   /** One selected execution from this read; not the complete attempt history. */
   selectedExecution?: {
+    /** Exact selected task's sealed definition, independent of current saved work. */
+    checklist?: import('./jobaid-checklist.interface').JobAidChecklistTaskRead;
     actionType: 'OPENCLAW_DYNAMIC_EVALUATION' | 'OPENCLAW_OVERALL_SYNTHESIS';
     executionMode?: import('./api.interface').CanonicalAssessmentExecutionMode | null;
     executionModel?: import('./api.interface').CanonicalExecutionModelSelection | null;

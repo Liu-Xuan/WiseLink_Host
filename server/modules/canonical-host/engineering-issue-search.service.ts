@@ -13,7 +13,7 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { sql } from 'drizzle-orm';
+import { sql, type SQL } from 'drizzle-orm';
 import type { Request } from 'express';
 import { SessionResolver, type ResolvedSession } from '../identity/session-resolver.service';
 import type {
@@ -41,7 +41,7 @@ import { jobAidReadingResult } from './jobaid-problem-work';
 import { collectIssueEvidenceUses } from '@shared/jobaid-evidence-uses';
 import { assessmentEvidenceRoots } from '@shared/assessment-evidence-roots';
 import { prepareEngineeringSearchQuery } from './engineering-search-text';
-import { projectionOwnerToSubjectKind } from './engineering-search-projection';
+import { buildWorkIssueSearchText, projectionOwnerToSubjectKind } from './engineering-search-projection';
 import { EngineeringSearchProjectionWriter } from './engineering-search-projection';
 import { EngineeringReadPhaseObservation, engineeringReadTimelineLogParts,
   engineeringReadWindowLogParts,
@@ -58,6 +58,7 @@ type IssueIdentity = Pick<
 type SavedIssueWork =
   | Awaited<ReturnType<CanonicalJobAidProblemService['readBrowserRevision']>>
   | Awaited<ReturnType<EngineeringMatterWorkingService['readWorkingRevision']>>;
+type IssueMatch = 'FULL_TEXT' | 'EXACT_IDENTIFIER';
 
 @Injectable()
 export class EngineeringIssueSearchService {
@@ -435,25 +436,23 @@ export class EngineeringIssueSearchService {
     if (!search || search.length > 200)
       throw new BadRequestException('ENGINEERING_ISSUE_QUERY_INVALID');
     const prepared = prepareEngineeringSearchQuery(search);
-    const exactIdentifiers = identifierArray(prepared.exactIdentifierCandidates);
     if (process.env.WL_ENGINEERING_SEARCH_PROJECTION === '1') {
       return this.searchProjection(prepared, actor, includeHistory);
     }
     const hits: EngineeringIssueSearchHit[] = [];
     const workReads = new Map<string, Promise<SavedIssueWork>>();
+    const workMatches = new Map<string, Promise<Map<string, IssueMatch>>>();
     let cursor: IssueIdentity | undefined;
     // Page across denied work too: SQL's limit must not hide later readable issues.
     // The cursor stays internal and pagination hints count authorized hits only.
     while (hits.length < 51) {
-      const candidates = await this.db.execute<
-        EngineeringIssueSearchHit & Record<string, unknown>
-      >(sql`
+      const candidates = await this.db.execute<IssueIdentity>(sql`
       WITH works AS (
         SELECT 'WORK_ITEM'::text AS kind, w.work_item_id AS subject_id,
           w.assessment_work_revision_id AS work_ref, w.work_revision AS revision,
           w.content_json::jsonb AS content
         FROM assessment_work_revision w
-        WHERE w.tenant_id = ${actor.tenantId} AND w.created_by_user_id = ${actor.userId}
+        WHERE w.tenant_id = ${actor.tenantId}
           AND (${includeHistory} OR NOT EXISTS (SELECT 1 FROM assessment_work_revision newer
             WHERE newer.tenant_id = w.tenant_id AND newer.work_item_id = w.work_item_id
               AND newer.work_revision > w.work_revision))
@@ -461,22 +460,15 @@ export class EngineeringIssueSearchService {
         SELECT 'ENGINEERING_MATTER', w.matter_id, w.matter_work_revision_id,
           w.working_revision, w.state_json::jsonb -> 'problemWork'
         FROM engineering_matter_work_revision w
-        WHERE w.tenant_id = ${actor.tenantId} AND w.created_by_user_id = ${actor.userId}
+        WHERE w.tenant_id = ${actor.tenantId}
           AND (${includeHistory} OR NOT EXISTS (SELECT 1 FROM engineering_matter_work_revision newer
             WHERE newer.tenant_id = w.tenant_id AND newer.matter_id = w.matter_id
               AND newer.working_revision > w.working_revision))
       )
       SELECT kind AS "subjectKind", subject_id AS "subjectId", work_ref AS "workRef",
-        revision AS "workRevision", issue ->> 'issueKey' AS "issueKey",
-        issue ->> 'question' AS question, issue -> 'sourceDependencies' AS "sourceRefs",
-        CASE WHEN upper(issue ->> 'issueKey') = ANY(${exactIdentifiers})
-          THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
+        issue ->> 'issueKey' AS "issueKey"
       FROM works CROSS JOIN LATERAL jsonb_array_elements(content -> 'issues') issue
-      WHERE (
-        to_tsvector('simple', issue::text) @@ plainto_tsquery('simple', ${prepared.tokenizedText})
-        OR position(lower(${search}) in lower(issue::text)) > 0
-        OR upper(issue ->> 'issueKey') = ANY(${exactIdentifiers})
-      )
+      WHERE true
         ${
           cursor
             ? sql`AND (kind, subject_id, work_ref, issue ->> 'issueKey') >
@@ -500,7 +492,15 @@ export class EngineeringIssueSearchService {
             work = this.loadWork(candidate, actor);
             workReads.set(key, work);
           }
-          const read = this.issueFromWork(candidate, await work);
+          const revision = await work;
+          let matches = workMatches.get(key);
+          if (!matches) {
+            matches = this.matchAuthorizedWork(revision, prepared);
+            workMatches.set(key, matches);
+          }
+          const matchReason = (await matches).get(candidate.issueKey);
+          if (!matchReason) continue;
+          const read = this.issueFromWork({ ...candidate, matchReason }, revision);
           hits.push(read.identity);
           if (hits.length === 51) break;
         } catch (error: unknown) {
@@ -516,6 +516,36 @@ export class EngineeringIssueSearchService {
       hasMore: hits.length > 50,
       limitations: [includeHistory ? '包含历史已保存版本；历史内容不代表当前工作，每项仍按当前来源权限展开。' : '仅返回当前已保存且经授权展开的问题工作；结果不代表全量统计。'],
     };
+  }
+
+  /** Direct search materializes only an already-authorized exact revision.
+   * Reuse the projection's corpus/ICU normalization and the same PG predicate;
+   * serialized JSON field names and substring-only hits are not search text. */
+  private async matchAuthorizedWork(revision: SavedIssueWork,
+    prepared: ReturnType<typeof prepareEngineeringSearchQuery>): Promise<Map<string, IssueMatch>> {
+    const content = 'content' in revision ? revision.content : revision.state.problemWork;
+    if (!content) return new Map();
+    const texts = content.issues.map((issue, index) => {
+      const title = issue.issueKey || `issue-${index + 1}`;
+      const search = buildWorkIssueSearchText(content, issue, title);
+      return { issueKey: issue.issueKey, title, originalText: search.originalText,
+        tokenizedText: search.tokenizedText, identifiers: search.identifiers };
+    });
+    const exactIdentifiers = identifierArray(prepared.exactIdentifierCandidates);
+    const matches = await this.db.execute<{ issueKey: string; matchReason: IssueMatch }>(sql`
+      WITH authorized_issue_text AS (
+        SELECT item->>'issueKey' AS issue_key, item->>'title' AS title,
+          item->>'originalText' AS original_text, item->>'tokenizedText' AS tokenized_text,
+          ARRAY(SELECT jsonb_array_elements_text(item->'identifiers')) AS identifiers
+        FROM jsonb_array_elements(${JSON.stringify(texts)}::jsonb) item
+      )
+      SELECT issue_key AS "issueKey", CASE WHEN identifiers && ${exactIdentifiers}
+        THEN 'EXACT_IDENTIFIER' ELSE 'FULL_TEXT' END AS "matchReason"
+      FROM authorized_issue_text
+      WHERE ${searchPredicate(sql`(setweight(to_tsvector('simple', title), 'A') ||
+        setweight(to_tsvector('simple', tokenized_text), 'B') ||
+        setweight(to_tsvector('simple', original_text), 'C'))`, sql`identifiers`, prepared)}`);
+    return new Map(matches.map(match => [match.issueKey, match.matchReason]));
   }
 
   private async searchProjection(prepared: ReturnType<typeof prepareEngineeringSearchQuery>, actor: CanonicalHostActor, includeHistory: boolean): Promise<EngineeringIssueSearchResponse> {
@@ -554,8 +584,7 @@ export class EngineeringIssueSearchService {
                 WHERE newer.tenant_id = w.tenant_id AND newer.matter_id = w.matter_id
                   AND newer.working_revision > w.working_revision))
           )))
-          AND (search_vector @@ plainto_tsquery('simple', ${prepared.tokenizedText})
-            OR identifiers && ${exactIdentifiers})
+          AND ${searchPredicate(sql`search_vector`, sql`identifiers`, prepared)}
           ${cursor ? sql`AND entry_id > ${cursor}` : sql``}
         ORDER BY entry_id LIMIT 101`);
       exhausted = rows.length < 101;
@@ -710,6 +739,12 @@ function isAccessUnavailable(error: unknown): boolean {
 
 function identifierArray(values: readonly string[]) {
   return sql`ARRAY[${sql.join(values.map(value => sql`${value}`), sql`, `)}]::text[]`;
+}
+
+function searchPredicate(vector: SQL, identifiers: SQL,
+  prepared: ReturnType<typeof prepareEngineeringSearchQuery>): SQL {
+  return sql`(${vector} @@ plainto_tsquery('simple', ${prepared.tokenizedText})
+    OR ${identifiers} && ${identifierArray(prepared.exactIdentifierCandidates)})`;
 }
 
 const knowledgeIdentitySchema = z.object({

@@ -1,4 +1,6 @@
 import { CheckCircle2, Link2, RefreshCw } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { TaskChecklist } from '../checklist/ChecklistPanel';
 
 import { Button } from '@client/src/components/ui/button';
 import type {
@@ -87,6 +89,8 @@ export default function ReviewConversationTurn(
             : interactive?.onLocateSourceRef
         }
       />
+      {!matterScope ? <TaskChecklist checklist={props.turn.execution?.checklist}
+        label={`回合 ${props.turn.turnNo} 的封存检查单`} /> : null}
 
       {candidate ? (
         <div className="continuous-review-candidate">
@@ -111,6 +115,11 @@ export default function ReviewConversationTurn(
                 : '本轮答复沿用已有问题认识，工作内容未变。'}
             </p>
           ) : null}
+          {!matterScope && candidate.jobAidWorkingUpdate?.workRevisionRef ? <Link className="underline"
+            to={`/knowledge?${new URLSearchParams({ kind: 'works', subjectKind: 'WORK_ITEM',
+              subjectId: props.conversation.workItemId, workRef: candidate.jobAidWorkingUpdate.workRevisionRef })}`}>
+            独立读取本回合对应工作的检查单与结果
+          </Link> : null}
           {!chat && candidate.matterWorkingUpdate ? (
             <MatterWorkingReceipt receipt={candidate.matterWorkingUpdate} />
           ) : null}

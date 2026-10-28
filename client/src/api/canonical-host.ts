@@ -1299,6 +1299,20 @@ export function readJobAidAssessmentWork(
   });
 }
 
+export async function readChecklistDefinition(signal?: AbortSignal): Promise<import('@shared/jobaid-checklist.interface').JobAidChecklistDefinitionRead> {
+  const value = await reviewConversationRequest<import('@shared/jobaid-checklist.interface').JobAidChecklistDefinitionRead>({
+    url: '/api/canonical-host/checklist-definition', method: 'GET', operation: '读取检查单定义', signal,
+  });
+  if (value.schemaVersion !== 'wiselink.checklist-definition-read.v1' || value.source !== 'HOST_RELEASE' ||
+      value.management !== 'READ_ONLY_RELEASE_MANAGED' || !value.current?.definition ||
+      value.current.definitionId !== value.current.definition.definitionId ||
+      value.current.definitionVersion !== value.current.definition.definitionVersion ||
+      value.current.contractVersion !== value.current.definition.contractVersion ||
+      !Array.isArray(value.current.definition.items) || !Array.isArray(value.current.definition.ruleCatalog))
+    throw new Error('检查单定义读回不完整，未用本地版本替代。');
+  return value;
+}
+
 /** Lazy, exact-attempt material read; Host rechecks every source grant. */
 export async function readProgramAssessmentMaterials(
   workItemId: string,

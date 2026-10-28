@@ -1,4 +1,5 @@
 import { assertAutomaticWorkItemAttemptLease } from '../action-attempt/automatic-work-item-attempt-lease';
+import { checklistTaskSelection, projectTaskChecklist } from './jobaid-checklist-reading';
 import type { AssessmentTdmsNativeEvidence } from '@shared/assessment-tdms-evidence';
 import { tdmsReadObservation } from './jobaid-tdms-context';
 import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller } from '../tdms-source/tdms-review-delegation';
@@ -368,7 +369,7 @@ export class JobAidWorkRepository {
     documentVersionId: string;
   }) {
     const rows = await this.db.execute<{
-      execution: BrowserJobAidExecutionObservation | null;
+      execution: (BrowserJobAidExecutionObservation & { checklistContext?: unknown }) | null;
       latestAttempt: JobAidWorkingReadModel['latestAttempt'];
       current: (Omit<StoredJobAidWork, 'createdAt'> & { createdAt: string }) | null;
       savedActivity: Array<Omit<JobAidSavedActivityObservation, 'createdAt'> & { createdAt: string }>;
@@ -381,7 +382,8 @@ export class JobAidWorkRepository {
           CASE WHEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode'
             IN ('PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1')
             THEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode' ELSE NULL END AS "executionMode",
-          ${actionAttempt.executionModelJson}::jsonb AS "executionModel"
+          ${actionAttempt.executionModelJson}::jsonb AS "executionModel",
+          ${checklistTaskSelection()} AS "checklistContext"
         FROM ${actionAttempt}
         WHERE ${actionAttempt.tenantId} = ${input.tenantId}
           AND ${actionAttempt.workItemId} = ${input.workItemId}
@@ -439,12 +441,19 @@ export class JobAidWorkRepository {
     `);
     const row = rows[0];
     if (!row) throw new Error('JOBAID_SNAPSHOT_READBACK_MISSING');
-    return { execution: row.execution ? {
-      ...row.execution,
-      createdAt: new Date(row.execution.createdAt).toISOString(),
-      startedAt: row.execution.startedAt ? new Date(row.execution.startedAt).toISOString() : null,
-      completedAt: row.execution.completedAt ? new Date(row.execution.completedAt).toISOString() : null,
-    } : null, latestAttempt: row.latestAttempt ? {
+    let execution: BrowserJobAidExecutionObservation | null = null;
+    if (row.execution) {
+      const { checklistContext, ...selected } = row.execution;
+      execution = { ...selected,
+        ...(checklistContext === undefined ? {} : { checklist: projectTaskChecklist(checklistContext, {
+          workItemId: input.workItemId, attemptId: selected.attemptId, taskType: selected.actionType,
+        }) }),
+        createdAt: new Date(selected.createdAt).toISOString(),
+        startedAt: selected.startedAt ? new Date(selected.startedAt).toISOString() : null,
+        completedAt: selected.completedAt ? new Date(selected.completedAt).toISOString() : null,
+      };
+    }
+    return { execution, latestAttempt: row.latestAttempt ? {
       ...row.latestAttempt,
       createdAt: new Date(row.latestAttempt.createdAt!).toISOString(),
       startedAt: row.latestAttempt.startedAt ? new Date(row.latestAttempt.startedAt).toISOString() : null,

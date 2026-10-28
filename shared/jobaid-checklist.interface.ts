@@ -34,6 +34,26 @@ export interface JobAidChecklistBinding {
   };
 }
 
+/** Browser display only. The task's goal and runtime/control context are excluded. */
+export type JobAidChecklistDefinitionView = Pick<JobAidChecklistBinding,
+  'definitionId' | 'definitionVersion' | 'definitionContentHash' | 'contractVersion' | 'definition'>;
+export interface JobAidChecklistSnapshotView extends JobAidChecklistDefinitionView {
+  selection: JobAidChecklistBinding['selection'];
+  acceptance: JobAidChecklistBinding['acceptance'];
+}
+
+export interface JobAidChecklistTaskRead {
+  status: 'AVAILABLE' | 'NOT_PREPARED' | 'NOT_BOUND' | 'UNSUPPORTED' | 'INVALID';
+  snapshot: JobAidChecklistSnapshotView | null;
+}
+
+export interface JobAidChecklistDefinitionRead {
+  schemaVersion: 'wiselink.checklist-definition-read.v1';
+  source: 'HOST_RELEASE';
+  management: 'READ_ONLY_RELEASE_MANAGED';
+  current: JobAidChecklistDefinitionView;
+}
+
 export interface JobAidChecklistResult {
   itemId: JobAidChecklistItemId;
   itemApplicability: 'APPLICABLE' | 'NOT_APPLICABLE' | 'UNDETERMINED';

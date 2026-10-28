@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { projectTaskChecklist } from '../canonical-host/jobaid-checklist-reading';
 import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import { Injectable, Logger } from '@nestjs/common';
@@ -56,7 +57,7 @@ export class ReviewAttemptDispatchService {
   async readExecution(
     input: ReviewExecutionBinding,
     metadataOnly=false,
-  ): Promise<ActionAttemptRow | null> {
+  ): Promise<(ActionAttemptRow & { checklistContext?: unknown }) | null> {
     const row = await this.repository.readLatestByExactIdempotency({
       tenantId: input.tenantId,
       idempotencyKey: reviewTurnIdempotencyKey(input),
@@ -104,6 +105,10 @@ export class ReviewAttemptDispatchService {
     if (!row && !input.executionRequested) return null;
     return {
       status: row ? executionStatus(row.status) : 'REQUESTED',
+      ...(row?.checklistContext === undefined ? {} : { checklist: projectTaskChecklist(row.checklistContext, {
+        workItemId: input.workItemId, attemptId: row.attemptId, taskType: REVIEW_TASK_TYPE,
+        reviewTurnRef: input.reviewTurnId, reviewConversationRef: input.reviewConversationId,
+      }) }),
       attemptRef: row?.operationRef ?? null,
       requestedAt: input.executionRequested
         ? input.createdAt.toISOString()

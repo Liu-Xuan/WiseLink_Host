@@ -108,6 +108,20 @@ export function projectionOwnerToSubjectKind(ownerKind: string): 'WORK_ITEM' | '
   return null;
 }
 
+/** The same saved-work corpus is used by indexed and authorized direct search. */
+export function buildWorkIssueSearchText(content: JobAidProblemWorkContent,
+  issue: JobAidProblemWorkContent['issues'][number], fallbackTitle: string): EngineeringSearchText {
+  const text = [content.headline, content.listBrief, content.understanding,
+    content.completionReason, issue.question, issue.body,
+    ...(issue.riskScenarios ?? []).map(item => `${item.scenario}\n${item.conditions.join(' ')}\n${item.limitations.join(' ')}\n${item.controlComparison}`),
+    ...(issue.measures ?? []).map(item => `${item.text}\n${item.addresses}\n${item.limitations.join(' ')}`),
+    ...(issue.openQuestions ?? []).map(item => `${item.question}\n${item.affects}\n${item.nextEvidence}\n${item.reason}`),
+    ...(issue.requirementHandling ?? []).map(item => `${item.requirement}\n${item.conditions.join(' ')}\n${item.explanation}`),
+    ...(issue.otherClassifications ?? []).map(item => `${item.value}\n${item.reason}`),
+  ].filter(Boolean).join('\n');
+  return buildEngineeringSearchText(text, [issue.issueKey || fallbackTitle]);
+}
+
 /** Builds only derived rows; callers persist them after a successful work CAS. */
 export function buildWorkSearchProjection(input: {
   ownerKind: 'USER' | 'MATTER'; ownerId: string; subjectId: string; exactRevisionRef: string;
@@ -115,18 +129,10 @@ export function buildWorkSearchProjection(input: {
 }): EngineeringSearchProjectionEntry[] {
   return input.content.issues.map((issue, index) => {
     const title = issue.issueKey || `issue-${index + 1}`;
-    const text = [input.content.headline, input.content.listBrief, input.content.understanding,
-      input.content.completionReason, issue.question, issue.body,
-      ...(issue.riskScenarios ?? []).map(item => `${item.scenario}\n${item.conditions.join(' ')}\n${item.limitations.join(' ')}\n${item.controlComparison}`),
-      ...(issue.measures ?? []).map(item => `${item.text}\n${item.addresses}\n${item.limitations.join(' ')}`),
-      ...(issue.openQuestions ?? []).map(item => `${item.question}\n${item.affects}\n${item.nextEvidence}\n${item.reason}`),
-      ...(issue.requirementHandling ?? []).map(item => `${item.requirement}\n${item.conditions.join(' ')}\n${item.explanation}`),
-      ...(issue.otherClassifications ?? []).map(item => `${item.value}\n${item.reason}`),
-    ].filter(Boolean).join('\n');
     return { entryId: `${input.exactRevisionRef}:issue:${issue.issueKey || index + 1}`,
       ownerKind: input.ownerKind, ownerId: input.ownerId, exactRevisionRef: input.exactRevisionRef,
       entryKind: 'WORK', locatorRef: `issues[${index}]`, parentContextRef: input.subjectId, title,
-      search: buildEngineeringSearchText(text, [issue.issueKey || title]) };
+      search: buildWorkIssueSearchText(input.content, issue, title) };
   });
 }
 

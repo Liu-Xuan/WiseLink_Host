@@ -11,6 +11,7 @@ import type { SummaryActor } from './derived-summary-members.service';
 import { retryWikiDemand } from './hierarchical-wiki-demand';
 import {
   lockWikiBranch,
+  lockWikiRoots,
   storeWikiDemand,
   type WikiRow,
 } from './hierarchical-wiki.persistence';
@@ -184,6 +185,11 @@ export async function reconcileWikiReservations(
     )
       closed.push({ row, attempt });
   }
+  // Both callers refresh all owner roots afterwards. Acquire that common root
+  // order only after the complete attempt pass, before any local branch lock;
+  // otherwise two exact-target updates can each hold a different root and
+  // deadlock when expanding to refresh. The maintained targets stay unchanged.
+  if (closed.length) await lockWikiRoots(database, owner);
   for (const item of closed) {
     const locked: WikiRow = await lockWikiBranch(database, item.row);
     if (

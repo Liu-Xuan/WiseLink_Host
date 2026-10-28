@@ -1,4 +1,5 @@
 import { libraryGraphHttpRequest } from './canonical-library-graph';
+import { currentChecklistDefinition } from './jobaid-checklist-reading';
 import { libraryAircraftModelsQuery, LIBRARY_CATALOG_PAGED_QUERY_BUDGET } from '@shared/library-aircraft-mentions';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import {
@@ -72,6 +73,13 @@ export class CanonicalHostController {
         ['preview', 'runtime'].includes(actor.env) &&
         actor.roles.includes(CANONICAL_DEVELOPMENT_ROLE_ID),
     };
+  }
+
+  /** Authenticated display of this Host release's authored definition; no activation or task creation. */
+  @Get('checklist-definition')
+  checklistDefinition(@Req() request: Request) {
+    hostActor(request);
+    return currentChecklistDefinition();
   }
 
   @Post('work-items/parse-pdf')

@@ -1,4 +1,5 @@
 import JobAidExecutionActivity from './JobAidExecutionActivity';
+import { SavedChecklist, TaskChecklist } from '@client/src/features/checklist/ChecklistPanel';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getCanonicalHostClientSessionGeneration } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
@@ -158,6 +159,7 @@ export function JobAidProblemReading({
   );
   const [selectedIssue, setSelectedIssue] = useState<string | null>(initialIssueKey ?? null);
   const nodes = useRef(new Map<string, HTMLElement>());
+  const pendingIssueLocation = useRef<{ issueKey: string; workRevisionRef: string } | null>(null);
   const current = data.current;
   const allowed = initialAnalysis?.continuationOperations ?? [];
   const stoppedResultPending: boolean = !!data.activity?.consumerStopped &&
@@ -197,6 +199,7 @@ export function JobAidProblemReading({
   );
   const execution = data.executionStatus ? (
     <>
+      <TaskChecklist checklist={data.selectedExecution?.checklist} />
       {data.selectedExecution?.executionMode === 'PROGRAM_CONTROLLED_V1' ? <p>
         本轮程序评估 · 自主调查未启用
         {data.selectedExecution.executionModel ? ` · 本次模型：${data.selectedExecution.executionModel.displayName}` : ''}
@@ -243,6 +246,7 @@ export function JobAidProblemReading({
       </section>
     );
   const content = current.content;
+  const workRevisionRef = current.workRevisionRef;
   const reading = jobAidReadingResult(current);
   const overallMatches: boolean = Boolean(
     overall?.readingResult &&
@@ -252,12 +256,20 @@ export function JobAidProblemReading({
     data.overallBasedOnWorkRevisionRef === current.workRevisionRef,
   );
   function locateIssue(issueKey: string): void {
+    // Checklist links also exist outside the issues tab; finish when its exact target mounts.
+    pendingIssueLocation.current = { issueKey, workRevisionRef };
+    setTab('issues');
     setSelectedIssue(issueKey);
     onIssueSelect?.(issueKey);
-    nodes.current
-      .get(issueKey)
-      ?.scrollIntoView({ block: 'start', behavior: 'auto' });
-    nodes.current.get(issueKey)?.focus({ preventScroll: true });
+    const node = nodes.current.get(issueKey);
+    if (node) {
+      pendingIssueLocation.current = null;
+      focusIssue(node);
+    }
+  }
+  function focusIssue(node: HTMLElement): void {
+    node.scrollIntoView({ block: 'start', behavior: 'auto' });
+    node.focus({ preventScroll: true });
   }
   const issueIndex: ReactNode = content.issues.length ? (
     <nav className="wl-jobaid-index" aria-label="实际问题目录">
@@ -289,8 +301,14 @@ export function JobAidProblemReading({
           data-issue-key={issue.issueKey}
           tabIndex={-1}
           ref={(node) => {
-            if (node) nodes.current.set(issue.issueKey, node);
-            else nodes.current.delete(issue.issueKey);
+            if (node) {
+              nodes.current.set(issue.issueKey, node);
+              const pending = pendingIssueLocation.current;
+              if (pending?.issueKey === issue.issueKey && pending.workRevisionRef === workRevisionRef) {
+                pendingIssueLocation.current = null;
+                focusIssue(node);
+              }
+            } else nodes.current.delete(issue.issueKey);
           }}
         >
           <JobAidIssueArticle
@@ -341,6 +359,9 @@ export function JobAidProblemReading({
           对象输入已变化。以下保留原工作版本的判断和条件，需按新输入继续核对。
         </p>
       ) : null}
+      <SavedChecklist work={content} workRef={current.workRevisionRef}
+        onIssue={locateIssue} renderEvidence={refs => <JobAidEvidenceDetails refs={refs}
+          evidence={content.evidence} onLocateDocument={onLocateDocument} />} />
       {data.overallStatus === 'STALE' ? (
         <p role="status" className="wl-jobaid-notice">
           问题认识已有更新；整体意见仍基于较早的工作版本。新分析没有被旧整体意见替代。

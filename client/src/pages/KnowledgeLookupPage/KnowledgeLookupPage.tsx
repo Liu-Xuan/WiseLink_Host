@@ -1,3 +1,4 @@
+import { SavedChecklist } from '@client/src/features/checklist/ChecklistPanel';
 import TdmsSourceEntry from '@client/src/features/tdms-source/TdmsSourceEntry';
 import { TDMS_SOURCE_UI_ENABLED } from '@client/src/features/tdms-source/tdms-source-enabled';
 import { savedTdmsSourceRefs } from '@client/src/features/tdms-source/saved-tdms-source-refs';
@@ -14,7 +15,7 @@ import { isRevokedMatterError } from '@client/src/features/matter/matter-read-er
 import EngineeringIssueBody from '@client/src/features/matter/EngineeringIssueBody';
 import { compactReadingSummary } from '@client/src/features/matter/compact-reading-summary';
 import { JobAidIssueArticle } from '@client/src/pages/DocumentParsingPage/JobAidIssueArticle';
-import { SavedJobAidMethodNotice } from '@client/src/features/matter/SavedJobAidReadingContext';
+import { SavedJobAidMethodNotice, JobAidEvidenceDetails } from '@client/src/features/matter/SavedJobAidReadingContext';
 import { exactDocumentSourceRoute, matterWorkRoute } from '@client/src/features/matter/matter-navigation';
 import { knowledgeReadingParams, knowledgeReadingIdentity } from '@client/src/features/matter/reading-return';
 import {
@@ -412,6 +413,9 @@ function KnowledgeCatalogue({ sourceIdentityReady, sourceIdentityError, retrySou
             <p className="whitespace-pre-wrap">{read.entry.listBrief}</p>
           </details>}
           <SavedJobAidMethodNotice work={read.content} />
+          {read.entry.subjectKind === 'WORK_ITEM' ? <SavedChecklist work={read.content} workRef={read.entry.workRef}
+            onIssue={openIssue} renderEvidence={refs => <JobAidEvidenceDetails refs={refs}
+              evidence={read.content.evidence} onLocateDocument={locate} />} /> : null}
           {read.entry.subjectKind === 'ENGINEERING_MATTER' && read.entry.overviewStatus !== 'CURRENT' &&
             <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
           {read.entry.subjectKind === 'WORK_ITEM' && (read.overall ? <section className="knowledge-prose" aria-label="确切综合意见">

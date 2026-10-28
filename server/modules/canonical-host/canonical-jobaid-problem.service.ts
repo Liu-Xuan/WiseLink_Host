@@ -3192,6 +3192,7 @@ export class CanonicalJobAidProblemService {
       current,
       latestAttempt,
       selectedExecution: execution ? {
+        ...(execution.checklist ? { checklist: execution.checklist } : {}),
         actionType: execution.actionType,
         executionMode: execution.executionMode ?? null,
         executionModel: execution.executionModel ?? null,

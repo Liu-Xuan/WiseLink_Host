@@ -92,6 +92,22 @@ function target(sessions?: SessionResolver) {
 }
 
 describe('CanonicalHostController assessment actions', () => {
+  it('reads this release checklist with native browser identity and no business service calls', () => {
+    const h = target();
+    const read = h.controller.checklistDefinition(HOST_REQUEST as never);
+    expect(read).toMatchObject({ schemaVersion: 'wiselink.checklist-definition-read.v1',
+      source: 'HOST_RELEASE', management: 'READ_ONLY_RELEASE_MANAGED' });
+    expect(read.current.definition.items.length).toBeGreaterThan(0);
+    expect(read.current).not.toHaveProperty('goal');
+    let denial: unknown = undefined;
+    try { h.controller.checklistDefinition({} as never); } catch (error) { denial = error; }
+    expect(denial).toBeInstanceOf(Error);
+    expect(denial).toMatchObject({ code: 'CANONICAL_IDENTITY_HANDOFF_UNAVAILABLE', statusCode: 503,
+      denialSource: 'MIAODA_BROWSER_UNAVAILABLE_ADAPTER' });
+    for (const service of [h.service, h.workItems, h.engineerReviews, h.integratedAssessments, h.aeo, h.libraryIndex])
+      for (const method of Object.values(service)) expect(method).not.toHaveBeenCalled();
+  });
+
   describe('document parsing native request identity', () => {
     function pageHarness(sessions?: SessionResolver) {
       const h = target(sessions);

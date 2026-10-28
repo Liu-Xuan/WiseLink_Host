@@ -93,6 +93,7 @@ it('keeps the latest dynamic evaluation distinct from a selected overall run', a
   expect(result.executionStatus).toBe('RUNNING');
   expect(result.latestAttempt).toEqual({ attemptId: 'dynamic-attempt', status: 'SUCCEEDED', inputRevision: 2 });
   expect(result.selectedExecution).toEqual({ actionType: 'OPENCLAW_OVERALL_SYNTHESIS', attemptId: 'overall-attempt',
+    executionMode: null, executionModel: null, programMaterialsAvailable: false, programProgress: null,
     attemptRef: 'exact-persisted-overall-ref', status: 'RUNNING', createdAt: execution.createdAt, startedAt: null, completedAt: null });
   expect(result.selectedExecution).not.toHaveProperty('activityJson');
   expect(result.selectedExecution).not.toHaveProperty('requestId');

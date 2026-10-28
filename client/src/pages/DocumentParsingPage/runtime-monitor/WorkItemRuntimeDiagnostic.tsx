@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { TaskChecklist } from '@client/src/features/checklist/ChecklistPanel';
 import type { JobAidWorkingReadState } from '../useJobAidWorkingRead';
 import { adaptJobAidWorkingRead, savedNativeObservations, type JobAidWorkingObservation, type SavedNativeObservation } from './adapt-jobaid-working-read';
 import { tdmsSourceVersionLabel } from '@/features/tdms-source/tdms-source-presentation';
@@ -155,6 +156,10 @@ export default function WorkItemRuntimeDiagnostic({
           }
         }}
       />
+      <TaskChecklist checklist={read.data?.workItemId === workItemId ? read.data.selectedExecution?.checklist : undefined} />
+      {work ? <button type="button" className="my-2 underline" onClick={() => onOpenWorkRevision(work.workRevisionRef)}>
+        阅读工作修订 {work.workRevision} 的检查单与结果
+      </button> : null}
       {work && selectedSource ? <SavedNativeDetail observation={selectedSource} work={work} onClose={() => setSelected(null)} /> : null}
     </section>
   );

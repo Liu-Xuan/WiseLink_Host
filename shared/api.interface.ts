@@ -238,6 +238,8 @@ export interface ReviewRuntimeActivity {
 }
 
 export interface ReviewTurnExecutionReadModel {
+  /** Definition only; no prior work body or execution authority is exposed. */
+  checklist?: import('./jobaid-checklist.interface').JobAidChecklistTaskRead;
   status: CanonicalOverallRegenerationExecutionStatus;
   attemptRef: string | null;
   requestedAt: string | null;

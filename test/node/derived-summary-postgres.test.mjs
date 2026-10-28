@@ -81,8 +81,10 @@ test('owned PG Wiki unclaimed hard-deadline reconciliation', { timeout: 120000, 
             evidence.finishTerminalCasSqlObserved = true;
         },
       }));
-    assert.equal(evidence.cases.length, 8);
-    assert.equal(evidence.lockWaits.length, 2);
+    assert.equal(evidence.cases.length, 12);
+    assert.equal(evidence.lockWaits.filter(wait => wait.table === 'action_attempt').length, 1);
+    assert.equal(evidence.lockWaits.filter(wait => wait.table === 'derived_summary').length, 1);
+    assert.equal(evidence.lockWaits.filter(wait => wait.table === 'hierarchical_wiki_scope').length, 1);
     assert.equal(evidence.actionAttemptRowLockSqlObserved, true);
     assert.equal(evidence.finishTerminalCasSqlObserved, true);
   } catch (error) {

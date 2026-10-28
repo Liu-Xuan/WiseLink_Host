@@ -10,6 +10,7 @@ const { McpServer } = require('@modelcontextprotocol/server');
 const { CanonicalHostOpenClawMcpService } = require('../../server/modules/canonical-host/canonical-host-openclaw-mcp.service.ts');
 const { sealResultEnvelope } = require('../../server/modules/action-attempt/action-attempt-envelope.ts');
 const { CANONICAL_EXECUTION_MODEL_V2_ENV } = require('../../server/modules/model-settings/canonical-model-output-budget.ts');
+const { ReviewAttemptDispatchService } = require('../../server/modules/action-attempt/review-attempt-dispatch.service.ts');
 async function captureModel(f) {
   // The base model-settings DDL denies authenticated reads until the existing
   // 0057 tenant policy is installed, as in the real browser reservation path.
@@ -81,6 +82,17 @@ test('CODEX c5: real shared preview, SAVE, exact saved body READ, successor Over
     const original=f.proposal(initial);
     const checklist=initial.task.modelInput.checklistBinding;
     assert.ok(checklist, 'actual new PROGRAM task must seal RC1');
+    const beforeBrowser=await f.snapshot();
+    const initialBrowser=await f.withBrowser(()=>f.problem.readBrowser(wi,f.actor));
+    assert.equal(initialBrowser.current,null,'the first task has no saved results to substitute');
+    assert.equal(initialBrowser.selectedExecution.attemptId,initial.task.actionAttemptId);
+    assert.equal(initialBrowser.selectedExecution.checklist.status,'AVAILABLE');
+    assert.deepEqual(initialBrowser.selectedExecution.checklist.snapshot.definition,checklist.definition);
+    assert.deepEqual(initialBrowser.selectedExecution.checklist.snapshot.selection,checklist.selection);
+    assert.deepEqual(initialBrowser.selectedExecution.checklist.snapshot.acceptance,checklist.acceptance);
+    assert.equal('goal' in initialBrowser.selectedExecution.checklist.snapshot,false);
+    assert.equal('checklistContext' in initialBrowser.selectedExecution,false);
+    assert.deepEqual(await f.snapshot(),beforeBrowser,'task checklist browsing must not create SAVE/READ/progress/lease changes');
     if(checklist) {
       original.issues[0].methodUsage=[];
       const source=initial.task.modelInput.sourceCatalog.find(item=>item.kind==='DOCUMENT_PASSAGE');
@@ -128,6 +140,20 @@ test('CODEX c5: real shared preview, SAVE, exact saved body READ, successor Over
     assert.equal(claim.task.modelInput.executionPolicy.executor,'CODEX');
     assert.equal(Object.keys(claim.task.modelInput.executionPolicy).length,7);
     const task=claim.task.modelInput.jobAidContext;
+    const reviewDispatch=new ReviewAttemptDispatchService(f.attemptRepository,f.attempts,f.modelSettings);
+    const beforeReviewBrowser=await f.snapshot();
+    const reviewBrowser=await f.withBrowser(()=>reviewDispatch.executionProjection({
+      tenantId:f.tenantId,actorId:f.actorUserId,workItemId:wi,
+      reviewConversationId:turn.reviewConversationId,reviewTurnId:turn.reviewTurnId,
+      inputRevision:turn.inputRevision,executionRequested:true,createdAt:turn.createdAt,
+    }));
+    assert.equal(reviewBrowser.checklist.status,'AVAILABLE');
+    assert.deepEqual(reviewBrowser.checklist.snapshot.definition,task.previousWork.content.checklistBinding.definition);
+    assert.deepEqual(reviewBrowser.checklist.snapshot.selection,task.previousWork.content.checklistBinding.selection);
+    assert.equal('goal' in reviewBrowser.checklist.snapshot,false);
+    for(const privateField of ['taskEnvelopeJson','checklistContext','leaseToken','actorUserId','previousWork'])
+      assert.equal(privateField in reviewBrowser,false);
+    assert.deepEqual(await f.snapshot(),beforeReviewBrowser,'Review checklist browsing must not reserve or write activity');
     const delta={...original,issues:[{...original.issues[0],body:original.issues[0].body+' Synthetic explicit clarification.'}],
       changeSummary:'Synthetic explicit clarification of the scoped issue.'};
     const candidate={schemaVersion:'wiselink.3_1.review_turn_candidate.v1.c5',mode:'INTERACTIVE_REVIEW',
@@ -178,6 +204,13 @@ test('CODEX c5: real shared preview, SAVE, exact saved body READ, successor Over
     assert.equal(read.revision.previousWorkRevisionRef,task.previousWork.workRevisionRef);
     assert.equal(read.revision.requestId,`review-turn:${turn.reviewTurnId}`);
     assert.deepEqual(await f.snapshot(),afterSave,'saved body READ must be independently no-write');
+    const historicalBrowser=await f.withBrowser(()=>f.problem.readBrowserKnowledgeRevision(wi,save.workRevisionRef,f.actor));
+    assert.equal(historicalBrowser.revision.workRevisionRef,save.workRevisionRef);
+    assert.deepEqual(historicalBrowser.revision.content.checklistBinding,originalRead.revision.content.checklistBinding);
+    assert.deepEqual(historicalBrowser.revision.content.checklistResults,originalRead.revision.content.checklistResults);
+    assert.equal(historicalBrowser.revision.content.issues[0].body,originalRead.revision.content.issues[0].body);
+    assert.notEqual(historicalBrowser.revision.content.issues[0].body,read.revision.content.issues[0].body);
+    assert.deepEqual(await f.snapshot(),afterSave,'exact historical browser reading must not write or substitute current results');
     await assert.rejects(call('read_review_saved_work',{...readArgs,workRevisionRef:save.workRevisionRef}),/BINDING_MISMATCH/u);
     await assert.rejects(call('validate_review_turn_candidate',request),/SUCCEEDED/u);
     // Queue discovery starts as the real service SQL identity, not in the

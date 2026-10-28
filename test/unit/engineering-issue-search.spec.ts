@@ -1,4 +1,6 @@
 import { Logger } from '@nestjs/common';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { EngineeringIssueSearchService } from '../../server/modules/canonical-host/engineering-issue-search.service';
 import { EngineeringReadPhaseObservation } from '../../server/modules/canonical-host/engineering-read-phase-observation';
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
@@ -47,6 +49,14 @@ function setup() {
     issueKey: saved.content.issues[0].issueKey,
   };
   const db = { execute: jest.fn().mockResolvedValue([identity]) };
+  // Existing tests isolate discovery/authorization/pagination. The pure SQL
+  // matcher has its own fixture; real lexeme/filter equivalence is covered on PG.
+  const matches = jest.fn(async (_query: SQL) => saved.content.issues.map(issue => ({
+    issueKey: issue.issueKey, matchReason: 'FULL_TEXT',
+  })));
+  const database = { execute: (query: SQL) =>
+    new PgDialect().sqlToQuery(query).sql.includes('WITH authorized_issue_text')
+      ? matches(query) : db.execute(query) };
   const jobAid = {
     readBrowserRevision: jest.fn().mockImplementation(async (_id, ref) => {
       if (ref !== saved.workRevisionRef)
@@ -68,10 +78,11 @@ function setup() {
     saved,
     identity,
     db,
+    matches,
     jobAid,
     matters,
     service: new EngineeringIssueSearchService(
-      db as never,
+      database as never,
       jobAid as never,
       matters as never,
     ),
@@ -79,6 +90,37 @@ function setup() {
 }
 
 describe('authorized engineering issue search and exact expansion', () => {
+  it('discovers other creators by tenant and exact version without selecting unapproved body text', async () => {
+    const h = setup();
+    await h.service.search('工具', actor);
+    const candidate = new PgDialect().sqlToQuery(h.db.execute.mock.calls[0][0]);
+    expect(candidate.sql).not.toContain('created_by_user_id');
+    expect(candidate.sql).toContain('newer.work_revision > w.work_revision');
+    expect(candidate.sql).toContain('newer.working_revision > w.working_revision');
+    expect(candidate.sql).not.toContain("issue ->> 'question'");
+    expect(candidate.sql).not.toContain('issue::text');
+    expect(candidate.params.filter(value => value === actor.tenantId)).toHaveLength(2);
+    expect(h.matches).toHaveBeenCalledTimes(1);
+    expect(h.jobAid.readBrowserRevision.mock.invocationCallOrder[0]).toBeLessThan(h.matches.mock.invocationCallOrder[0]);
+  });
+
+  it('uses the authorized text match, not the mere presence of a discoverable identity', async () => {
+    const h = setup();
+    h.matches.mockResolvedValue([]);
+    expect((await h.service.search('absentneedle', actor)).hits).toEqual([]);
+    expect(h.jobAid.readBrowserRevision).toHaveBeenCalledTimes(1);
+    expect(h.matches).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not evaluate text after exact authorization rejects and does not hide matcher failures', async () => {
+    const h = setup();
+    h.jobAid.readBrowserRevision.mockRejectedValueOnce(new Error('JOBAID_SOURCE_AUTHORIZATION_CHANGED'));
+    expect((await h.service.search('工具', actor)).hits).toEqual([]);
+    expect(h.matches).not.toHaveBeenCalled();
+    h.matches.mockRejectedValueOnce(new Error('SEARCH_DATABASE_UNAVAILABLE'));
+    await expect(h.service.search('工具', actor)).rejects.toThrow('SEARCH_DATABASE_UNAVAILABLE');
+  });
+
   it('returns saved overview coverage with exact expansion', async () => {
     const h = setup();
     h.saved.content.overviewStatus = 'STALE';

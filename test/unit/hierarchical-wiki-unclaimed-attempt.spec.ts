@@ -20,6 +20,7 @@ const owner: SummaryActor = {
 };
 const now: string = '2026-10-14T08:00:00.000Z';
 const deadline: Date = new Date('2026-10-14T07:16:05.014Z');
+const sealedOriginalTask: string = JSON.stringify({ schemaVersion: 'synthetic-wiki-task.v1', modelInput: {} });
 const member = {
   kind: 'MATTER_WORK' as const,
   matterId: 'MAT-source',
@@ -78,7 +79,7 @@ function request(index = 1): SummaryAttempt {
     priority: 100,
     inputRevision: 0,
     baseRevision: 0,
-    taskEnvelopeJson: 'sealed-original-task',
+    taskEnvelopeJson: sealedOriginalTask,
     taskInputHash: 'a'.repeat(64),
     executionModelJson: '{"modelRef":"miaoda/glm-5.3"}',
     idempotencyKey: `request-${index}`,
@@ -145,6 +146,7 @@ function setup(count = 1) {
   const saved: Set<string> = new Set();
   const calls: Array<{ query: string; params: unknown[] }> = [];
   let onLock: (() => void) | undefined;
+  let onRegistryLock: (() => void) | undefined;
   let rejectCas: boolean = false;
   const result = (
     query: string,
@@ -154,6 +156,22 @@ function setup(count = 1) {
     if (query.includes('"action_attempt"') && query.includes('for update')) {
       onLock?.();
       return [{ id: params[0] }];
+    }
+    if (query.includes('from "action_attempt"') && query.includes('automaticWorkItemLease')) {
+      const attempt = [...attempts.values()].find(item => params.includes(item.attemptId));
+      if (!attempt) return [];
+      // Same finite control projection as withAutomaticAttemptLease, in its
+      // SELECT order. Return the real synthetic task's subfield, not a bypass.
+      const keys: Array<keyof SummaryAttempt> = ['attemptId', 'operationRef', 'tenantId', 'workItemId',
+        'actionType', 'requestOrigin', 'documentVersionId', 'leaseOwner', 'leaseToken', 'leaseGeneration',
+        'leaseExpiresAt', 'deadlineAt', 'status', 'cancelRequestedAt', 'cancelReason', 'commitStartedAt',
+        'projectionApplied', 'terminalReason'];
+      const controls = Object.fromEntries(keys.map(key => [key,
+        Object.prototype.toString.call(attempt[key]) === '[object Date]'
+          ? (attempt[key] as Date).toISOString() : attempt[key]]));
+      const task = JSON.parse(attempt.taskEnvelopeJson!);
+      return [{ ...controls, automaticLease: task.modelInput?.automaticWorkItemLease === undefined
+        ? null : JSON.stringify(task.modelInput.automaticWorkItemLease) }];
     }
     if (query.startsWith('update "action_attempt"')) {
       const attempt: SummaryAttempt | undefined = [...attempts.values()].find(
@@ -180,7 +198,15 @@ function setup(count = 1) {
         ? [{ ref: 'DSR-saved' }]
         : [];
     if (query.includes('hierarchical_wiki_runtime_owners'))
-      return [{ actorUserId: owner.actorUserId }];
+      return rows.some((row) => row.enabled && row.principalId === 'wiki-test-principal')
+        ? [{ actorUserId: owner.actorUserId }] : [];
+    if (query.includes('UPDATE hierarchical_wiki_scope SET enabled=')) {
+      for (const row of rows)
+        if (row.wikiId === params[1] || (params[2] === true
+          && row.scope.fleetFamilyId === params[5]
+          && JSON.stringify(row.scope.fleetModelIds) === params[6])) row.enabled = params[0] as boolean;
+      return [];
+    }
     if (query.includes('UPDATE hierarchical_wiki_scope SET state_json')) {
       rows.find((row: WikiRow) => row.wikiId === params[1])!.state = JSON.parse(
         params[0] as string,
@@ -188,6 +214,7 @@ function setup(count = 1) {
       return [];
     }
     if (query.includes('FROM hierarchical_wiki_scope')) {
+      if (query.includes('FOR UPDATE')) onRegistryLock?.();
       let selected: WikiRow[] = rows.filter((row: WikiRow) =>
         params.includes(row.tenantId),
       );
@@ -221,6 +248,13 @@ function setup(count = 1) {
       });
     },
   };
+  // Keep Drizzle's actual transaction and nested-savepoint code. This sink
+  // supplies only the driver's local protocol; the repository guard/CAS run.
+  const driverTransactions = {
+    begin: jest.fn(async (operation: (connection: typeof client) => Promise<unknown>) => operation(client)),
+    savepoint: jest.fn(async (operation: (connection: typeof client) => Promise<unknown>) => operation(client)),
+  };
+  Object.assign(client, driverTransactions);
   const database: PostgresJsDatabase = drizzle(client as never);
   const transaction = jest.fn(
     async (
@@ -234,7 +268,7 @@ function setup(count = 1) {
         structuredClone(attempts);
       const beforeRows: WikiRow[] = structuredClone(rows);
       try {
-        return await operation(database, owner);
+        return await database.transaction(tx => operation(tx as PostgresJsDatabase, owner));
       } catch (error) {
         attempts.clear();
         for (const [key, attempt] of beforeAttempts) attempts.set(key, attempt);
@@ -279,7 +313,7 @@ function setup(count = 1) {
       operation: (executor: {
         database: PostgresJsDatabase;
       }) => Promise<unknown>,
-    ) => transaction(_actor, () => operation({ database })),
+    ) => transaction(_actor, db => operation({ database: db })),
   );
   const service = new HierarchicalWikiService(
     database,
@@ -307,10 +341,11 @@ function setup(count = 1) {
     service,
     summaries,
     runtimeTransaction,
+    driverTransactions,
     expire: () =>
-      transaction({}, () =>
+      transaction({}, db =>
         reconcileWikiReservations(
-          database,
+          db,
           repository as unknown as DerivedSummaryRepository,
           owner,
           rows,
@@ -319,6 +354,9 @@ function setup(count = 1) {
       ),
     onLock: (action: () => void) => {
       onLock = action;
+    },
+    onRegistryLock: (action: () => void) => {
+      onRegistryLock = action;
     },
     rejectCas: () => {
       rejectCas = true;
@@ -332,10 +370,27 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
-test('normal GET records the original unclaimed hard deadline and releases only that registry reservation', async () => {
+test.each(['QUEUED', 'FAILED', 'TIMED_OUT', 'SUCCEEDED'])(
+  'repeated GET keeps the actual %s attempt and reservation byte-for-byte without entering a writer', async status => {
+    const f = setup();
+    f.attempts.get('AQ-1')!.status = status;
+    // Native structuredClone(Map) crosses Jest's VM realm. Compare the entire
+    // persisted data (all keys/fields and ISO dates), not Map constructors.
+    const attempts = JSON.stringify([...f.attempts]), rows = JSON.stringify(f.rows);
+    await f.service.list({ userId: owner.actorUserId } as never);
+    await f.service.list({ userId: owner.actorUserId } as never);
+    expect(JSON.stringify([...f.attempts])).toBe(attempts);
+    expect(JSON.stringify(f.rows)).toBe(rows);
+    expect(f.repository.browser).not.toHaveBeenCalled();
+    expect(f.calls.every(call => !/\b(?:update|insert|delete)\b|for\s+update/iu.test(call.query))).toBe(true);
+    expect(f.summaries.reserve).not.toHaveBeenCalled();
+  },
+);
+
+test('explicit owner pause records the original unclaimed hard deadline and releases only that reservation', async () => {
   const f = setup(),
     original: SummaryAttempt = structuredClone(f.attempts.get('AQ-1')!);
-  const listing = await f.service.list({ userId: owner.actorUserId } as never);
+  const listing = await f.service.update('DS-1', { enabled: false }, { userId: owner.actorUserId } as never);
   expect(f.attempts.get('AQ-1')).toEqual({
     ...original,
     status: 'TIMED_OUT',
@@ -366,10 +421,29 @@ test('normal GET records the original unclaimed hard deadline and releases only 
   expect(
     f.calls.find((call) => call.query.includes('for update'))!.params,
   ).toEqual([original.attemptId, owner.tenantId, owner.actorUserId]);
+  expect(f.driverTransactions.begin).toHaveBeenCalledTimes(1);
+  expect(f.driverTransactions.savepoint).toHaveBeenCalledTimes(1);
+  const guardRead = f.calls.findIndex(call => call.query.includes('automaticWorkItemLease'));
+  expect(guardRead).toBeGreaterThanOrEqual(0);
+  expect(guardRead)
+    .toBeLessThan(f.calls.findIndex(call => call.query.startsWith('update "action_attempt"')));
+});
+
+test('the real terminal guard rejects malformed stored automatic lease before CAS and rolls back', async () => {
+  const f = setup();
+  f.attempts.get('AQ-1')!.taskEnvelopeJson = JSON.stringify({ modelInput: {
+    automaticWorkItemLease: { requestId: 'synthetic-missing-generation' },
+  } });
+  const original = structuredClone(f.attempts.get('AQ-1')!);
+  await expect(f.expire()).rejects.toThrow('AUTO_WORK_ITEM_TASK_LEASE_BINDING_INVALID');
+  expect(f.attempts.get('AQ-1')).toEqual(original);
+  expect(f.rows[0]!.state.active?.attemptRef).toBe('AQ-1');
+  expect(f.calls.some(call => call.query.startsWith('update "action_attempt"'))).toBe(false);
 });
 
 test('normal next commits expiration and uses the existing retry window rather than re-reserving in the same tick', async () => {
   const f = setup();
+  f.rows[0]!.state.dueAt = '2026-10-15T08:00:00.000Z';
   expect(await f.service.next(now)).toEqual({ status: 'IDLE' });
   expect(f.attempts.get('AQ-1')!.status).toBe('TIMED_OUT');
   expect(f.rows[0]!.state.active).toBeNull();
@@ -380,7 +454,7 @@ test('normal next commits expiration and uses the existing retry window rather t
   expect(f.summaries.reserve).not.toHaveBeenCalled();
 });
 
-test('GET projects a child expiration into parent waiting metadata without inventing an inventory refresh', async () => {
+test('GET projects actual child progress and only an explicit child update exposes its expiration', async () => {
   const f = setup(2);
   f.rows[0]!.state.active = null;
   f.rows[0]!.state.waiting = [
@@ -393,13 +467,57 @@ test('GET projects a child expiration into parent waiting metadata without inven
     },
   ];
   f.rows[0]!.state.lastCheckedAt = '2026-10-14T07:41:24.322Z';
-  const listing = await f.service.list({ userId: owner.actorUserId } as never);
+  const before = await f.service.list({ userId: owner.actorUserId } as never);
+  expect(before.items[0]!.waiting[0]).toMatchObject({ status: 'QUEUED', requestId: 'wiki-2' });
+  expect(f.repository.browser).not.toHaveBeenCalled();
+  const listing = await f.service.update('DS-2', { enabled: false }, { userId: owner.actorUserId } as never);
   expect(listing.items[0]!.waiting[0]).toMatchObject({
     status: 'PENDING',
     requestId: null,
   });
   expect(listing.items[0]!.lastCheckedAt).toBe('2026-10-14T07:41:24.322Z');
   expect(f.rows[0]!.state.waiting[0]!.status).toBe('RUNNING');
+});
+
+test.each(['disabled', 'other-principal'])(
+  '%s reservation stays outside next but its owner can explicitly maintain it without changing its principal', async condition => {
+    const f = setup();
+    if (condition === 'disabled') f.rows[0]!.enabled = false;
+    else {
+      f.rows[0]!.principalId = 'original-other-principal';
+      f.attempts.get('AQ-1')!.delegatedPrincipalId = 'original-other-principal';
+    }
+    const original = structuredClone(f.attempts.get('AQ-1')!);
+    await f.service.list({ userId: owner.actorUserId } as never);
+    expect(await f.service.next(now)).toEqual({ status: 'IDLE' });
+    expect(f.attempts.get('AQ-1')).toEqual(original);
+    expect(f.repository.browser).not.toHaveBeenCalled();
+    await f.service.update('DS-1', { enabled: condition === 'disabled' }, { userId: owner.actorUserId } as never);
+    expect(f.attempts.get('AQ-1')!.status).toBe('TIMED_OUT');
+    expect(f.attempts.get('AQ-1')!.delegatedPrincipalId).toBe(original.delegatedPrincipalId);
+    expect(f.rows[0]!.state).toMatchObject({ active: null, retryCount: 1, dueAt: '2026-10-14T08:05:00.000Z' });
+    expect(f.rows[0]!.enabled).toBe(condition === 'disabled');
+    expect(f.summaries.reserve).not.toHaveBeenCalled();
+  },
+);
+
+test('explicit child maintenance does not reconcile another branch or turn a tenant read into owner authority', async () => {
+  const f = setup(2), original = structuredClone(f.attempts.get('AQ-1')!);
+  await f.service.update('DS-2', { enabled: false }, { userId: owner.actorUserId } as never);
+  expect(f.attempts.get('AQ-2')!.status).toBe('TIMED_OUT');
+  expect(f.attempts.get('AQ-1')).toEqual(original);
+  expect(f.rows[0]!.state.active?.attemptRef).toBe('AQ-1');
+  await expect(f.service.update('DS-unowned', { enabled: false }, {} as never)).rejects.toThrow('WIKI_UNAVAILABLE');
+  expect(f.attempts.get('AQ-1')).toEqual(original);
+});
+
+test('an inactive owner can read without maintenance but the original owner writer still rejects', async () => {
+  const f = setup(), original = structuredClone(f.attempts.get('AQ-1')!);
+  f.repository.browser.mockRejectedValue(new Error('DERIVED_SUMMARY_ACTOR_UNAVAILABLE'));
+  expect((await f.service.list({ userId: owner.actorUserId } as never)).items[0]!.state).toBe('QUEUED');
+  expect(f.repository.browser).not.toHaveBeenCalled();
+  await expect(f.service.update('DS-1', { enabled: false }, {} as never)).rejects.toThrow('DERIVED_SUMMARY_ACTOR_UNAVAILABLE');
+  expect(f.attempts.get('AQ-1')).toEqual(original);
 });
 
 test('a normal QUEUED request remains unchanged and renders as waiting for execution', async () => {
@@ -458,6 +576,9 @@ test.each(['RUNNING', 'COMMITTING'])(
     expect(listing.items[0]!.state).toBe('RUNNING');
     expect(f.attempts.get('AQ-1')).toEqual(original);
     expect(f.rows[0]!.state.active?.attemptRef).toBe('AQ-1');
+    await f.service.update('DS-1', { enabled: false }, { userId: owner.actorUserId } as never);
+    expect(f.attempts.get('AQ-1')).toEqual(original);
+    expect(f.rows[0]!.state.active?.attemptRef).toBe('AQ-1');
     expect(
       f.calls.some((call) => call.query.startsWith('update "action_attempt"')),
     ).toBe(false);
@@ -495,10 +616,12 @@ test.each(['QUEUED', 'SUCCEEDED', 'FAILED'])(
     f.saved.add('wiki-1');
     const original: SummaryAttempt = structuredClone(f.attempts.get('AQ-1')!);
     await f.expire();
+    await f.service.update('DS-1', { enabled: false }, { userId: owner.actorUserId } as never);
     expect(f.attempts.get('AQ-1')).toEqual(original);
     expect(f.rows[0]!.state.active?.requestId).toBe('wiki-1');
     expect(f.summaries.reserve).not.toHaveBeenCalled();
     if (status !== 'QUEUED') {
+      f.rows[0]!.enabled = true;
       expect(await f.service.next(now)).toEqual({
         status: 'ATTENTION',
         errorCodes: ['WIKI_SAVED_RESERVATION_PENDING'],
@@ -524,7 +647,7 @@ test('a rejected timeout CAS fails explicitly and the owner transaction retains 
 
 test('every attempt row lock precedes the shared Wiki root lock for multiple expired reservations', async () => {
   const f = setup(2);
-  await f.expire();
+  await f.service.update('DS-1', { enabled: false }, { userId: owner.actorUserId } as never);
   const locks = f.calls
     .map((call, index: number) => ({ ...call, index }))
     .filter((call) => call.query.includes('for update'));
@@ -539,6 +662,19 @@ test('every attempt row lock precedes the shared Wiki root lock for multiple exp
       call.query.includes('FOR UPDATE'),
   );
   expect(locks.every((call) => call.index < firstRegistryLock)).toBe(true);
+  expect(f.calls[firstRegistryLock]!.query).toContain('ORDER BY wiki_id FOR UPDATE');
+  expect(f.calls[firstRegistryLock]!.params).toEqual([owner.tenantId, owner.actorUserId]);
+});
+
+test('a changed active generation observed under the Wiki lock cannot be released by old attempt maintenance', async () => {
+  const f = setup();
+  f.onRegistryLock(() => {
+    f.rows[0]!.state.active = { ...f.rows[0]!.state.active!, attemptRef: 'AQ-new', requestId: 'wiki-new', generation: 2 };
+  });
+  await f.expire();
+  expect(f.attempts.get('AQ-1')!.status).toBe('TIMED_OUT');
+  expect(f.rows[0]!.state.active).toMatchObject({ attemptRef: 'AQ-new', requestId: 'wiki-new', generation: 2 });
+  expect(f.rows[0]!.state.retryCount).toBe(0);
 });
 
 test('tenant reading cannot reconcile another actor or tenant reservation', async () => {
@@ -595,7 +731,7 @@ test('original failure code and sealed model/input remain intact through the exi
   expect(f.attempts.get('AQ-1')!).toMatchObject({
     errorCode: 'ORIGINAL_DIAGNOSTIC',
     executionModelJson: '{"modelRef":"miaoda/glm-5.3"}',
-    taskEnvelopeJson: 'sealed-original-task',
+    taskEnvelopeJson: sealedOriginalTask,
     deadlineAt: deadline,
   });
   expect(f.rows[0]!.state.lastAttemptErrorCode).toBe('ORIGINAL_DIAGNOSTIC');

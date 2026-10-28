@@ -1,5 +1,6 @@
 import { useLayoutEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import ChecklistManager from '@client/src/features/checklist/ChecklistManager';
 import { LibrarySourceNavigation } from './LibrarySourceNavigation';
 import type { LibraryViewMode } from './library-view-mode';
 
@@ -16,10 +17,10 @@ export function LibraryWorkspaceHeader({ mode, onModeChange, children }: {
     if (navigation && actions) setSlots({ navigation, actions });
   }, []);
   const navigation = <LibrarySourceNavigation current={mode} onModeChange={onModeChange} />;
-  const actions = <details className="suite-library-actions">
+  const actions = <div className="flex items-center gap-2"><ChecklistManager /><details className="suite-library-actions">
       <summary>接收资料</summary>
       <div className="suite-library-actions-panel">{children}</div>
-    </details>;
+    </details></div>;
   if (slots) return <>{createPortal(navigation, slots.navigation)}{createPortal(actions, slots.actions)}</>;
   return <header className="library-home-header library-workspace-header">
     {navigation}{actions}

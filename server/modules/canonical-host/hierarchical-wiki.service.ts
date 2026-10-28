@@ -44,7 +44,6 @@ import {
 import {
   readActiveWikiAttempt,
   reconcileWikiReservations,
-  wikiReservationNeedsReconciliation,
   wikiRequestHasSavedRevision,
 } from './hierarchical-wiki-attempt-reconciliation';
 import {
@@ -327,10 +326,17 @@ export class HierarchicalWikiService {
     actor: CanonicalHostActor,
   ): Promise<HierarchicalWikiList> {
     await this.repository.browser(actor, async (database, owner) => {
-      await this.refresh(database, owner, new Date().toISOString());
       const rows = await wikiRows(database, owner);
       const row = rows.find((item) => item.summaryId === summaryId);
       if (!row) throw summaryError('WIKI_UNAVAILABLE', 404);
+      // Explicit owner actions maintain only their existing target scope. Keep
+      // attempt locks before refresh/Wiki locks, as in the runtime next path.
+      const targets = input.enabled !== undefined && row.scope.kind === 'FLEET'
+        ? rows.filter((item) => item.scope.fleetFamilyId === row.scope.fleetFamilyId
+          && JSON.stringify(item.scope.fleetModelIds) === JSON.stringify(row.scope.fleetModelIds))
+        : [row];
+      await reconcileWikiReservations(database, this.repository, owner, targets, new Date().toISOString());
+      await this.refresh(database, owner, new Date().toISOString());
       if (input.enabled !== undefined)
         await database.execute(sql`UPDATE hierarchical_wiki_scope SET enabled=${input.enabled}
         WHERE wiki_id=${row.wikiId} OR (${row.scope.kind === 'FLEET'} AND tenant_id=${owner.tenantId} AND actor_user_id=${owner.actorUserId}
@@ -1105,31 +1111,8 @@ export class HierarchicalWikiService {
     actor: CanonicalHostActor,
     cursor?: string,
   ): Promise<HierarchicalWikiList> {
-    // Expiration writes use the real owner's existing browser transaction;
-    // the separate tenant read remains unable to modify another owner's queue.
-    const now: string = new Date().toISOString();
-    const snapshot: { reconcile: true } | { reconcile: false; listing: HierarchicalWikiList } =
-      await this.repository.readBrowser(actor, async (database, reader) => {
-        const rows: WikiRow[] = await wikiRows(database, reader, true);
-        for (const row of rows.filter(
-          (item: WikiRow) => item.actorUserId === reader.actorUserId && item.state.active,
-        )) {
-          try {
-            const attempt: SummaryAttempt | null = await readActiveWikiAttempt(database, this.repository, row);
-            if (attempt && wikiReservationNeedsReconciliation(attempt, new Date(now)))
-              return { reconcile: true as const };
-          } catch (error) {
-            // RLS-hidden metadata cannot authorize expiration. listRows reports
-            // this exact row as blocked and keeps other readable rows available.
-            if (!(error instanceof Error) || error.message !== 'DERIVED_SUMMARY_ATTEMPT_UNAVAILABLE') throw error;
-          }
-        }
-        return { reconcile: false as const, listing: await this.listRows(rows, reader, database, cursor) };
-      });
-    if (snapshot.reconcile === false) return snapshot.listing;
-    await this.repository.browser(actor, async (database, owner) =>
-      reconcileWikiReservations(database, this.repository, owner, await wikiRows(database, owner), now),
-    );
+    // Polling and manual refresh are reads. Only next or an explicit owner
+    // update may reconcile an active reservation under the original write scope.
     return this.repository.readBrowser(actor, async (database, owner) =>
       this.listRows(await wikiRows(database, owner, true), owner, database, cursor),
     );

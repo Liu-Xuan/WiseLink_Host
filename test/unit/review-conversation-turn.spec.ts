@@ -1,5 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
+import { StaticRouter } from 'react-router-dom/server';
+import { reviewUiTurn } from './fixtures/review-ui';
 
 import type {
   ReviewConversationReadModel,
@@ -13,13 +15,36 @@ jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }), {
 import ReviewConversationTurn from '../../client/src/features/review/ReviewConversationTurn';
 
 describe('ReviewConversationTurn candidate boundary', () => {
+  it('keeps an exact saved-work link inside a deployed application basename', () => {
+    const reviewTurn = reviewUiTurn(1, true);
+    reviewTurn.assistantCandidate!.jobAidWorkingUpdate = {
+      status: 'APPLIED', workRevisionRef: 'work-exact/old?value', workRevision: 2, affectedIssueKeys: ['issue-exact'],
+    };
+    const base = '/app/synthetic-host';
+    const html = renderToStaticMarkup(createElement(StaticRouter,
+      { basename: base, location: `${base}/document-versions/DV-one` },
+      createElement(ReviewConversationTurn, { turn: reviewTurn, conversation: conversation(reviewTurn),
+        currentRevision: 7, isCurrent: true, readOnly: true })));
+    const { JSDOM } = require('jsdom');
+    const dom = new JSDOM(html);
+    try {
+      const link = [...dom.window.document.querySelectorAll('a')]
+        .find((item: HTMLAnchorElement) => item.textContent?.includes('独立读取本回合'));
+      expect(link).toBeDefined();
+      const target = new URL(link!.getAttribute('href')!, 'https://example.invalid');
+      expect(target.pathname).toBe(`${base}/knowledge`);
+      expect(Object.fromEntries(target.searchParams)).toEqual({ kind: 'works', subjectKind: 'WORK_ITEM',
+        subjectId: 'WI-1', workRef: 'work-exact/old?value' });
+    } finally { dom.window.close(); }
+  });
+
   it('labels chat as discussion, not a pending assessment', () => {
     const html = render({
       ...turn({ assistantCandidate: null }),
       purpose: 'CHAT',
     });
     expect(html).toContain('讨论答复尚未读回');
-    expect(html).toContain('未请求更新评估');
+    expect(html).toContain('此请求不更新评估');
     expect(html).not.toContain('候选尚未读回');
   });
   it('renders a missing candidate without inventing an execution state', () => {
@@ -28,8 +53,8 @@ describe('ReviewConversationTurn candidate boundary', () => {
     expect(html).toContain('data-generation-state="not-read-back"');
     expect(html).toContain('候选尚未读回');
     expect(html).toContain('未返回执行状态');
-    expect(html).toContain('WorkItem current、revision 与');
-    expect(html).toContain('STALE 状态均未因此改变');
+    expect(html).toContain('不能据此判断是否正在运行');
+    expect(html).toContain('工程师输入已经记录，候选结果尚未返回');
     expect(html).not.toContain('候选生成中');
     expect(html).not.toContain('确认修改');
   });
@@ -66,8 +91,8 @@ describe('ReviewConversationTurn candidate boundary', () => {
     expect(html).toContain('data-generation-state="candidate-ready"');
     expect(html).toContain('候选已生成 · 未采纳');
     expect(html).toContain(`title="${sourceRef}"`);
-    expect(html).toContain('候选阶段没有采纳输入，也不会修改 WorkItem current');
-    expect(html).toContain('revision 或 STALE 状态');
+    expect(html).toContain('候选输入，尚未采纳');
+    expect(html).not.toContain('确认修改');
     expect(html).toContain('Model model-1 · Skill skill-1');
   });
 
@@ -115,7 +140,8 @@ describe('ReviewConversationTurn candidate boundary', () => {
     expect(preview).toContain('查看详细差异');
     expect(preview).not.toContain('确认修改');
     expect(explicitConfirmation).toContain('确认修改');
-    expect(explicitConfirmation).toContain('不会立即得到完成结果');
+    expect(explicitConfirmation).toContain('确认后保存工程师复核记录，并安排受影响项目更新综合');
+    expect(explicitConfirmation).toContain('候选已生成 · 未采纳');
     const chat = render({ ...reviewTurn, purpose: 'CHAT' });
     expect(chat).toContain('讨论答复');
     expect(chat).not.toContain('查看详细差异');
@@ -142,22 +168,26 @@ describe('ReviewConversationTurn candidate boundary', () => {
 });
 
 function render(reviewTurn: ReviewTurnReadModel, confirming = false): string {
-  return renderToStaticMarkup(
+  const context = conversation(reviewTurn);
+  const original = structuredClone({ reviewTurn, context });
+  const actions = { onBeginConfirm: jest.fn(), onCancelConfirm: jest.fn(),
+    onRejectDraft: jest.fn(), onConfirm: jest.fn(), onLocateSourceRef: jest.fn() };
+  const html = renderToStaticMarkup(
     createElement(ReviewConversationTurn, {
       turn: reviewTurn,
-      conversation: conversation(reviewTurn),
+      conversation: context,
       currentRevision: 7,
       isCurrent: true,
       busy: false,
       confirming,
       rejected: false,
-      onBeginConfirm: () => undefined,
-      onCancelConfirm: () => undefined,
-      onRejectDraft: () => undefined,
-      onConfirm: () => undefined,
-      onLocateSourceRef: () => undefined,
+      ...actions,
     }),
   );
+  // Rendering a candidate or its confirmation detail is not an adoption action.
+  expect({ reviewTurn, context }).toEqual(original);
+  for (const action of Object.values(actions)) expect(action).not.toHaveBeenCalled();
+  return html;
 }
 
 function conversation(
