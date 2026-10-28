@@ -15,9 +15,11 @@ import {
   safeSourceRecordSummary,
   sourceBodyReadingProjection,
 } from './tdms-assessment-body-policy';
+import { documentBoundSourceRevisions } from './tdms-document-source-bindings';
+import { assertTdmsReceiverScope, tdmsReceiverExpectedScope } from './tdms-receiver-sql-context';
 import { fileServiceImport } from './tdms-file-service-import.validation';
 import { randomUUID } from 'node:crypto';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import type {
   TdmsArtifactBinding,
   TdmsCatalogueResponse,
@@ -68,10 +70,12 @@ import {
 import {
   TDMS_ARTIFACT_STORE,
   TDMS_DOCUMENT_ACCESS,
+  TDMS_FORMAL_REGISTRATION,
   TDMS_REPOSITORY,
   TDMS_SOURCE_AUTHORIZATION,
   tdmsError,
   type TdmsArtifactStore,
+  type TdmsFormalRegistrationPort,
   type TdmsCapture,
   type TdmsDocumentAccess,
   type TdmsPublicActor,
@@ -109,6 +113,7 @@ export class TdmsSourceService {
     @Inject(TDMS_ARTIFACT_STORE) private readonly artifacts: TdmsArtifactStore,
     @Inject(TDMS_DOCUMENT_ACCESS)
     private readonly documents: TdmsDocumentAccess,
+    @Optional() @Inject(TDMS_FORMAL_REGISTRATION) private readonly registration?: TdmsFormalRegistrationPort,
   ) {}
 
   async importDailyMetadata(actor: TdmsPublicActor, raw: unknown) {
@@ -229,7 +234,7 @@ export class TdmsSourceService {
       return null;
     });
     await this.recheckImport(actor, admission, claims);
-    if (prior) return prior;
+    if (prior) return this.projectDailyReceipt(actor, scope, prepared.envelope, prior, 'READ_RECORD', claims);
     const selections: TdmsArtifactSelection[] = [];
     for (const observation of prepared.envelope.package.artifactBindings) {
       // Null is retained by preparation but cannot become an invented attachment identity.
@@ -242,6 +247,7 @@ export class TdmsSourceService {
         actor,
         scope,
         packageId: prepared.envelope.requestId,
+        payloadDigest: prepared.payloadDigest,
         observation: structuredClone(observation),
       });
       if (
@@ -287,7 +293,7 @@ export class TdmsSourceService {
       return value.receipt;
     });
     await this.recheckImport(actor, admission, claims);
-    return saved;
+    return this.projectDailyReceipt(actor, scope, prepared.envelope, saved, 'READ_RECORD', claims);
   }
 
   async readDailyMetadataImport(actor: TdmsPublicActor, requestId: string) {
@@ -312,7 +318,7 @@ export class TdmsSourceService {
       'READ_HISTORY',
       saved.memberClaims,
     );
-    return { receipt: saved.receipt, package: saved.envelope.package };
+    return { receipt: await this.projectDailyReceipt(actor, grant.scope, saved.envelope, saved.receipt, 'READ_HISTORY', saved.memberClaims), package: saved.envelope.package };
   }
 
   async readDailySourceRef(actor: TdmsPublicActor, sourceRef: string) {
@@ -334,7 +340,16 @@ export class TdmsSourceService {
       saved.receipt.documentVersionMappings,
     );
     await this.checkDailyReadMembers(actor, grant, 'READ_RECORD', read.claims);
-    return read.response;
+    const visibleBindings = new Set(read.response.artifactBindings.map((binding) => binding.bindingId));
+    const projected = await this.projectDailyReceipt(actor, grant.scope, saved.envelope, saved.receipt, 'READ_RECORD', read.claims, [...visibleBindings]);
+    return { ...read.response, documentVersionMappings: projected.documentVersionMappings.filter(mapping => visibleBindings.has(mapping.bindingId)) };
+  }
+
+  private projectDailyReceipt(actor: TdmsPublicActor, scope: TdmsSourceScope,
+    envelope: Parameters<TdmsFormalRegistrationPort['project']>[2], receipt: TdmsDailyMetadataImportReceipt,
+    action: 'READ_HISTORY' | 'READ_RECORD', claims: TdmsImportMemberClaims,
+    bindingIds = envelope.package.artifactBindings.map((binding) => binding.bindingId)) {
+    return this.registration ? this.registration.project(actor, scope, envelope, receipt, {action, claims, bindingIds}) : Promise.resolve(structuredClone(receipt));
   }
 
   private requireDailyAuthorization() {
@@ -344,10 +359,12 @@ export class TdmsSourceService {
   private async dailyGrants(actor: TdmsPublicActor) {
     this.requireDailyAuthorization();
     const grants = await this.authorization.catalogue(actor, {});
+    const expectedScope = await tdmsReceiverExpectedScope();
     const result: TdmsSourceGrant[] = [];
     for (const grant of grants) {
       this.assertGrant(actor, grant);
       if (grant.scope.sourceKey !== 'TDMS') continue;
+      if (expectedScope && !sameScope(expectedScope, grant.scope)) continue;
       const existing = result.find((g) => sameScope(g.scope, grant.scope));
       if (existing && existing.permissionRevision !== grant.permissionRevision)
         throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
@@ -373,6 +390,7 @@ export class TdmsSourceService {
         grant: TdmsSourceGrant;
       }> = [];
       for (const grant of grants) {
+        await assertTdmsReceiverScope(grant.scope);
         await this.recheck(actor, grant, action, {});
         for (const row of await lookup(tx, grant.scope))
           matches.push({ row, grant });
@@ -391,6 +409,7 @@ export class TdmsSourceService {
     action: 'READ_RECORD' | 'READ_HISTORY',
     claims: TdmsImportMemberClaims,
   ) {
+    await assertTdmsReceiverScope(grant.scope);
     const authorize = this.authorization.authorizeReadMembers;
     if (!authorize)
       throw tdmsError('TDMS_READ_MEMBER_ADMISSION_UNCONFIGURED', 503);
@@ -454,6 +473,7 @@ export class TdmsSourceService {
     check(fresh);
     if (first.authorityRef !== fresh.authorityRef)
       throw tdmsError('TDMS_SOURCE_PERMISSION_CHANGED', 409);
+    await assertTdmsReceiverScope(grant.scope);
   }
 
   async catalogue(
@@ -466,6 +486,8 @@ export class TdmsSourceService {
     if (after !== undefined) identifier(after);
     if (context.documentVersionId)
       await this.documents.assertRead(actor, context.documentVersionId);
+    const sourceBindings = context.documentVersionId && this.documents.sourceBindings
+      ? await this.documents.sourceBindings(actor, context.documentVersionId) : [];
     const grants = await this.authorization.catalogue(actor, context);
     if (!grants.length)
       return {
@@ -486,15 +508,24 @@ export class TdmsSourceService {
         await this.recheck(actor, grant, 'CATALOGUE', context);
         // Each scope contributes at most one public page and its lookahead.
         // The bounded SQL seek runs before record bodies or linked-DM checks.
-        const rows: TdmsStoredRevision[] = await tx.catalogue(grant.scope, {
+        const sourceRevisionRefs = await documentBoundSourceRevisions(actor, grant.scope, sourceBindings, tx);
+        const page = {
           ...(after ? { after } : {}),
-          ...(context.documentVersionId
-            ? { documentVersionId: context.documentVersionId }
-            : {}),
+          ...(context.documentVersionId ? { documentVersionId: context.documentVersionId } : {}),
           ...(grant.permittedMembers ? { permittedRecords: grant.permittedMembers.records } : {}),
           limit: 51,
-        });
-        for (const row of rows) {
+        };
+        if (sourceRevisionRefs.length && !tx.documentVersionCatalogue)
+          throw tdmsError('TDMS_DOCUMENT_SOURCE_REPOSITORY_UNCONFIGURED', 503);
+        const rows: TdmsStoredRevision[] = sourceRevisionRefs.length
+          ? await tx.documentVersionCatalogue!(grant.scope, { ...page,
+            documentVersionId: context.documentVersionId!, sourceRevisionRefs })
+          : await tx.catalogue(grant.scope, page);
+        for (const original of rows) {
+          const row = context.documentVersionId && sourceRevisionRefs.includes(original.record.sourceRevisionRef)
+            ? { ...original, record: { ...original.record,
+              relatedDocumentVersionIds: [...new Set([...original.record.relatedDocumentVersionIds, context.documentVersionId])] } }
+            : original;
           if (!sameScope(row.scope, grant.scope))
             throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
           if (
@@ -617,7 +648,8 @@ export class TdmsSourceService {
         record.sourceRecordId,
       );
       const visible: TdmsHistoryEntry[] = [];
-      for (const row of await tx.history(root.grant.scope, record.recordRef)) {
+      for (const original of await tx.history(root.grant.scope, record.recordRef)) {
+        const row = await this.documentContextRecord(tx, actor, original, context, false);
         if (
           !sameScope(row.scope, root.grant.scope) ||
           row.record.recordRef !== record.recordRef ||
@@ -1349,12 +1381,24 @@ export class TdmsSourceService {
       stored.record.recordKind,
       stored.record.sourceRecordId,
     );
-    const projection = sourceBodyReadingProjection(stored.record);
-    stored.record = {
-      ...projection.record,
-      selectedHead: head?.sourceRevisionRef === ref,
-    };
-    return { stored, grant };
+    const bound = await this.documentContextRecord(tx, actor, stored, context, true);
+    const projection = sourceBodyReadingProjection(bound.record);
+    return { stored: { ...bound, record: { ...projection.record,
+      selectedHead: head?.sourceRevisionRef === ref } }, grant };
+  }
+  private async documentContextRecord(tx: TdmsTransaction, actor: TdmsPublicActor,
+    stored: TdmsStoredRevision, context: TdmsReadContext, requireBinding: boolean) {
+    const id = context.documentVersionId;
+    if (!id || stored.record.relatedDocumentVersionIds.includes(id)) return stored;
+    await this.documents.assertRead(actor, id);
+    const bindings = this.documents.sourceBindings ? await this.documents.sourceBindings(actor, id) : [];
+    const refs = await documentBoundSourceRevisions(actor, stored.scope, bindings, tx);
+    if (!refs.includes(stored.record.sourceRevisionRef)) {
+      if (requireBinding) throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
+      return stored;
+    }
+    return { ...stored, record: { ...stored.record,
+      relatedDocumentVersionIds: [...stored.record.relatedDocumentVersionIds, id] } };
   }
   private async authorizeEndpoint(
     tx: TdmsTransaction,

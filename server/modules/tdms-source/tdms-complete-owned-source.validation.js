@@ -1,4 +1,21 @@
-// Core pure DTO basis: TDMS final 0.2.54/runtime 174f1d555502880a.
+import { SB_NOTEBOOK_NATIVE_TABLE as sbNotebookNative } from './tdms-reviewed-sb-notebook-native-table';
+import { nativeOriginalFormat } from './tdms-native-original-formats';
+import {
+  reviewedSbHistoryPanel,
+  validateReviewedSbHistoryPurpose,
+} from './tdms-reviewed-sb-history-purpose';
+import {
+  reviewedSbNotebookPanel,
+  validateReviewedSbNotebookPurpose,
+} from './tdms-reviewed-sb-notebook-purpose';
+import { SB_ANONYMOUS_STRICT_BLANK as sbAnonymousBlank } from './tdms-reviewed-sb-anonymous-strict-blank';
+import {
+  reviewedSbNativeTreeReadStatus,
+  reviewedSbNativeTreeOccurrenceRoles,
+} from './tdms-reviewed-sb-native-tree';
+import { SB_NATIVE_LAYOUT } from './tdms-reviewed-sb-native-layout';
+import { SB_DOCUMENT_STRUCTURE_ADAPTER as sbStructure } from './tdms-reviewed-sb-document-structure-native-model';
+// Legacy pure DTO basis with selected Source0.2.92 OWNER_PRIMARY and SB/SL/MT/AD models.
 // Optional related-status source-view v1 is independent of producer version.
 // Producer admission/runtime/completion orchestration is not copied into Host.
 import {
@@ -38,10 +55,15 @@ import {
 } from './tdms-reviewed-ad-item-native-model';
 import {
   isReviewedEfRequestOwner,
+  REVIEWED_SB_DOCUMENT_NATIVE_MODEL,
+  isReviewedSbDocumentOwner,
+  validateReviewedSbDocumentModifiedMirrors,
   isReviewedEfRequestUnknownFieldCaption,
   validateReviewedCompleteTabRoster,
   validateReviewedEfRequestModifiedMirrors,
   validateReviewedAdModifiedMirrors,
+  validateReviewedAdBusinessVersion,
+  validateReviewedAdSameRowOwnBinding,
   validateReviewedCompleteTabPurposes,
   validateReviewedEfRequestGridRosters,
   validateReviewedEfRequestQueryEvidence,
@@ -252,9 +274,167 @@ function normalizeCompleteCaptureLocators(value, key = '') {
       )
     : value;
 }
+// Only content identity merges these validated native routes. Raw evidence and
+// the same-capture double-read comparison keep their original URL strings.
+function assertCompleteIdentityReadShape(proof) {
+  if (!Array.isArray(proof.reads)) fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
+  for (const read of proof.reads) {
+    if (
+      !read ||
+      typeof read !== 'object' ||
+      Array.isArray(read) ||
+      !Array.isArray(read.tabs) ||
+      !Array.isArray(read.relationTables) ||
+      [...read.tabs, ...read.relationTables].some(
+        (value) => !value || typeof value !== 'object' || Array.isArray(value),
+      )
+    )
+      fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
+    assertCompleteSbReadShape(read);
+  }
+}
+function completeTimelineIdentityRecord(record) {
+  const proof = record.rawFields?.completeOwnedSource;
+  if (!proof) return record;
+  assertCompleteIdentityReadShape(proof);
+  if (proof.requestedCriteria?.collectionStage === 'OWNER_PRIMARY') {
+    validateCompleteOwnedObservation(
+      {
+        schemaVersion: proof.schemaVersion,
+        requestedCriteria: proof.requestedCriteria,
+        documentIdentity: proof.documentIdentity,
+        nativeReloadProvenance: proof.nativeReloadProvenance,
+        reads: proof.reads,
+      },
+      proof.requestedCriteria,
+    );
+    return record;
+  }
+  if (
+    proof.reads.some((read) =>
+      read.tabs.some((tab) =>
+        tab.purposeEvidence?.before?.embeddedReferences?.some(
+          (e) => e.id === 'timelineIFrame',
+        ),
+      ),
+    )
+  )
+    validateCompleteOwnedObservation(
+      {
+        schemaVersion: proof.schemaVersion,
+        requestedCriteria: proof.requestedCriteria,
+        documentIdentity: proof.documentIdentity,
+        nativeReloadProvenance: proof.nativeReloadProvenance,
+        reads: proof.reads,
+      },
+      proof.requestedCriteria,
+    );
+  const reads = proof.reads.map((read) => ({
+    ...read,
+    tabs: read.tabs.map((tab) => {
+      const context = {
+        scopeId: proof.requestedCriteria.scopeId,
+        owner: read.owner,
+        tab,
+        read,
+      };
+      const validate = reviewedSbHistoryPanel(context)
+        ? validateReviewedSbHistoryPurpose
+        : reviewedSbNotebookPanel(context)
+          ? validateReviewedSbNotebookPurpose
+          : null;
+      if (!validate) return tab;
+      validate(tab.purposeEvidence, context);
+      const frame = (value) => ({
+        ...value,
+        embeddedReferences: value.embeddedReferences.map((embedded) => {
+          const url = new URL(embedded.rawSrc);
+          url.pathname =
+            '/Windchill/netmarkets/jsp/history/timelineHistory-iframe.jsp';
+          const { documentUrl, ...identity } = embedded;
+          return { ...identity, rawSrc: url.href };
+        }),
+      });
+      return {
+        ...tab,
+        purposeEvidence: {
+          ...tab.purposeEvidence,
+          before: frame(tab.purposeEvidence.before),
+          after: frame(tab.purposeEvidence.after),
+        },
+      };
+    }),
+  }));
+  return {
+    ...record,
+    rawFields: {
+      ...record.rawFields,
+      completeOwnedSource: { ...proof, reads },
+    },
+  };
+}
+function completeSbColumnIdentityRecord(record) {
+  const proof = record.rawFields?.completeOwnedSource;
+  if (proof) assertCompleteIdentityReadShape(proof);
+  if (
+    !proof?.reads?.some((read) =>
+      read.relationTables?.some(
+        (t) => t.nativeTreeEvidence && t.gridId === 'mytreetable',
+      ),
+    )
+  )
+    return record;
+  validateCompleteOwnedObservation(
+    {
+      schemaVersion: proof.schemaVersion,
+      requestedCriteria: proof.requestedCriteria,
+      documentIdentity: proof.documentIdentity,
+      nativeReloadProvenance: proof.nativeReloadProvenance,
+      reads: proof.reads,
+    },
+    proof.requestedCriteria,
+  );
+  const copy = JSON.parse(JSON.stringify(record));
+  for (const read of copy.rawFields.completeOwnedSource.reads) {
+    for (const table of read.relationTables)
+      if (
+        table.nativeTreeEvidence &&
+        table.gridId === 'mytreetable' &&
+        table.tabId ===
+          'infoPageinfoPanelID__infoPage_myTab_object_sbRelatedTab'
+      ) {
+        const label = 'SB处理单编号',
+          e = table.nativeTreeEvidence;
+        table.rawHeaders[5] = label;
+        e.columns[5].actualLabel = label;
+        for (const row of table.rows) row.cells[5].actualLabel = label;
+        for (const row of e.rowMetadata) row.columns[5].actualLabel = label;
+        for (const phase of e.windows) {
+          for (const row of phase.rows) row.cells[5].actualLabel = label;
+          for (const row of phase.rowMetadata)
+            row.columns[5].actualLabel = label;
+        }
+      }
+    for (const panel of read.sbNativeLayoutEvidence?.panels || [])
+      for (const key of ['before', 'after'])
+        panel[key].grids = SB_NATIVE_LAYOUT.canonicalGrids(
+          panel[key].grids,
+          panel.tabId,
+        );
+  }
+  return copy;
+}
 export function completeContentIdentityProjection(record) {
   const value = normalizeCompleteCaptureLocators(
-      withoutTimes(completeOwnedStableProjection(record)),
+      withoutTimes(
+        completeOwnedStableProjection(
+          sbNotebookNative.projectRecord(
+            completeTimelineIdentityRecord(
+              completeSbColumnIdentityRecord(record),
+            ),
+          ),
+        ),
+      ),
     ),
     proof = value.rawFields?.completeOwnedSource;
   if (proof) {
@@ -640,7 +820,25 @@ const states = new Set(EVIDENCE_STATES),
   });
 export const completeOwnedVerificationKind = (input) =>
   input?.contentMode === COMPLETE_OWN_MODE ? COMPLETE_OWN_VERIFY : null;
+function assertCompleteSbReadShape(v) {
+  // The daily snapshot path also calls this before full read validation. The
+  // Source projectors require arrays of native observations, never arbitrary
+  // caller objects. Reject malformed SB reads before invoking those helpers.
+  if (sbStructure.isOwner(v?.owner?.scopeEvidence?.businessType, v?.owner)) {
+    for (const key of ['tabs', 'fields', 'relationTables'])
+      if (
+        !Array.isArray(v[key]) ||
+        v[key].some(
+          (entry) =>
+            !entry || typeof entry !== 'object' || Array.isArray(entry),
+        )
+      )
+        fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
+  }
+}
 export function completeOwnedStableProjection(v) {
+  assertCompleteSbReadShape(v);
+  v = sbAnonymousBlank.project(sbStructure.projection(v));
   v = reviewedAdItemEfrBodySemanticProjection(
     reviewedEfStructureSemanticProjection(v),
   );
@@ -775,7 +973,17 @@ function sourceProof(v, p, input) {
 export function validateCompleteOwnedInput(raw) {
   const v = plainData(raw),
     p = completeOwnProfile(v.scopeId);
-  assertKeys(v, COMPLETE_OWN_INPUT_KEYS);
+  assertKeys(
+    v,
+    [...COMPLETE_OWN_INPUT_KEYS, 'collectionStage'],
+    COMPLETE_OWN_INPUT_KEYS,
+  );
+  if (
+    Object.hasOwn(v, 'collectionStage') &&
+    (v.collectionStage !== 'OWNER_PRIMARY' ||
+      !['SB', 'SIL', 'SB-IN', 'SL', 'MT', 'AD'].includes(v.scopeId))
+  )
+    fail('TDMS_COMPLETE_OWN_STAGE_INVALID');
   if (
     v.profileRevision !== COMPLETE_OWN_PROFILE_REVISION ||
     v.purpose !== 'COVERAGE' ||
@@ -1011,6 +1219,8 @@ export function validateCompleteOwnedOwner(
   )
     fail('TDMS_COMPLETE_OWN_OWNER_CHANGED');
   typedValue(o.businessVersionEvidence);
+  if (input.scopeId === 'AD' && o.businessVersionEvidence.actualLabel === 'AD版本')
+    validateReviewedAdBusinessVersion({ scopeId: input.scopeId, owner: o });
   if (o.businessVersion !== null)
     version(o.businessVersion, { business: true });
   const businessScope = classification
@@ -1053,7 +1263,136 @@ export function validateCompleteOwnedOwner(
     if (o.scopeEvidence[k] !== null) text(o.scopeEvidence[k], 200);
   validateReviewedAdHandlingOwner({ scopeId: input.scopeId, owner: o });
 }
+function assertOwnerPrimaryStageRoster(read) {
+  const invalid = () => fail('TDMS_COMPLETE_OWNER_PRIMARY_STAGE_INVALID');
+  const roster = read.rosterEvidence;
+  if (
+    !roster ||
+    typeof roster !== 'object' ||
+    Array.isArray(roster) ||
+    !['structuralRosters', 'unreadControls', 'unknownRequiredSurfaces'].every(
+      (key) => Array.isArray(roster[key]),
+    ) ||
+    roster.structuralRosters.some(
+      (value) =>
+        !value ||
+        typeof value !== 'object' ||
+        Array.isArray(value) ||
+        !value.before ||
+        typeof value.before !== 'object' ||
+        Array.isArray(value.before),
+    )
+  )
+    invalid();
+}
+function validateOwnerPrimaryStage(read, input) {
+  if (input.collectionStage !== 'OWNER_PRIMARY') return;
+  const invalid = () => fail('TDMS_COMPLETE_OWNER_PRIMARY_STAGE_INVALID');
+  const p = completeOwnProfile(input.scopeId),
+    details = read.tabs.filter((t) => t.panelLocator === p.detailPanel);
+  if (
+    details.length !== 1 ||
+    read.sbNativeLayoutEvidence !== undefined ||
+    read.relationTables.length ||
+    read.rosterEvidence.layoutEvidencePending !== true
+  )
+    invalid();
+  const detail = details[0],
+    rosters = read.rosterEvidence.structuralRosters;
+  const unresolved = read.fields.filter((f) =>
+    ['NOT_READ', 'NOT_LOADED', 'TRUNCATED', 'ACCESS_DENIED'].includes(
+      f.value?.state,
+    ),
+  );
+  const gated = unresolved[0],
+    stateOnly =
+      input.scopeId === 'AD' &&
+      read.owner.stateRaw === 'Estimating' &&
+      unresolved.length === 1 &&
+      gated.value.actualLabel === '' &&
+      gated.value.state === 'NOT_READ' &&
+      gated.value.rawValue === null &&
+      gated.value.observedTotalCodepoints === 0 &&
+      gated.links.length === 0 &&
+      gated.rawTextQualification?.reasonCode ===
+        'TDMS_ESTIMATING_STATE_ONLY_REQUIRED';
+  if (
+    detail.required !== true ||
+    detail.state !== (stateOnly ? 'NOT_READ' : 'VALUE') ||
+    detail.reasonCode !==
+      (stateOnly ? 'TDMS_COMPLETE_OWN_NATIVE_SURFACE_UNREAD' : null) ||
+    (!stateOnly && unresolved.length)
+  )
+    invalid();
+  if (
+    read.rosterEvidence.unreadControls.length ||
+    read.rosterEvidence.unknownRequiredSurfaces.some(
+      (locator) =>
+        !read.tabs.some(
+          (t) => t.tabId !== detail.tabId && t.panelLocator === locator,
+        ) && !(stateOnly && locator === gated.value.locator),
+    )
+  )
+    invalid();
+  if (
+    rosters.length !== 1 ||
+    rosters[0].tabId !== detail.tabId ||
+    rosters[0].before.loadingPresent ||
+    read.fields.some((f) => f.tabId !== detail.tabId) ||
+    read.sections.some((s) => s.tabId !== detail.tabId) ||
+    read.fields.length !== rosters[0].before.declaredFieldCount ||
+    read.sections.length !== rosters[0].before.declaredSectionCount
+  )
+    invalid();
+  for (const tab of read.tabs.filter((t) => t.tabId !== detail.tabId))
+    if (
+      tab.state !== 'NOT_READ' ||
+      tab.required !== true ||
+      tab.reasonCode !== 'TDMS_COMPLETE_OWNER_PRIMARY_STAGE_DEFERRED' ||
+      tab.purposeEvidence !== undefined ||
+      !read.rosterEvidence.unknownRequiredSurfaces.includes(tab.panelLocator)
+    )
+      invalid();
+  const primary = read.attachments.filter((a) => a.role === 'PRIMARY'),
+    m = primary[0]?.primaryMetadata;
+  if (
+    ['SIL', 'SB-IN'].includes(input.scopeId) &&
+    !['Approved', 'Estimated', '已批准'].includes(read.owner.stateRaw)
+  )
+    invalid();
+  if (
+    primary.length !== 1 ||
+    primary[0].state !== 'VALUE' ||
+    m?.metadataRevision !== COMPLETE_PRIMARY_METADATA_REVISION ||
+    m.metadataState !== 'VALUE' ||
+    !Array.isArray(m.metadataGapCodes) ||
+    m.metadataGapCodes.length ||
+    m.bytesCollected !== false ||
+    !nativeOriginalFormat(m.format) ||
+    read.owner.sourceVersion.confirmation !== 'SOURCE_DECLARED'
+  )
+    invalid();
+
+  // @13 AD stage has no relation rows to establish same-row business version.
+  // Preserve its exact empty-declaration fallback without importing AD queries.
+  if (input.scopeId === 'AD') {
+    const e = read.owner.businessVersionEvidence;
+    if (e.actualLabel === 'AD版本') fail('TDMS_AD_SAME_ROW_VERSION_INVALID');
+    if (
+      read.owner.businessVersion !== null ||
+      e.state !== 'NOT_READ' ||
+      e.actualLabel !== 'Business Version:' ||
+      e.rawValue !== null ||
+      e.observedTotalCodepoints !== 0 ||
+      e.locator !== p.detailPanel + ' [unreviewed-business-version-model]'
+    )
+      fail('TDMS_AD_BUSINESS_VERSION_UNREVIEWED');
+  }
+}
 function validateRoster(read, input) {
+  // This stage is prevalidated during snapshot projection, before raw roster helpers.
+  if (input.collectionStage === 'OWNER_PRIMARY')
+    assertOwnerPrimaryStageRoster(read);
   const p = completeOwnProfile(input.scopeId);
   for (const key of ['tabs', 'sections', 'fields', 'attachments'])
     array(read[key], key === 'fields' ? 1000 : 200);
@@ -1125,7 +1464,8 @@ function validateRoster(read, input) {
     read.fields.some(
       (field) =>
         Object.hasOwn(field, 'rawTextQualification') ||
-        Object.hasOwn(field, 'rawCaptionText'),
+        Object.hasOwn(field, 'rawCaptionText') ||
+        Object.hasOwn(field, 'strictBlankEvidence'),
     );
   if (qualifiedAnonymousRead)
     validateReviewedAnonymousOwnRawRead({
@@ -1146,6 +1486,7 @@ function validateRoster(read, input) {
         'links',
         'rawTextQualification',
         'rawCaptionText',
+        'strictBlankEvidence',
       ],
       [
         'fieldId',
@@ -1174,14 +1515,24 @@ function validateRoster(read, input) {
     };
     const anonymousCaption =
       qualifiedAnonymousRead && validateReviewedAnonymousOwnRawField(context);
+    if (
+      Object.hasOwn(f, 'strictBlankEvidence') &&
+      (!sbAnonymousBlank.model.scopeIds.includes(input.scopeId) ||
+        !anonymousCaption)
+    )
+      fail('TDMS_COMPLETE_SB_ANONYMOUS_STRICT_BLANK_UNPROVEN');
     if (input.scopeId === 'AD_HANDLING_FORM') {
       validateReviewedAdHandlingRawTextField(context);
-      if (Object.hasOwn(f, 'rawCaptionText'))
+      if (
+        Object.hasOwn(f, 'rawCaptionText') ||
+        Object.hasOwn(f, 'strictBlankEvidence')
+      )
         fail('TDMS_ANONYMOUS_OWN_RAW_QUALIFICATION_INVALID');
     } else if (
       !anonymousCaption &&
       (Object.hasOwn(f, 'rawTextQualification') ||
-        Object.hasOwn(f, 'rawCaptionText'))
+        Object.hasOwn(f, 'rawCaptionText') ||
+        Object.hasOwn(f, 'strictBlankEvidence'))
     )
       fail('TDMS_ANONYMOUS_OWN_RAW_QUALIFICATION_INVALID');
     const unknownCaption =
@@ -1374,11 +1725,14 @@ function validateRoster(read, input) {
     rosterEvidence: read.rosterEvidence,
     contentTabIds: read.tabs.map((t) => t.tabId),
   });
-  validateReviewedCompleteTabPurposes({
-    scopeId: input.scopeId,
-    owner: read.owner,
-    read,
-  });
+  if (input.collectionStage === 'OWNER_PRIMARY')
+    validateOwnerPrimaryStage(read, input);
+  else
+    validateReviewedCompleteTabPurposes({
+      scopeId: input.scopeId,
+      owner: read.owner,
+      read,
+    });
   const modifiedMirrors = validateReviewedEfRequestModifiedMirrors({
     scopeId: input.scopeId,
     owner: read.owner,
@@ -1415,9 +1769,26 @@ function validateRoster(read, input) {
     fields: read.fields,
     sections: read.sections,
   });
+  if (
+    isReviewedSbDocumentOwner({ scopeId: input.scopeId, owner: read.owner }) &&
+    read.tabs.some(
+      (t) => t.tabId === REVIEWED_SB_DOCUMENT_NATIVE_MODEL.detailTabId,
+    )
+  )
+    validateReviewedSbDocumentModifiedMirrors({
+      scopeId: input.scopeId,
+      owner: read.owner,
+      fields: read.fields,
+      sections: read.sections,
+    });
   bool(read.rosterEvidence.layoutEvidencePending);
   if (
     p.layoutEvidencePending &&
+    !SB_NATIVE_LAYOUT.validate({
+      scopeId: input.scopeId,
+      owner: read.owner,
+      read,
+    }) &&
     read.rosterEvidence.layoutEvidencePending !== true
   )
     fail('TDMS_COMPLETE_OWN_LAYOUT_PENDING_REQUIRED');
@@ -1734,13 +2105,28 @@ export function validateCompleteRelationTable(t, input, owner, read = null) {
     typeof t.countEvidence.rawText !== 'string'
   )
     fail('TDMS_COMPLETE_RELATION_COUNT_UNVERIFIED');
-  const efUsesStatus = isReviewedEfStructureTable(t)
-    ? validateReviewedEfStructureUsesEvidence(t.relatedSurfaceEvidence, {
-        scopeId: input.scopeId,
-        owner,
-        table: t,
-      })
+  const sbTable =
+    sbStructure.isOwner(input.scopeId, owner) &&
+    t.tableId === sbStructure.model.tableId;
+  if (sbTable && t.relatedSurfaceEvidence === undefined)
+    fail('TDMS_COMPLETE_SB_STRUCTURE_NATIVE_INVALID');
+  const sbUsesStatus = sbTable
+    ? sbStructure.validateTable(t, { scopeId: input.scopeId, owner, read })
     : null;
+  const nativeNotebook = sbNotebookNative.validateTable(t, {
+    scopeId: input.scopeId,
+    owner,
+    read,
+  });
+  const efUsesStatus =
+    sbUsesStatus ||
+    (isReviewedEfStructureTable(t)
+      ? validateReviewedEfStructureUsesEvidence(t.relatedSurfaceEvidence, {
+          scopeId: input.scopeId,
+          owner,
+          table: t,
+        })
+      : null);
   if (
     t.countEvidence.exact &&
     (efUsesStatus
@@ -1987,8 +2373,15 @@ export function validateCompleteRelationTable(t, input, owner, read = null) {
         t.terminal.allTreeNodesExpanded)
   )
     fail('TDMS_COMPLETE_RELATION_TERMINAL_INVALID');
+  const sbTreeStatus = reviewedSbNativeTreeReadStatus({
+    scopeId: input.scopeId,
+    owner,
+    table: t,
+  });
   if (
     t.enumerationState === 'VALUE' &&
+    !sbTreeStatus?.enumerationComplete &&
+    !nativeNotebook?.enumerationComplete &&
     (!contiguous ||
       !t.countEvidence.exact ||
       !t.terminal.nativeTerminal ||
@@ -2078,35 +2471,99 @@ export function validateCompleteRelationTable(t, input, owner, read = null) {
     relatedQuery?.complete !== true
   )
     fail(relatedQuery?.reasonCode || 'TDMS_EFREQUEST_RELATED_QUERY_INVALID');
-  validateReviewedEfRequestRelatedSurfaceEvidence(t.relatedSurfaceEvidence, {
-    scopeId: input.scopeId,
-    owner,
-    table: t,
-  });
-  validateReviewedAdHandlingTreeTable({
-    scopeId: input.scopeId,
-    owner,
-    table: t,
-  });
+  if (!sbTable && !nativeNotebook)
+    validateReviewedEfRequestRelatedSurfaceEvidence(t.relatedSurfaceEvidence, {
+      scopeId: input.scopeId,
+      owner,
+      table: t,
+    });
+  if (!sbTreeStatus && !nativeNotebook)
+    validateReviewedAdHandlingTreeTable({
+      scopeId: input.scopeId,
+      owner,
+      table: t,
+    });
   if (t.stopReason !== null) text(t.stopReason, 120);
   return t;
 }
 function validateRead(r, input) {
-  assertKeys(r, [
-    'owner',
-    'sourceContext',
-    'tabs',
-    'sections',
-    'fields',
-    'attachments',
-    'relationTables',
-    'rosterEvidence',
-    'observedAt',
-  ]);
+  assertKeys(
+    r,
+    [
+      'domDocumentIdentity',
+      'sbNativeLayoutEvidence',
+      'owner',
+      'sourceContext',
+      'tabs',
+      'sections',
+      'fields',
+      'attachments',
+      'relationTables',
+      'rosterEvidence',
+      'observedAt',
+    ],
+    [
+      'owner',
+      'sourceContext',
+      'tabs',
+      'sections',
+      'fields',
+      'attachments',
+      'relationTables',
+      'rosterEvidence',
+      'observedAt',
+    ],
+  );
+  if (
+    r.domDocumentIdentity !== undefined &&
+    !isReviewedSbDocumentOwner({ scopeId: input.scopeId, owner: r.owner })
+  )
+    fail('TDMS_COMPLETE_OWN_FIELDS_INVALID');
+  if (
+    r.domDocumentIdentity !== undefined &&
+    Array.isArray(r.tabs) &&
+    r.tabs.some((tab) =>
+      sbStructure.isTab({ scopeId: input.scopeId, owner: r.owner, tab }),
+    )
+  ) {
+    // A Structure-only partial read has no anonymous blank proof to bind the
+    // top document to the Source origin. Its frame must keep that same binding.
+    const binding = r.domDocumentIdentity;
+    let outer, route;
+    try {
+      outer = new URL(binding.url);
+      route = new URL(outer.hash.replace(/^#ptc1/u, ''), outer.origin);
+    } catch {
+      fail('TDMS_COMPLETE_SB_STRUCTURE_NATIVE_INVALID');
+    }
+    if (
+      Object.keys(binding).length !== 2 ||
+      !Object.hasOwn(binding, 'url') ||
+      !Object.hasOwn(binding, 'timeOrigin') ||
+      !Number.isFinite(binding.timeOrigin) ||
+      binding.timeOrigin <= 0 ||
+      outer.origin !== r.sourceContext?.sourceInstanceOrigin ||
+      outer.pathname !== '/Windchill/app/' ||
+      outer.username ||
+      outer.password ||
+      route.origin !== outer.origin ||
+      route.username ||
+      route.password ||
+      route.pathname !== '/tcomp/infoPage' ||
+      route.searchParams.getAll('oid').length !== 1 ||
+      route.searchParams.get('oid') !== r.owner.sourceRecordId
+    )
+      fail('TDMS_COMPLETE_SB_STRUCTURE_NATIVE_INVALID');
+  }
   validateCompleteOwnedOwner(r.owner, input);
   validateCompleteSourceContext(r.sourceContext);
   iso(r.observedAt);
   validateRoster(r, input);
+  SB_NATIVE_LAYOUT.validate({
+    scopeId: input.scopeId,
+    owner: r.owner,
+    read: r,
+  });
   validateReviewedAeoBusinessNumberEvidence({
     scopeId: input.scopeId,
     owner: r.owner,
@@ -2125,6 +2582,7 @@ function validateRead(r, input) {
     owner: r.owner,
     read: r,
   });
+  validateReviewedAdSameRowOwnBinding({ scopeId: input.scopeId, owner: r.owner, read: r });
   validateReviewedAdItemRead({
     scopeId: input.scopeId,
     owner: r.owner,
@@ -2180,17 +2638,24 @@ export function validateCompleteOwnedObservation(raw, rawInput) {
 export function completeOwnedTargetOccurrences(observation) {
   const read = observation.reads[1],
     out = [];
-  for (const t of read.relationTables)
+  for (const t of read.relationTables) {
+    const sbTreeRoles = reviewedSbNativeTreeOccurrenceRoles({
+      scopeId: observation.requestedCriteria.scopeId,
+      owner: read.owner,
+      table: t,
+    });
     for (const row of t.rows)
       for (const [index, link] of row.sourceLinks.entries()) {
         if (!link.targetRef) continue;
-        const treeRole = reviewedAdHandlingTreeOccurrence({
-          scopeId: observation.requestedCriteria.scopeId,
-          owner: read.owner,
-          table: t,
-          row,
-          link,
-        });
+        const treeRole =
+          sbTreeRoles?.get(row.occurrenceId) ||
+          reviewedAdHandlingTreeOccurrence({
+            scopeId: observation.requestedCriteria.scopeId,
+            owner: read.owner,
+            table: t,
+            row,
+            link,
+          });
         const adPurpose = reviewedAdItemEfrRequiredTargetPurpose({
           scopeId: observation.requestedCriteria.scopeId,
           owner: read.owner,
@@ -2255,6 +2720,7 @@ export function completeOwnedTargetOccurrences(observation) {
           locator: link.locator,
         });
       }
+  }
   for (const f of read.fields)
     for (const [index, link] of f.links.entries()) {
       if (!link.targetRef) continue;
@@ -2317,6 +2783,17 @@ export function completeOwnedRecord(raw, rawInput) {
     gaps.push('TECHNICAL_VERSION_UNCONFIRMED');
   if (read.relationTables.some((t) => t.enumerationState !== 'VALUE'))
     gaps.push('RELATION_ENUMERATION_UNVERIFIED');
+  if (
+    read.relationTables.some((table) => {
+      const status = reviewedSbNativeTreeReadStatus({
+        scopeId: input.scopeId,
+        owner,
+        table,
+      });
+      return status && !status.contentComplete;
+    })
+  )
+    gaps.push('SB_NATIVE_TREE_ROW_CONTENT_UNREAD');
   if (read.attachments.some((a) => a.role === 'PRIMARY' && a.state !== 'VALUE'))
     gaps.push('PRIMARY_METADATA_UNVERIFIED');
   if (read.rosterEvidence.layoutEvidencePending)
@@ -2512,6 +2989,15 @@ function validateCompleteStructuralRosters(read, scopeId, owner) {
         (t) =>
           !seen.has(t.tabId) &&
           !(
+            sbStructure.isTab({ scopeId, owner, tab: t }) &&
+            sbStructure.validate(t.purposeEvidence, {
+              scopeId,
+              owner,
+              tab: t,
+              read,
+            })?.complete === true
+          ) &&
+          !(
             isReviewedEfStructureTab({ scopeId, owner, tab: t }) &&
             t.purposeEvidence !== undefined
           ),
@@ -2688,7 +3174,9 @@ export function completeOwnedObservedEdges(r) {
   for (const occurrence of r.rawFields.completeOwnedSource.targetOccurrences) {
     if (
       !REF.test(occurrence.targetRef) ||
-      (occurrence.origin === 'OWN_FIELD' &&
+      ((occurrence.origin === 'OWN_FIELD' ||
+        occurrence.modelRoleOrigin ===
+          'SOURCE_PRESENTED_SB_NATIVE_NUMBER_OCCURRENCE') &&
         occurrence.relationshipRole === 'OUT_OF_SCOPE_REFERENCE') ||
       (occurrence.modelRoleOrigin === 'REVIEWED_NATIVE_TREE_MODEL' &&
         (occurrence.treePath.at(-2) !== r.sourceRecordId ||

@@ -13,9 +13,14 @@ export function createTdmsDailyHttpParser(
     '/api/tdms-source-imports';
   const parser = json({ limit: COMPLETE_OWN_REQUEST_MAX_BYTES });
   return (req, res, next) => {
+    const suffix = req.path.startsWith(path + '/')
+      ? req.path.slice(path.length)
+      : '';
+    const packageRoute =
+      /^\/[^/]+\/artifacts\/[^/]+\/(?:selection(?:\/preflight)?|registration)\/?$/u.test(suffix);
     if (
       req.method !== 'POST' ||
-      (req.path !== path && req.path !== path + '/')
+      (req.path !== path && req.path !== path + '/' && !packageRoute)
     ) {
       next();
       return;

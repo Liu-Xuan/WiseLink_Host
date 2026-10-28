@@ -1,3 +1,6 @@
+import type { TdmsArtifactSelection } from '@shared/tdms-file-service-import.interface';
+import type { TdmsUploadSelectionAssociationReceipt } from '@shared/tdms-receiver.interface';
+import type { TdmsDailyArtifactObservation } from './tdms-daily-metadata-contract';
 import type {
   TdmsAction,
   TdmsImportMemberClaims,
@@ -59,4 +62,25 @@ export interface TdmsReceiverAuthority {
   permissionRevision: string;
   action: TdmsAction;
   decision: TdmsReceiverAction;
+}
+
+export interface TdmsStoredSelection {
+  scope: TdmsSourceScope;
+  applicationScopeId: string;
+  actorSubjectId: string;
+  receiverId: string;
+  receiverRevision: number;
+  grantRevision: number;
+  permissionRevision: string;
+  payloadDigest: string;
+  packageId: string;
+  memberClaims: TdmsImportMemberClaims;
+  ownerRecord: {
+    snapshotId: string;
+    recordKind: string;
+    sourceRecordId: string;
+  };
+  observation: TdmsDailyArtifactObservation;
+  artifact: TdmsArtifactSelection;
+  receipt: TdmsUploadSelectionAssociationReceipt;
 }

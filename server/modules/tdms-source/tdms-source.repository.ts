@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { withTdmsReceiverDatabase } from './tdms-receiver-sql-context';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -26,7 +27,8 @@ export class MiaodaTdmsSourceRepository implements TdmsRepository {
   ) {}
   transaction<T>(operation: (tx: TdmsTransaction) => Promise<T>): Promise<T> {
     return this.db.transaction((db) =>
-      operation(new SqlTdmsTransaction(db as PostgresJsDatabase)),
+      withTdmsReceiverDatabase(db as PostgresJsDatabase, () =>
+        operation(new SqlTdmsTransaction(db as PostgresJsDatabase))),
     );
   }
 }
@@ -95,7 +97,8 @@ export class SqlTdmsTransaction implements TdmsTransaction {
           AND h.scope_id=v.scope_id AND h.record_ref=v.record_ref
         WHERE v.tenant_id=${s.tenantId} AND v.source_key=${s.sourceKey}
           AND v.source_instance_id=${s.sourceInstanceId} AND v.scope_id=${s.scopeId}
-          AND jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})
+          AND (jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})
+            OR v.source_revision_ref IN (SELECT jsonb_array_elements_text(${JSON.stringify(page.sourceRevisionRefs ?? [])}::jsonb)))
           ${permittedRecords(page)}
         ORDER BY v.record_ref,
           coalesce(h.source_revision_ref = v.source_revision_ref, false) DESC,

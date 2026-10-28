@@ -1,3 +1,24 @@
+import { SB_DOCUMENT_STRUCTURE_ADAPTER as sbStructure } from './tdms-reviewed-sb-document-structure-native-model';
+import {
+  reviewedSbNotebookPanel,
+  validateReviewedSbNotebookPurpose,
+} from './tdms-reviewed-sb-notebook-purpose';
+import {
+  reviewedSbAttachmentAliasPanel,
+  validateReviewedSbAttachmentAliasPurpose,
+} from './tdms-reviewed-sb-attachment-alias-purpose';
+import {
+  reviewedSbFieldsAliasPanel,
+  validateReviewedSbFieldsAliasPurpose,
+} from './tdms-reviewed-sb-fields-alias-purpose';
+import {
+  reviewedSbHistoryPanel,
+  validateReviewedSbHistoryPurpose,
+} from './tdms-reviewed-sb-history-purpose';
+import {
+  reviewedSbManagementPanel,
+  validateReviewedSbManagementPurpose,
+} from './tdms-reviewed-sb-management-purpose';
 // Pure EFRequest surface contract from the SHA-qualified 2026-10-14 code delta.
 // Native fields describe observations; they do not supply source authority.
 import { tdmsError } from './tdms-source.types';
@@ -1412,6 +1433,8 @@ export function validateReviewedEfRequestRelatedSurfaceEvidence(
       owner,
       table,
     });
+  if (scopeId === 'AD')
+    return validateReviewedAdSameRowVersionEvidence(proof, { scopeId, owner, table });
   const model = isReviewedEfRequestOwner({ scopeId, owner })
     ? REVIEWED_EFREQUEST_RELATED_MODEL.grids.find(
         (g) => g.gridId === table?.gridId,
@@ -3047,6 +3070,71 @@ export function validateReviewedCompleteTabPurposes({
   if (!Array.isArray(read?.tabs)) rejectPurpose();
   let excluded = 0;
   for (const tab of read.tabs) {
+    if (sbStructure.isTab({ scopeId, owner, tab })) {
+      const purpose = sbStructure.validate(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      if (
+        !purpose?.complete &&
+        (tab.required !== true ||
+          tab.state !== 'NOT_READ' ||
+          tab.reasonCode !== sbStructure.model.stopReason)
+      )
+        rejectPurpose();
+      continue;
+    }
+    if (reviewedSbNotebookPanel({ scopeId, owner, tab })) {
+      validateReviewedSbNotebookPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      continue;
+    }
+    if (reviewedSbAttachmentAliasPanel({ scopeId, owner, tab })) {
+      validateReviewedSbAttachmentAliasPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
+    if (reviewedSbFieldsAliasPanel({ scopeId, owner, tab })) {
+      validateReviewedSbFieldsAliasPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
+    if (reviewedSbHistoryPanel({ scopeId, owner, tab })) {
+      validateReviewedSbHistoryPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
+    if (reviewedSbManagementPanel({ scopeId, owner, tab })) {
+      validateReviewedSbManagementPurpose(tab.purposeEvidence, {
+        scopeId,
+        owner,
+        tab,
+        read,
+      });
+      excluded++;
+      continue;
+    }
     if (scopeId === 'AD_HANDLING_FORM' && tab.purposeEvidence !== undefined) {
       validateReviewedAdHandlingSurfaceEvidence(tab.purposeEvidence, {
         scopeId,
@@ -3075,7 +3163,9 @@ export function validateReviewedCompleteTabPurposes({
         rejectPurpose();
       if (
         structurePurpose?.complete &&
-        (tab.required !== true || tab.state !== 'VALUE' || tab.reasonCode !== null)
+        (tab.required !== true ||
+          tab.state !== 'VALUE' ||
+          tab.reasonCode !== null)
       )
         rejectPurpose();
       continue;
@@ -3252,7 +3342,8 @@ export function validateReviewedCompleteTabRoster({
     !(
       isReviewedEfRequestOwner({ scopeId, owner }) ||
       isReviewedAdItemOwner({ scopeId, owner }) ||
-      isReviewedAdHandlingOwner({ scopeId, owner })
+      isReviewedAdHandlingOwner({ scopeId, owner }) ||
+      isReviewedSbDocumentOwner({ scopeId, owner })
     )
   )
     reject();
@@ -3278,8 +3369,9 @@ export function validateReviewedCompleteTabRoster({
   )
     reject();
   const c = controls[0],
-    m =
-      scopeId === 'AD_HANDLING_FORM'
+    m = isReviewedSbDocumentOwner({ scopeId, owner })
+      ? REVIEWED_SB_DOCUMENT_NATIVE_MODEL
+      : scopeId === 'AD_HANDLING_FORM'
         ? REVIEWED_AD_HANDLING_NATIVE_MODEL
         : scopeId === 'AD_ITEM'
           ? REVIEWED_AD_ITEM_NATIVE_MODEL
@@ -3514,4 +3606,199 @@ export function validateReviewedAdModifiedMirrors({
   )
     error('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_CHANGED');
   return { state: 'VALUE', unreadLocators: [] };
+}
+
+export const REVIEWED_SB_DOCUMENT_NATIVE_MODEL = Object.freeze({
+  modelRevision: 'tdms-reviewed-sb-document-own-details@1',
+  scopeId: 'SB_DOCUMENT',
+  nativeClass: 'wt.doc.WTDocument',
+  nativeTypeId: 'WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument',
+  nativeHeaderType: 'SB文档',
+  detailTabId:
+    'infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails',
+  detailPanel: '#infoPage_myTab_object_docInfoDefaultDetails',
+  modifiedMirrors: [
+    {
+      sectionId: 'General',
+      sectionLabel: 'General',
+      dataStoreId: 'dataStoreGeneral',
+    },
+    {
+      sectionId: 'MoreAttributesGroup',
+      sectionLabel: 'System',
+      dataStoreId: 'dataStoreMoreAttributesGroup',
+    },
+  ],
+  evidenceRef:
+    'current-source-reload-failure-0.2.72/SL_NATIVE_LAYOUT_DECODED.json',
+  evidenceSha256:
+    '29a3e311f460aceff23095b43b98b26319e68eb0e5483f6eacd3a007c77966c2',
+  scopeIds: ['SB', 'SIL', 'SB-IN', 'SL', 'MT'],
+  rootLocator: '#infoPagemainInfoPagePanel',
+  nonContentControl: {
+    actionId: 'infoPageinfoPanelID__new_tab_action',
+    tag: 'LI',
+    classToken: 'x-tab-with-icon',
+    rawCaption: '',
+    semantic: 'NATIVE_TAB_CREATE_ACTION',
+  },
+});
+export function isReviewedSbDocumentOwner({ scopeId, owner } = {}) {
+  const m = REVIEWED_SB_DOCUMENT_NATIVE_MODEL;
+  return (
+    m.scopeIds.includes(scopeId) &&
+    nativeRef.test(owner?.sourceRecordId || '') &&
+    owner.nativeTypeId === m.nativeTypeId &&
+    owner.nativeTypeEvidence?.state === 'VALUE' &&
+    owner.nativeTypeEvidence.rawValue === m.nativeTypeId &&
+    owner.rawHeaderType === m.nativeHeaderType &&
+    owner.scopeEvidence?.businessType === scopeId
+  );
+}
+
+export function validateReviewedSbDocumentModifiedMirrors({
+  scopeId,
+  owner,
+  fields,
+  sections,
+} = {}) {
+  if (!isReviewedSbDocumentOwner({ scopeId, owner })) return false;
+  const m = REVIEWED_SB_DOCUMENT_NATIVE_MODEL,
+    rows = Array.isArray(fields)
+      ? fields.filter((f) => f?.value?.actualLabel === 'Last Modified:')
+      : [];
+  const error = (code) => {
+    throw tdmsError(code);
+  };
+  if (
+    rows.length !== 2 ||
+    m.modifiedMirrors.some((spec, index) => {
+      const f = rows[index],
+        sectionId = m.detailTabId + '::' + spec.sectionId,
+        matching = Array.isArray(sections)
+          ? sections.filter((s) => s?.sectionId === sectionId)
+          : [],
+        section = matching[0];
+      return (
+        f.tabId !== m.detailTabId ||
+        f.sectionId !== sectionId ||
+        f.labelOrigin !== 'NATIVE_SOURCE_DECLARED' ||
+        f.nativeControl?.tag !== 'TD' ||
+        f.nativeControl.readOnly !== null ||
+        f.nativeControl.disabled !== null ||
+        f.fieldId !== f.value.locator ||
+        typeof f.value.locator !== 'string' ||
+        !f.value.locator.startsWith(
+          m.detailPanel + ' #' + spec.dataStoreId + ' > ',
+        ) ||
+        !Array.isArray(f.links) ||
+        f.links.length !== 0 ||
+        matching.length !== 1 ||
+        section.tabId !== m.detailTabId ||
+        section.panelLocator !== m.detailPanel + ' #' + spec.sectionId ||
+        section.label !== spec.sectionLabel ||
+        section.sourceDeclared !== true ||
+        section.state !== 'VALUE'
+      );
+    })
+  )
+    error('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_INVALID');
+  if (rows.some((f) => f.value.state !== 'VALUE'))
+    error('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_UNREAD');
+  if (
+    typeof owner.sourceModifiedRaw !== 'string' ||
+    !owner.sourceModifiedRaw.trim() ||
+    rows.some(
+      (f) =>
+        f.value.rawValue !== owner.sourceModifiedRaw ||
+        f.value.observedTotalCodepoints !== [...owner.sourceModifiedRaw].length,
+    )
+  )
+    error('TDMS_COMPLETE_OWN_MODIFIED_MIRROR_CHANGED');
+  return { state: 'VALUE', unreadLocators: [] };
+}
+
+// Current Source0.2.92 pure AD same-row business version; no query/end or authority claim.
+export const REVIEWED_AD_NO_BUSINESS_VERSION_DECLARATIONS=Object.freeze([]);
+export function reviewedAdNoBusinessVersionDeclaration({scopeId,owner,declarations=REVIEWED_AD_NO_BUSINESS_VERSION_DECLARATIONS}={}){
+ if(scopeId!=='AD')return null;
+ const m=REVIEWED_AD_MODIFIED_MIRROR_MODEL;
+ const invalid=()=>{throw tdmsError('TDMS_AD_BUSINESS_VERSION_DECLARATION_INVALID');};
+ if(!Array.isArray(declarations))invalid();
+ if(!nativeRef.test(owner?.sourceRecordId||'')||owner.nativeTypeId!==m.nativeTypeId||owner.rawHeaderType!==m.nativeHeaderType||owner.nativeTypeEvidence?.state!=='VALUE'||owner.nativeTypeEvidence.rawValue!==m.nativeTypeId)return null;
+ const matches=declarations.filter(d=>d?.scopeId===scopeId&&d.nativeTypeId===owner.nativeTypeId&&d.nativeHeaderType===owner.rawHeaderType&&d.profileRevision==='tdms-complete-owned-profiles@1');
+ if(matches.length>1)invalid();if(!matches.length)return null;
+ const d=matches[0],keys=['scopeId','nativeTypeId','nativeHeaderType','profileRevision','businessVersionDefinition','evidenceRef','evidenceSha256','sourceDeclarationLabel','sourceDeclarationLocator'];
+ if(!exactKeys(d,keys)||d.businessVersionDefinition!=='NO_INDEPENDENT_BUSINESS_VERSION'||typeof d.evidenceRef!=='string'||!d.evidenceRef.trim()||d.evidenceRef.length>700||typeof d.evidenceSha256!=='string'||!/^[a-f0-9]{64}$/u.test(d.evidenceSha256)||typeof d.sourceDeclarationLabel!=='string'||!d.sourceDeclarationLabel.trim()||d.sourceDeclarationLabel.length>200||typeof d.sourceDeclarationLocator!=='string'||!d.sourceDeclarationLocator.trim()||d.sourceDeclarationLocator.length>700)invalid();
+ return d;
+}
+// True retains the existing compiled no-independent-business-version meaning.
+// A same-row value is decoded here, then resolved only by the read-level guard.
+export function validateReviewedAdBusinessVersion({scopeId,owner,declarations=REVIEWED_AD_NO_BUSINESS_VERSION_DECLARATIONS}={}){
+ if(scopeId!=='AD')return null;
+ const d=reviewedAdNoBusinessVersionDeclaration({scopeId,owner,declarations}),v=owner?.businessVersionEvidence;
+ if(v?.actualLabel==='AD版本'){
+  if(!adRowOwner(scopeId,owner)||!exactKeys(v,['state','actualLabel','rawValue','locator','observedTotalCodepoints'])||typeof v.locator!=='string'||!adRowModel.gridIds.some(id=>v.locator.startsWith(adRowModel.panelLocator+' #'+id+' ')))throw tdmsError('TDMS_AD_BUSINESS_VERSION_UNREVIEWED');
+  if(v.state==='BLANK'&&v.rawValue===''&&v.observedTotalCodepoints===0&&owner.businessVersion===null)return false;
+  if(v.state==='VALUE'&&typeof v.rawValue==='string'&&v.rawValue.trim()&&v.observedTotalCodepoints===[...v.rawValue].length&&adRowSame(owner.businessVersion,{rawRevision:v.rawValue,rawIteration:null,confirmation:'SOURCE_DECLARED'}))return false;
+  throw tdmsError('TDMS_AD_BUSINESS_VERSION_UNREVIEWED');
+ }
+
+ const invalid=()=>{throw tdmsError('TDMS_AD_BUSINESS_VERSION_UNREVIEWED');};
+ if(!exactKeys(v,['state','actualLabel','rawValue','locator','observedTotalCodepoints'])||owner.businessVersion!==null||v.rawValue!==null||v.observedTotalCodepoints!==0)invalid();
+ if(d){if(v.state!=='NOT_APPLICABLE'||v.actualLabel!==d.sourceDeclarationLabel||v.locator!==d.sourceDeclarationLocator)invalid();return true;}
+ if(v.state!=='NOT_READ'||v.actualLabel!=='Business Version:'||v.locator!==REVIEWED_AD_MODIFIED_MIRROR_MODEL.detailPanel+' [unreviewed-business-version-model]')invalid();
+ return false;
+}
+
+// A business value belongs to its exact native row target, never a parent by caption.
+export const REVIEWED_AD_SAME_ROW_VERSION_MODEL=Object.freeze({"modelRevision":"tdms-reviewed-ad-same-row-business-version@1","schemaVersion":"wiselink.tdms-ad-same-row-business-version.v1","scopeId":"AD","nativeTypeId":"WCTYPE|wt.doc.WTDocument|com.airchina.ADDocument","nativeHeaderType":"AD文档","tabId":"infoPageinfoPanelID__infoPage_myTab_object_adRelatedTab","panelLocator":"#infoPage_myTab_object_adRelatedTab","gridIds":["subTree","subByTree"],"columns":[{"actualLabel":"Number","nativeColumnToken":"number"},{"actualLabel":"AD编号","nativeColumnToken":"IBA|BizNo"},{"actualLabel":"AD版本","nativeColumnToken":"IBA|BizVersion"},{"actualLabel":"View Information","nativeColumnToken":"infoPageAction"},{"actualLabel":"Name","nativeColumnToken":"name"},{"actualLabel":"State","nativeColumnToken":"state"},{"actualLabel":"Created By","nativeColumnToken":"creator"},{"actualLabel":"Last Modified","nativeColumnToken":"thePersistInfo_modifyStamp"}],"evidenceRef":"native-input-closure-root-20261015/AD_SAME_ROW_VERSION_INPUT.json","evidenceSha256":"77e06d54641751b8764105f396d83899aaa34f851df41f3a11a7838b2d65cdd0","stopReason":"TDMS_COMPLETE_AD_SAME_ROW_QUERY_AND_END_UNREVIEWED","nativeCount":{"nodeTag":"SPAN","nodeClassToken":"tableCount","candidateLimit":2}});
+for(const c of REVIEWED_AD_SAME_ROW_VERSION_MODEL.columns)Object.freeze(c);Object.freeze(REVIEWED_AD_SAME_ROW_VERSION_MODEL.columns);Object.freeze(REVIEWED_AD_SAME_ROW_VERSION_MODEL.gridIds);Object.freeze(REVIEWED_AD_SAME_ROW_VERSION_MODEL.nativeCount);
+const adRowModel=REVIEWED_AD_SAME_ROW_VERSION_MODEL;
+const adRowReject=()=>queryFail('TDMS_AD_SAME_ROW_VERSION_INVALID');
+const adRowSame=(a,b)=>queryCanonical(a)===queryCanonical(b);
+function adRowOwner(scopeId,owner){const m=adRowModel;return scopeId===m.scopeId&&/^(?:OR|VR):wt\.doc\.WTDocument:\d{1,24}$/u.test(owner?.sourceRecordId||'')&&owner.nativeTypeId===m.nativeTypeId&&owner.rawHeaderType===m.nativeHeaderType&&owner.nativeTypeEvidence?.state==='VALUE'&&owner.nativeTypeEvidence.rawValue===m.nativeTypeId;}
+function adRowValue(value,label){
+ if(!exactKeys(value,['state','actualLabel','rawValue','locator','observedTotalCodepoints'])||value.actualLabel!==label||typeof value.locator!=='string'||value.locator.length>700||!value.locator.startsWith(adRowModel.panelLocator+' '))adRowReject();
+ if(['NOT_READ','NOT_LOADED','ABSENT','ACCESS_DENIED'].includes(value.state)){if(value.rawValue!==null||value.observedTotalCodepoints!==0)adRowReject();return;}
+ if(!['VALUE','BLANK'].includes(value.state)||typeof value.rawValue!=='string'||value.rawValue.length>12000||value.observedTotalCodepoints!==[...value.rawValue].length||(value.state==='BLANK')!==(value.rawValue.trim()===''))adRowReject();
+}
+const adRowCanonicalValue=value=>value.state==='BLANK'?{state:'BLANK',rawValue:'',observedTotalCodepoints:0}:{state:value.state,rawValue:value.rawValue,observedTotalCodepoints:value.observedTotalCodepoints};
+function adRowFrame(frame,table,owner){
+ const m=adRowModel;if(!exactKeys(frame,['activeTabId','panelId','gridId','columns','rows'])||frame.activeTabId!==m.tabId||frame.panelId!==m.panelLocator.slice(1)||frame.gridId!==table.gridId||!adRowSame(frame.columns,m.columns)||!Array.isArray(frame.rows)||frame.rows.length!==table.rows.length)adRowReject();
+ for(const [index,row] of frame.rows.entries()){
+  const typed=table.rows[index];if(!exactKeys(row,['occurrenceId','nativeRowId','rowLocator','rawClassName','number','businessNumber','businessVersion','name','numberLink'])||row.occurrenceId!==typed.occurrenceId||row.nativeRowId!==typed.nativeRowId||typeof row.rawClassName!=='string'||row.rawClassName.length>1000||!row.rawClassName.split(/\s+/u).includes('x-grid3-row'))adRowReject();
+  for(const [key,column] of [['number',0],['businessNumber',1],['businessVersion',2],['name',4]]){
+   adRowValue(row[key],m.columns[column].actualLabel);if(typeof row.rowLocator!=='string'||!row.rowLocator.startsWith(m.panelLocator+' #'+table.gridId+' ')||row[key].locator!==row.rowLocator+' td.x-grid3-cell[class~="x-grid3-td-'+m.columns[column].nativeColumnToken+'"]')adRowReject();const canonical=adRowCanonicalValue(row[key]),cell=typed.cells[column];
+   if(cell.actualLabel!==m.columns[column].actualLabel||cell.state!==canonical.state||cell.rawValue!==canonical.rawValue||cell.observedTotalCodepoints!==canonical.observedTotalCodepoints)adRowReject();
+  }
+  const links=typed.sourceLinks.filter(l=>l.nativeColumnToken==='number'&&l.nativeColumnLabel==='Number');if(links.length>1||!adRowSame(row.numberLink,links[0]||null))adRowReject();
+  if(row.numberLink){const link=row.numberLink;let u;try{u=new URL(link.rawHref,'http://tdms.airchina.com/Windchill/');}catch{adRowReject();}const params=new URLSearchParams(u.hash.split('?')[1]||''),target=u.searchParams.get('oid')||params.get('oid');
+   if(target!==link.targetRef||!/^(?:OR|VR):wt\.doc\.WTDocument:\d{1,24}$/u.test(target||'')||row.number.state!=='VALUE'||link.numberRaw!==row.number.rawValue.trim())adRowReject();}
+ }
+}
+export function validateReviewedAdSameRowVersionEvidence(proof,{scopeId,owner,table}={}){
+ const m=adRowModel,model=adRowOwner(scopeId,owner)&&m.gridIds.includes(table?.gridId)&&table.tabId===m.tabId&&table.panelLocator===m.panelLocator;
+ if(!model){if(proof!==undefined)adRowReject();return null;}if(proof===undefined)return{complete:false,reasonCode:'TDMS_AD_SAME_ROW_VERSION_RAW_MISSING'};
+ if(!exactKeys(proof,['schemaVersion','modelRevision','scopeId','ownerSourceRecordId','ownerSourceVersion','ownerNumber','ownStateRaw','ownerSourceModifiedRaw','nativeTypeId','tabId','panelLocator','gridId','queryReviewState','before','after','settledReads'])
+  ||proof.schemaVersion!==m.schemaVersion||proof.modelRevision!==m.modelRevision||proof.scopeId!==m.scopeId||proof.ownerSourceRecordId!==owner.sourceRecordId||!adRowSame(proof.ownerSourceVersion,owner.sourceVersion)||proof.ownerNumber!==owner.number||proof.ownStateRaw!==owner.stateRaw||proof.ownerSourceModifiedRaw!==owner.sourceModifiedRaw||proof.nativeTypeId!==m.nativeTypeId||proof.tabId!==m.tabId||proof.panelLocator!==m.panelLocator||proof.gridId!==table.gridId||proof.queryReviewState!=='NOT_READ'||proof.settledReads!==2)adRowReject();
+ if(!adRowSame(table.rawHeaders,m.columns.map(c=>c.actualLabel))||table.ownerSourceRecordId!==owner.sourceRecordId||!adRowSame(table.ownerSourceVersion,owner.sourceVersion)||table.relationshipRole!=='UNKNOWN'||table.direction!=='UNKNOWN'||table.enumerationState!=='NOT_READ'||table.stopReason!==m.stopReason||table.terminal.kind!=='UNCONFIRMED'||table.terminal.nativeTerminal||table.terminal.trueZero||table.windows.length!==1||table.treeExpansions.length)adRowReject();
+ adRowFrame(proof.before,table,owner);adRowFrame(proof.after,table,owner);if(!adRowSame(proof.before,proof.after))adRowReject();
+ return{complete:false,reasonCode:m.stopReason,rawSameRowVersionCaptured:true};
+}
+function adOwnRowCandidates({scopeId,owner,read}){
+ const rows=[],parts=owner.rawHeaderIdentifier?.split(',').map(v=>v.trim()),name=parts?.[1];if(owner.sourceVersion?.confirmation!=='SOURCE_DECLARED'||parts?.length!==3||parts[2]!==owner.sourceVersion.rawRevision+'.'+owner.sourceVersion.rawIteration)return rows;
+ for(const table of read.relationTables||[]){const proof=table.relatedSurfaceEvidence;if(proof?.schemaVersion!==adRowModel.schemaVersion)continue;
+  validateReviewedAdSameRowVersionEvidence(proof,{scopeId,owner,table});
+  for(const row of proof.after.rows)if(row.numberLink?.targetRef===owner.sourceRecordId&&row.number.state==='VALUE'&&row.number.rawValue.trim()===owner.number&&row.numberLink.numberRaw===owner.number&&row.businessNumber.state==='VALUE'&&row.businessNumber.rawValue.trim()===owner.number&&row.name.state==='VALUE'&&row.name.rawValue.trim()===name&&['BLANK','VALUE'].includes(row.businessVersion.state))rows.push(row.businessVersion);
+ }
+ return rows;
+}
+export function validateReviewedAdSameRowOwnBinding({scopeId,owner,read}={}){
+ if(scopeId!=='AD')return null;const claimed=owner?.businessVersionEvidence?.actualLabel==='AD版本',rows=adOwnRowCandidates({scopeId,owner,read});
+ const canonical=rows.map(adRowCanonicalValue);if(canonical.some(v=>!adRowSame(v,canonical[0])))adRowReject();
+ if(!claimed){if(rows.length)adRowReject();return null;}
+ if(!adRowOwner(scopeId,owner)||!rows.length)adRowReject();const mirrors=validateReviewedAdModifiedMirrors({scopeId,owner,fields:read.fields,sections:read.sections});if(mirrors?.state!=='VALUE')adRowReject();const expected={...rows[0],...canonical[0]};
+ if(!adRowSame(owner.businessVersionEvidence,expected)||expected.state==='BLANK'&&owner.businessVersion!==null||expected.state==='VALUE'&&!adRowSame(owner.businessVersion,{rawRevision:expected.rawValue,rawIteration:null,confirmation:'SOURCE_DECLARED'}))adRowReject();
+ return{state:expected.state,rawSourceValue:rows[0].rawValue,ownBusinessVersionResolved:true,complete:false};
 }

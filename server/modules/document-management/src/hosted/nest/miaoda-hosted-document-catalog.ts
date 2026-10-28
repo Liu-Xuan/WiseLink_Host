@@ -26,6 +26,26 @@ import {
 import { deterministicId } from '../../runtime/valueTools.js';
 import { isAirbusTfuFooterDescriptor } from '../../migrated/ingress/pdfPublicationEvidence.js';
 import { SessionResolver } from '../../../../identity/session-resolver.service';
+import { assertDocumentUploadAuthorityCurrent } from './document-upload-authority';
+import type { TdmsDocumentUploadBinding } from './document-upload-authority';
+import type { DocumentSourceReadProvenance } from './document-source-read.port';
+
+interface UploadAuthorityCheckpoint {
+  authority?: unknown;
+  actorUserId: string;
+  tenantId: string;
+}
+
+async function withUploadAuthorityCheckpoint<T>(
+  scope: UploadAuthorityCheckpoint | undefined,
+  database: PostgresJsDatabase,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (scope) await assertDocumentUploadAuthorityCurrent(scope.authority, scope, database);
+  const result = await operation();
+  if (scope) await assertDocumentUploadAuthorityCurrent(scope.authority, scope, database);
+  return result;
+}
 
 interface HistoricalImportScope {
   preflightId: string;
@@ -90,6 +110,79 @@ const COMPLETE_ACQUISITION_STATUSES = new Set([
   'COMMITTED_CANONICAL',
   'LINKED_EXACT_DOCUMENT_VERSION',
 ]);
+
+type DocumentReadLineage = {
+  version: typeof dmDocumentVersion.$inferSelect;
+  family: typeof dmPublicationFamily.$inferSelect;
+  artifact: typeof dmSourceArtifact.$inferSelect;
+  acquisition: typeof dmAcquisition.$inferSelect;
+  preflight: typeof dmIngressPreflight.$inferSelect | null;
+};
+
+function verifiedDocumentReadLineage(row: DocumentReadLineage, tenantId: string): boolean {
+  const { version, family, artifact, acquisition, preflight } = row;
+  if (!preflight || preflight.status !== 'COMMITTED' || !preflight.committedAt ||
+      !COMPLETE_ACQUISITION_STATUSES.has(acquisition.status) ||
+      version.familyId !== family.familyId || !family.canonicalIdentityKey.startsWith(tenantFamilyIdentityPrefix(tenantId)) ||
+      version.sourceArtifactId !== artifact.sourceArtifactId || acquisition.sourceArtifactId !== artifact.sourceArtifactId ||
+      acquisition.documentVersionId !== version.documentVersionId || preflight.documentVersionId !== version.documentVersionId ||
+      preflight.acquisitionId !== acquisition.acquisitionId ||
+      preflight.commitIdempotencyKey !== `catalog:${acquisition.acquisitionId}` ||
+      artifact.readbackVerified !== true || artifact.mediaType !== 'application/pdf' ||
+      version.pdfSha256 !== artifact.sha256 || Number(version.byteLength) !== Number(artifact.byteLength) ||
+      !acquisition.acquiredBy || !acquisition.selectionBucketId || !acquisition.selectionFilePath ||
+      !acquisition.providerObjectId || !acquisition.providerVersionId) return false;
+  if (acquisition.status === 'COMMITTED_CANONICAL' && version.acquisitionId !== acquisition.acquisitionId) return false;
+  if (acquisition.status === 'LINKED_EXACT_DOCUMENT_VERSION' &&
+      !['REUSE_EXACT', 'RESUME_EXISTING_PROCESS'].includes(preflight.decision)) return false;
+  const normalized = recordJson(preflight.normalizedDescriptorJson);
+  const descriptor = recordJson(acquisition.sourceDescriptorJson);
+  const authority = String(normalized.identityAuthority ?? '');
+  const footer = isAirbusTfuFooterDescriptor(normalized) && isAirbusTfuFooterDescriptor(descriptor) &&
+    stableJson(normalized.publicationIdentityEvidence) === stableJson(descriptor.publicationIdentityEvidence);
+  return (VERIFIED_DM_IDENTITY_AUTHORITIES.has(authority) || footer) &&
+    descriptor.identityAuthority === normalized.identityAuthority &&
+    Number.isSafeInteger(normalized.pageCount) && Number(normalized.pageCount) > 0 &&
+    normalized.sha256 === artifact.sha256 && Number(normalized.sizeBytes) === Number(artifact.byteLength) &&
+    descriptor.sha256 === artifact.sha256 && Number(descriptor.sizeBytes) === Number(artifact.byteLength) &&
+    descriptor.sourceStorageKey === `${artifact.bucketId}:${artifact.filePath}` &&
+    normalized.documentCode === family.canonicalDocumentNumber && normalized.canonicalDocumentFamily === family.documentFamily &&
+    normalized.issuer === family.issuerAuthority &&
+    String(normalized.businessRevision ?? '') === String(version.businessRevision ?? '') &&
+    String(normalized.revisionDate ?? '') === String(version.revisionDate ?? '') &&
+    String(normalized.sourceGeneratedDate ?? '') === String(version.sourceGeneratedDate ?? '');
+}
+
+function verifiedIndependentOrdinaryAcquisition(
+  acquisition: typeof dmAcquisition.$inferSelect, descriptor: Record<string, unknown>,
+  artifact: typeof dmSourceArtifact.$inferSelect, tenantId: string,
+): boolean {
+  const channels = ['document_library_upload', 'canonical_miaoda_document_selection', REVIEW_ATTACHMENT_SOURCE_CHANNEL];
+  const path = acquisition.selectionFilePath.replace(/^\/+/, '');
+  // Shared immutable bytes, a TDMS selection or a missing/malformed Source
+  // stamp do not prove another independent original was acquired.
+  if (!channels.includes(acquisition.sourceChannel) || descriptor.sourceKind !== acquisition.sourceChannel ||
+      Object.hasOwn(descriptor, 'tdmsRegistration') || Object.hasOwn(descriptor, 'externalDiscovery') ||
+      descriptor.sourceKey === 'TDMS' || /^(?:TDMS|TDMSBIND|TDMSIMPORT):/iu.test(acquisition.sourceRef) ||
+      !path || path.includes('\\') || path.includes('\0') ||
+      (acquisition.sourceChannel !== REVIEW_ATTACHMENT_SOURCE_CHANNEL && !/\.pdf$/iu.test(path)) ||
+      path.split('/').some(segment => !segment || segment === '.' || segment === '..') ||
+      /^tdms-source\//iu.test(path) || /^document-management\/source\//iu.test(path) ||
+      (acquisition.selectionBucketId === artifact.bucketId && path === artifact.filePath.replace(/^\/+/, ''))) return false;
+  const prefix = `tenant:${encodeURIComponent(tenantId)}:request:`;
+  const scoped = acquisition.idempotencyKey.startsWith(prefix) &&
+    acquisition.acquisitionId === deterministicId('acquisition', acquisition.idempotencyKey);
+  const legacy = acquisition.acquisitionId === deterministicId('acquisition', tenantId, acquisition.idempotencyKey);
+  if (!scoped && !legacy) return false;
+  if (acquisition.sourceChannel === 'document_library_upload') {
+    const sourcePrefix = `DOCUMENT_UPLOAD:${acquisition.acquiredBy}:`;
+    if (!acquisition.sourceRef.startsWith(sourcePrefix)) return false;
+    const requestId = acquisition.sourceRef.slice(sourcePrefix.length);
+    const key = `document-upload:${acquisition.acquiredBy}:${requestId}`;
+    if (!requestId || acquisition.idempotencyKey !== (scoped ? `${prefix}${encodeURIComponent(key)}` : key)) return false;
+  }
+  return true;
+}
 
 type ImmutableSourceReuseInput = {
   sourceArtifactId: string;
@@ -446,12 +539,18 @@ export function classifyImmutableSourceReuseState(
   state: ImmutableSourceReuseState,
 ) {
   const artifacts = state.artifacts ?? [];
-  const acquisitions = state.acquisitions ?? [];
-  const preflights = activeSourcePreflights(state.preflights ?? [], acquisitions);
+  const allAcquisitions = state.acquisitions ?? [];
+  const preflights = activeSourcePreflights(state.preflights ?? [], allAcquisitions);
   const versions = state.versions ?? [];
+  // Candidate capture is an independent fact, not an interrupted formal intake.
+  // Only its exact internally written lineage qualifies; ordinary partial state
+  // and legacy conflicting content identities retain their previous refusal.
+  const candidates = allAcquisitions.filter((row) =>
+    isControlledTdmsCandidate(row, input, state.preflights ?? [], versions));
+  const acquisitions = allAcquisitions.filter((row) => !candidates.includes(row));
   if (
     artifacts.length === 0
-    && acquisitions.length === 0
+    && allAcquisitions.length === 0
     && preflights.length === 0
     && versions.length === 0
   ) {
@@ -479,6 +578,10 @@ export function classifyImmutableSourceReuseState(
       'IMMUTABLE_SOURCE_REUSE_DB_CONFLICT',
       'Existing Catalog source identity differs from the verified immutable object.',
     );
+  }
+  if (candidates.length > 0 && acquisitions.length === 0 &&
+      preflights.length === 0 && versions.length === 0) {
+    return { disposition: 'INDEPENDENT_TDMS_CANDIDATE_REUSE_ALLOWED' };
   }
   const versionIds = new Set(versions.map((row) => row.documentVersionId));
   const completeAcquisitions = acquisitions.length > 0 && acquisitions.every((row) => (
@@ -509,6 +612,43 @@ export function classifyImmutableSourceReuseState(
     );
   }
   return { disposition: 'CATALOGED_SOURCE_REUSE_ALLOWED' };
+}
+
+function isControlledTdmsCandidate(
+  row: typeof dmAcquisition.$inferSelect,
+  input: ImmutableSourceReuseInput,
+  preflights: Array<typeof dmIngressPreflight.$inferSelect>,
+  versions: Array<typeof dmDocumentVersion.$inferSelect>,
+): boolean {
+  if (row.sourceChannel !== 'wiselink_tdms_candidate' ||
+      row.status !== 'ACQUIRED_READBACK_VERIFIED' || row.documentVersionId !== null ||
+      row.sourceArtifactId !== input.sourceArtifactId ||
+      input.mediaType !== 'application/pdf' ||
+      input.sourceArtifactId !== deterministicId('source_artifact', input.sha256, input.byteLength) ||
+      !row.acquisitionId.startsWith('TDMS-ACQ-') || !row.idempotencyKey.startsWith('tdms:') ||
+      !row.acquiredBy || !row.selectionBucketId || !row.selectionFilePath ||
+      preflights.some((p) => p.acquisitionId === row.acquisitionId) ||
+      versions.some((v) => v.acquisitionId === row.acquisitionId)) return false;
+  const descriptor = recordJson(row.sourceDescriptorJson);
+  if (descriptor.candidateOnly !== true || descriptor.sourceKey !== 'TDMS' ||
+      typeof descriptor.tenantId !== 'string' || !descriptor.tenantId ||
+      typeof descriptor.sourceInstanceId !== 'string' || !descriptor.sourceInstanceId ||
+      typeof descriptor.scopeId !== 'string' || !descriptor.scopeId ||
+      typeof descriptor.packageId !== 'string' || !descriptor.packageId ||
+      typeof descriptor.sourceAttachmentId !== 'string' || !descriptor.sourceAttachmentId ||
+      !Object.prototype.hasOwnProperty.call(descriptor, 'sourceAttachmentVersion') ||
+      (descriptor.sourceAttachmentVersion !== null && typeof descriptor.sourceAttachmentVersion !== 'string') ||
+      descriptor.sha256 !== input.sha256 || Number(descriptor.byteLength) !== Number(input.byteLength) ||
+      descriptor.mediaType !== input.mediaType ||
+      row.sourceRef !== `TDMS:${descriptor.sourceInstanceId}:${descriptor.sourceAttachmentId}`) return false;
+  if (descriptor.uploadSelectionPin !== undefined) {
+    const pin = recordValue(descriptor, 'uploadSelectionPin');
+    return pin.bucketId === row.selectionBucketId && pin.filePath === row.selectionFilePath &&
+      pin.providerObjectId === row.providerObjectId && pin.sha256 === input.sha256 &&
+      Number(pin.byteLength) === Number(input.byteLength);
+  }
+  return row.selectionBucketId === input.bucketId && row.selectionFilePath === input.filePath &&
+    row.providerObjectId === input.providerObjectId && row.providerVersionId === input.providerVersionId;
 }
 
 export function classifyReviewAttachmentResidualReuseState(
@@ -935,6 +1075,18 @@ export class MiaodaHostedDocumentCatalog {
       familyId: row.family.familyId,
       documentId: row.version.documentId,
       documentVersionId: row.version.documentVersionId,
+      sha256: row.artifact.sha256,
+      byteLength: Number(row.artifact.byteLength),
+      selectionBucketId: acquisition.selectionBucketId,
+      selectionFilePath: acquisition.selectionFilePath,
+      selectedProviderObjectId: acquisition.providerObjectId,
+      selectedProviderVersionId: acquisition.providerVersionId,
+      committedAt: row.preflight.committedAt ? asDate(row.preflight.committedAt).toISOString() : null,
+      tdmsRegistration: sourceDescriptor.tdmsRegistration ?? null,
+      immutableSource: {
+        bucketId: row.artifact.bucketId, filePath: row.artifact.filePath,
+        providerObjectId: row.artifact.providerObjectId, providerVersionId: row.artifact.providerVersionId,
+      },
       currentGeneration: row.family.currentGeneration,
       immutableReadbackVerified: true,
       catalogFreshReadVerified: true,
@@ -982,7 +1134,9 @@ export class MiaodaHostedDocumentCatalog {
       eq(dmDocumentVersion.sourceArtifactId, input.sourceArtifactId),
       eq(dmDocumentVersion.acquisitionId, input.acquisitionId),
     )).limit(100);
-    const hasIncompleteState = acquisitions.some((row) => (
+    const formalAcquisitions = acquisitions.filter((row) =>
+      !isControlledTdmsCandidate(row, input, preflightRows, versions));
+    const hasIncompleteState = formalAcquisitions.some((row) => (
       !row.documentVersionId || !COMPLETE_ACQUISITION_STATUSES.has(row.status)
     )) || preflights.some((row) => (
       row.status !== 'COMMITTED' || !row.documentVersionId
@@ -1024,7 +1178,7 @@ export class MiaodaHostedDocumentCatalog {
       ).limit(2);
       return classifyReviewAttachmentResidualReuseState(input, {
         artifacts,
-        acquisitions,
+        acquisitions: formalAcquisitions,
         preflights,
         versions,
         currentness,
@@ -1325,7 +1479,8 @@ export class MiaodaHostedDocumentCatalog {
     idempotencyKey,
     uploadCommit,
   }) {
-    const commit = () => this.db.transaction(async (transaction) => {
+    const commit = () => this.db.transaction((transaction) =>
+      withUploadAuthorityCheckpoint(uploadCommit, transaction, async () => {
     const [current] = await transaction.select().from(dmAcquisition).where(
       eq(dmAcquisition.acquisitionId, acquisitionId),
     ).limit(1).for('update');
@@ -1418,7 +1573,7 @@ export class MiaodaHostedDocumentCatalog {
       }
     }
     return updated || current;
-    });
+    }));
     if (!uploadCommit) return commit();
     if (!this.sessions) fail('VERIFIED_SQL_CONTEXT_UNAVAILABLE', 'Verified upload SQL context is unavailable.');
     return this.sessions!.withVerifiedServiceSql(commit, uploadCommit.actorUserId);
@@ -1624,7 +1779,8 @@ export class MiaodaHostedDocumentCatalog {
   }
 
   async commitNewVersion(command) {
-    const commit = () => this.db.transaction(async (transaction) => {
+    const commit = () => this.db.transaction((transaction) =>
+      withUploadAuthorityCheckpoint(command.uploadCommit, transaction, async () => {
     const [uploadAcquisition] = command.uploadCommit
       ? await transaction.select().from(dmAcquisition).where(
         eq(dmAcquisition.acquisitionId, command.documentVersion.acquisitionId),
@@ -1875,7 +2031,7 @@ export class MiaodaHostedDocumentCatalog {
       currentnessChanged: true,
       currentGeneration: command.observedCurrentGeneration + 1,
     };
-    });
+    }));
     if (!command.uploadCommit) return commit();
     if (!this.sessions) fail('VERIFIED_SQL_CONTEXT_UNAVAILABLE', 'Verified upload SQL context is unavailable.');
     return this.sessions!.withVerifiedServiceSql(commit, command.uploadCommit.actorUserId);
@@ -1895,6 +2051,55 @@ export class MiaodaHostedDocumentCatalog {
         sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`,
         sql`starts_with(${dmAcquisition.idempotencyKey}, ${`tenant:${encodeURIComponent(input.tenantId)}:request:`})`)).limit(1);
     return Boolean(row);
+  }
+
+  /** Read provenance of this exact DVI, never a content-hash-wide permission. */
+  async readDocumentSourceReadProvenance(input: {
+    documentVersionId: string; tenantId: string;
+  }, database: PostgresJsDatabase = this.db): Promise<DocumentSourceReadProvenance | null> {
+    const rows = await database.select({ version: dmDocumentVersion, family: dmPublicationFamily,
+      artifact: dmSourceArtifact, acquisition: dmAcquisition, preflight: dmIngressPreflight })
+      .from(dmDocumentVersion)
+      .innerJoin(dmPublicationFamily, eq(dmPublicationFamily.familyId, dmDocumentVersion.familyId))
+      .innerJoin(dmSourceArtifact, eq(dmSourceArtifact.sourceArtifactId, dmDocumentVersion.sourceArtifactId))
+      .innerJoin(dmAcquisition, and(eq(dmAcquisition.documentVersionId, dmDocumentVersion.documentVersionId),
+        eq(dmAcquisition.sourceArtifactId, dmDocumentVersion.sourceArtifactId)))
+      .leftJoin(dmIngressPreflight, and(eq(dmIngressPreflight.acquisitionId, dmAcquisition.acquisitionId),
+        eq(dmIngressPreflight.documentVersionId, dmDocumentVersion.documentVersionId),
+        eq(dmIngressPreflight.status, 'COMMITTED')))
+      .where(and(eq(dmDocumentVersion.documentVersionId, input.documentVersionId),
+        sql`starts_with(${dmPublicationFamily.canonicalIdentityKey}, ${tenantFamilyIdentityPrefix(input.tenantId)})`));
+    if (!rows.length) return null;
+    const first = rows[0];
+    const sourceBindings: TdmsDocumentUploadBinding[] = [];
+    let independentOrdinary = false;
+    const counts = new Map<string, number>();
+    for (const row of rows) counts.set(row.acquisition.acquisitionId, (counts.get(row.acquisition.acquisitionId) ?? 0) + 1);
+    for (const row of rows) {
+      // A partial or unrelated acquisition is not a new read path. It also does
+      // not taint a separately proven ordinary acquisition of this exact DVI.
+      if (row.version.documentVersionId !== input.documentVersionId ||
+          counts.get(row.acquisition.acquisitionId) !== 1 ||
+          !verifiedDocumentReadLineage(row, input.tenantId)) continue;
+      const descriptor = recordJson(row.acquisition.sourceDescriptorJson);
+      if (Object.hasOwn(descriptor, 'tdmsRegistration')) {
+        const binding = descriptor.tdmsRegistration;
+        if (!binding || typeof binding !== 'object' || Array.isArray(binding)) continue;
+        const source = binding as TdmsDocumentUploadBinding;
+        if (source.schemaVersion !== 'wiselink.tdms-formal-document-binding.v1' ||
+            source.scope?.tenantId !== input.tenantId || source.actorSubjectId !== row.acquisition.acquiredBy ||
+            source.sha256 !== row.artifact.sha256 || source.byteLength !== Number(row.artifact.byteLength) ||
+            source.selection?.bucketId !== row.acquisition.selectionBucketId ||
+            source.selection.filePath !== row.acquisition.selectionFilePath ||
+            source.selection.expectedProviderObjectId !== row.acquisition.providerObjectId) continue;
+        sourceBindings.push(structuredClone(source));
+      } else if (verifiedIndependentOrdinaryAcquisition(row.acquisition, descriptor, row.artifact, input.tenantId)) {
+        independentOrdinary = true;
+      }
+    }
+    if (!independentOrdinary && !sourceBindings.length) return null;
+    return { documentVersionId: first.version.documentVersionId, sourceArtifactId: first.artifact.sourceArtifactId,
+      sha256: first.artifact.sha256, byteLength: Number(first.artifact.byteLength), independentOrdinary, sourceBindings };
   }
 
   /** Only committed upload acquisitions can authorize selected document work. */

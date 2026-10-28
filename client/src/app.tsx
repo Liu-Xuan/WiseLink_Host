@@ -9,6 +9,7 @@ import DerivedSummaryListPage from './features/derived-summary/DerivedSummaryLis
 import DerivedSummaryComposePage from './features/derived-summary/DerivedSummaryComposePage';
 import DerivedSummaryReadingPage from './features/derived-summary/DerivedSummaryReadingPage';
 import WorkItemAnalysisRedirect from './pages/DocumentParsingPage/WorkItemAnalysisRedirect';
+import { installTdmsNativeHostBridge } from './utils/tdms-native-host-bridge';
 
 // Route chunks load on demand. AppContainer, identity providers and the
 // QueryClient stay mounted above the lazy boundary so navigation does not
@@ -116,6 +117,7 @@ function KnowledgeEntry() {
 }
 
 const RoutesComponent = () => {
+  React.useEffect(installTdmsNativeHostBridge, []);
   return (
     <Routes>
       <Route

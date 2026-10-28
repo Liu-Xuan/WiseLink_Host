@@ -79,6 +79,15 @@ function binding() {
   };
 }
 
+// Explicit independent ordinary lineage; Source-only paths have separate authorization coverage.
+function ordinaryProvenanceCatalog() {
+  return { readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(false),
+    readDocumentSourceReadProvenance: jest.fn().mockResolvedValue({
+    documentVersionId: 'DV-1', sourceArtifactId: 'SA-1', sha256: 'a'.repeat(64),
+    byteLength: 100, independentOrdinary: true, sourceBindings: [],
+  }) };
+}
+
 describe('ordinary document-management authorization', () => {
   it.each([undefined, 403])(
     'preserves a storage read failure without assuming authorization or retrying (%s)',
@@ -122,6 +131,7 @@ describe('ordinary document-management authorization', () => {
     const authorizer = new OrdinaryDocumentManagementAuthorizer(
       repository as never,
       {} as never,
+      ordinaryProvenanceCatalog() as never,
     );
 
     await expect(
@@ -148,6 +158,7 @@ describe('ordinary document-management authorization', () => {
           .mockResolvedValue(null),
       };
       const catalog = {
+        ...ordinaryProvenanceCatalog(),
         readOwnedAcquisitionVersionBinding: jest
           .fn()
           .mockResolvedValue(allowed),
@@ -178,7 +189,7 @@ describe('ordinary document-management authorization', () => {
 
   it('uses the same supplied executor for the WorkItem binding and acquisition fallback', async () => {
     const repository = { loadTenantDocumentAuthorizationBinding: jest.fn().mockResolvedValue(null) };
-    const catalog = { readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(true) };
+    const catalog = { ...ordinaryProvenanceCatalog(), readOwnedAcquisitionVersionBinding: jest.fn().mockResolvedValue(true) };
     const database = {} as never;
     const authorizer = new OrdinaryDocumentManagementAuthorizer(
       repository as never, {} as never, catalog as never,
@@ -188,6 +199,9 @@ describe('ordinary document-management authorization', () => {
       ...creatorContext, action: 'DOCUMENT_READ', documentVersionId: 'DV-1',
     }, database);
 
+    expect(catalog.readDocumentSourceReadProvenance).toHaveBeenCalledWith(expect.objectContaining({
+      tenantId: creatorContext.tenantId, documentVersionId: 'DV-1',
+    }), database);
     expect(repository.loadTenantDocumentAuthorizationBinding).toHaveBeenCalledWith({
       tenantId: creatorContext.tenantId, documentVersionId: 'DV-1',
     }, database);
@@ -219,6 +233,7 @@ describe('ordinary document-management authorization', () => {
       const authorizer = new OrdinaryDocumentManagementAuthorizer(
         repository as never,
         {} as never,
+        { readDocumentSourceReadProvenance: jest.fn().mockResolvedValue(null) } as never,
       );
 
       await expect(
@@ -726,7 +741,7 @@ describe('local MinerU candidate authorization with real native upload authority
         mode: 'LOCAL_MINERU_IMPORT', ...selection, providerObjectId: metadata.id, sha256: 'a'.repeat(64), byteLength: 20,
         settings: { revision: 1, localMineruFallbackEnabled: true, titleEnhancementEnabled: false } } } };
     const parsing = { read: jest.fn().mockResolvedValue(run) };
-    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, files as never, undefined, parsing as never);
+    const authorizer = new OrdinaryDocumentManagementAuthorizer(workItems as never, files as never, ordinaryProvenanceCatalog() as never, parsing as never);
     const scope = { actorUserId: creatorContext.actorUserId, tenantId: creatorContext.tenantId, roles: [], documentVersionId: 'DV-1' };
     return { selection, metadata, files, workItems, run, parsing, authorizer, scope };
   }

@@ -9,6 +9,7 @@ import { assertPublicActor, sameScope } from './tdms-source.authorization';
 import { identifier, object, strict } from './tdms-source.validation';
 import { sourceBodyReadingProjection } from './tdms-assessment-body-policy';
 import { engineeringExecutionReading } from './tdms-engineering-execution-reading';
+import { documentBoundSourceRevisions } from './tdms-document-source-bindings';
 import {
   tdmsError,
   type TdmsDocumentAccess,
@@ -52,6 +53,8 @@ export async function readDocumentVersionSources(
     throw tdmsError('TDMS_SOURCE_AUTHORIZATION_UNCONFIGURED', 503);
   const context: TdmsReadContext = { documentVersionId };
   await documents.assertRead(actor, documentVersionId);
+  const sourceBindings = documents.sourceBindings
+    ? await documents.sourceBindings(actor, documentVersionId) : [];
   const catalogueGrants: TdmsSourceGrant[] = await authorization.catalogue(actor, context);
   if (!catalogueGrants.length) throw tdmsError('TDMS_SOURCE_NOT_FOUND', 404);
   const grants: TdmsSourceGrant[] = [];
@@ -76,8 +79,11 @@ export async function readDocumentVersionSources(
     const rows: AuthorizedSourceRow[] = [];
     for (const grant of grants) {
       await dependencies.recheck(grant, context);
+      const sourceRevisionRefs = await documentBoundSourceRevisions(actor, grant.scope, sourceBindings, tx);
+      const boundRefs = new Set(sourceRevisionRefs);
       const page: TdmsStoredRevision[] = await tx.documentVersionCatalogue(grant.scope, {
         documentVersionId,
+        ...(sourceRevisionRefs.length ? { sourceRevisionRefs } : {}),
         ...(after ? { after } : {}),
         ...(grant.permittedMembers ? { permittedRecords: grant.permittedMembers.records } : {}),
         limit: limit + 1,
@@ -85,11 +91,14 @@ export async function readDocumentVersionSources(
       for (const stored of page) {
         if (!sameScope(stored.scope, grant.scope))
           throw tdmsError('TDMS_STORED_SCOPE_MISMATCH', 409);
-        if (!stored.record.relatedDocumentVersionIds.includes(documentVersionId))
+        const explicit = stored.record.relatedDocumentVersionIds.includes(documentVersionId);
+        if (!explicit && !boundRefs.has(stored.record.sourceRevisionRef))
           throw tdmsError('TDMS_DOCUMENT_SOURCE_BINDING_MISMATCH', 409);
         assertReadStoredMembers(grant, stored);
+        const projected = explicit ? stored : { ...stored, record: { ...stored.record,
+          relatedDocumentVersionIds: [...stored.record.relatedDocumentVersionIds, documentVersionId] } };
         if (!after || stored.record.sourceRevisionRef > after)
-          rows.push({ stored, grant });
+          rows.push({ stored: projected, grant });
       }
       await dependencies.recheck(grant, context);
     }

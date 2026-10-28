@@ -1,6 +1,6 @@
 import { DocumentParsingRepository } from '../document-management/src/hosted/nest/document-parsing.repository';
-import { isMintedDocumentUploadAuthority } from '../document-management/src/hosted/nest/document-upload-authority';
-import { Injectable, Optional } from '@nestjs/common';
+import { assertDocumentUploadAuthorityCurrent, isMintedDocumentUploadAuthority, tdmsDocumentUploadBinding } from '../document-management/src/hosted/nest/document-upload-authority';
+import { Inject, Injectable, Optional } from '@nestjs/common';
 import { FileService, type PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 import type { DocumentManagementIngestAuthorizer } from '../document-management/src/hosted/nest/document-management-hosted.tokens';
@@ -10,6 +10,7 @@ import {
 } from '../canonical-host/canonical-host.constants';
 import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 import { MiaodaWorkItemRepository } from '../work-item/miaoda-work-item.repository';
+import { DOCUMENT_SOURCE_READ, type DocumentSourceReadContext, type DocumentSourceReadPort } from '../document-management/src/hosted/nest/document-source-read.port';
 
 @Injectable()
 // Registered by DocumentManagementHostedModule.register(); the static lint
@@ -21,6 +22,7 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
     private readonly fileService: FileService,
     @Optional() private readonly catalog?: MiaodaHostedDocumentCatalog,
     @Optional() private readonly parsing?: DocumentParsingRepository,
+    @Optional() @Inject(DOCUMENT_SOURCE_READ) private readonly sourceRead?: DocumentSourceReadPort,
   ) {}
 
   async assertCanIngest(
@@ -31,6 +33,8 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
       input.runtimeIngestAuthority,
       input,
     );
+    const tdms = tdmsDocumentUploadBinding(input.runtimeIngestAuthority, input);
+    if (documentUpload) await assertDocumentUploadAuthorityCurrent(input.runtimeIngestAuthority, input);
     const reviewAttachment: boolean = isReviewAttachmentIngest(input);
     const oauthDevelopmentSelection: boolean =
       isOauthSessionDevelopmentIngest(input);
@@ -42,12 +46,17 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
       throw documentActionForbidden();
     }
     const bucketId = input.selection.bucketId.trim();
-    const filePath: string | null = reviewAttachment
+    const filePath: string | null = tdms
+      ? normalizedProviderPath(input.selection.filePath)
+      : reviewAttachment
       ? normalizedReviewAttachmentPath(input.selection.filePath)
       : oauthDevelopmentSelection || documentUpload
         ? normalizedOauthDevelopmentFilePath(input.selection.filePath)
         : normalizedDevelopmentFilePath(input.selection.filePath);
-    if (!bucketId || !filePath) {
+    if (!bucketId || !filePath || (tdms && (tdms.selection.bucketId !== bucketId ||
+        normalizedProviderPath(tdms.selection.filePath) !== filePath ||
+        !filePath.startsWith('tdms-source/uploads/') || filePath.includes('\\') ||
+        filePath.includes('\0') || filePath.split('/').some(segment => !segment || segment === '.' || segment === '..')))) {
       throw documentActionForbidden();
     }
     const defaultBucketId = await readIngestStorage(
@@ -63,10 +72,14 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
     if (
       metadata.bucketID !== defaultBucketId ||
       normalizedProviderPath(metadata.filePath) !== filePath ||
-      !sameExactUserId(metadata.createdBy?.userID, input.actorUserId)
+      !sameExactUserId(metadata.createdBy?.userID, input.actorUserId) ||
+      (tdms && (String(metadata.id) !== tdms.selection.expectedProviderObjectId ||
+        Number(metadata.metadata?.contentLength) !== tdms.byteLength ||
+        metadata.metadata?.mimeType !== tdms.mediaType))
     ) {
       throw documentActionForbidden();
     }
+    if (documentUpload) await assertDocumentUploadAuthorityCurrent(input.runtimeIngestAuthority, input);
   }
 
   async assertCanImportLocalCandidate(
@@ -123,8 +136,23 @@ export class OrdinaryDocumentManagementAuthorizer implements DocumentManagementI
     roles: string[];
     action: 'DOCUMENT_READ';
     documentVersionId: string;
+    sourceReadContext?: DocumentSourceReadContext;
   }, database?: PostgresJsDatabase): Promise<void> {
     assertAuthenticated(input);
+    if (!this.catalog) throw Object.assign(new Error('Document provenance is unavailable.'), {
+      code: 'DOCUMENT_SOURCE_READ_PROVENANCE_UNAVAILABLE', statusCode: 503,
+    });
+    const provenance = await this.catalog.readDocumentSourceReadProvenance(input, database);
+    if (!provenance) throw documentNotFound();
+    if (!provenance.independentOrdinary) {
+      if (!provenance.sourceBindings.length) throw documentActionForbidden();
+      if (!this.sourceRead) throw Object.assign(new Error('Current source reading is unavailable.'), {
+        code: 'DOCUMENT_SOURCE_READ_UNAVAILABLE', statusCode: 503,
+      });
+      await this.sourceRead.assertCurrent({ ...input, provenance });
+    }
+    // A WorkItem or tenant-visible acquisition does not publish its Source.
+    // Only a proven independent ordinary path can omit the Source checkpoint.
     const binding = await this.workItems.loadTenantDocumentAuthorizationBinding(
       {
         tenantId: input.tenantId,

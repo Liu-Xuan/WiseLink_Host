@@ -1,0 +1,2585 @@
+{
+  "sourceVersion": "0.2.92",
+  "sourceDigest": "399d30107308f31676083ed904c60468f234cf3e7bd5c210f90fdbc076a4f57d",
+  "sources": [
+    {
+      "file": "daily-ingestion/reviewed-sb-native-layout.mjs",
+      "sha256": "3037be251a8480ff5cdceb49e5df40af125d90579319ecb5239a9b7dcf531245"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-anonymous-strict-blank.mjs",
+      "sha256": "9ff4d4b25deafb79e35c45ebc347fb1bdf09431c2e31daef7a358df88323e13e"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-document-structure-native-model.mjs",
+      "sha256": "e4dd3449e304c1e3edac8459413a24b26584328c910283ae409438d7e27e9481"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-native-tree.mjs",
+      "sha256": "b3dae868328d53eeb1dad13542a5396578d0a7c25763b61cbea18ed84a2c335a"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-attachment-alias-purpose.mjs",
+      "sha256": "66d69f6eaedddb7182e1509b0221d7349705e89060d0085cd80ffe0b88fccc6b"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-fields-alias-purpose.mjs",
+      "sha256": "d0a5238efb90a7d6eeeb12d1ff6e14495eb21babfb388098a65bca2c83562f61"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-history-purpose.mjs",
+      "sha256": "7b54c15dd675dd24bf85c74bc48b5627d3410460be6a787c26dd5cbcd2a033a0"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-management-purpose.mjs",
+      "sha256": "c6fb7870ce1b96a3fc4ae74de08b053bd3056691da23b864115cf75e1a2ec8c7"
+    },
+    {
+      "file": "daily-ingestion/reviewed-sb-notebook-purpose.mjs",
+      "sha256": "31dfe43d42d979987fd029ef9c14633f3966ee601dc10bbbb791448a9ae25013"
+    },
+    {
+      "file": "daily-ingestion/complete-owned-profiles.mjs",
+      "sha256": "66abadbb3c3fb9f29852ad2f8fe08395630f394b42fcc7d756b80186ade32c99"
+    }
+  ],
+  "models": {
+    "REVIEWED_SB_NATIVE_LAYOUT_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-native-layout.v1",
+      "modelRevision": "tdms-reviewed-sb-native-layout@1",
+      "panels": [
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+          "label": "Details",
+          "panelLocator": "#infoPage_myTab_object_docInfoDefaultDetails",
+          "componentIds": [
+            "infoPage_myTab_object_docInfoDefaultDetails_objectvisualizationAndAttributes_tocItem",
+            "infoPage_myTab_object_docInfoDefaultDetails_objectattributes_tocItem",
+            "wrap_infoPage_myTab_object_docInfoDefaultDetails_objectvisualizationAndAttributes",
+            "wrap_infoPage_myTab_object_docInfoDefaultDetails_objectattributes"
+          ],
+          "grids": [],
+          "sections": [
+            {
+              "sectionId": "General",
+              "label": "General",
+              "dataStoreId": "dataStoreGeneral",
+              "labels": [
+                "Name:",
+                "Status:",
+                "Primary Content:",
+                "Modified By:",
+                "Last Modified:"
+              ]
+            },
+            {
+              "sectionId": "BusinessAttributesGroup",
+              "label": "Business",
+              "dataStoreId": "dataStoreBusinessAttributesGroup",
+              "labels": [
+                "SB/SL文档编号:",
+                "SB/SL版本:",
+                "OEM厂商类型:",
+                "OEM厂商:",
+                "类型:",
+                "SB/SL标题:",
+                "是否紧急:",
+                "颁发日期:",
+                "原创建者:",
+                "原创建时间:"
+              ]
+            },
+            {
+              "sectionId": "MoreAttributesGroup",
+              "label": "System",
+              "dataStoreId": "dataStoreMoreAttributesGroup",
+              "labels": [
+                "Description:",
+                "",
+                "Format Name:",
+                "State:",
+                "Context:",
+                "Location:",
+                "Life Cycle Template:",
+                "Team Template:",
+                "Created By:",
+                "Modified By:",
+                "Created On:",
+                "Last Modified:"
+              ]
+            }
+          ],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_docsb_docStructureGWT",
+          "label": "Structure",
+          "panelLocator": "#infoPage_myTab_docsb_docStructureGWT",
+          "componentIds": [],
+          "grids": [],
+          "sections": [],
+          "embeddedIds": [
+            "docsbIFrame"
+          ]
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docContentInfoDetails",
+          "label": "Content",
+          "panelLocator": "#infoPage_myTab_object_docContentInfoDetails",
+          "componentIds": [
+            "infoPage_myTab_object_docContentInfoDetails_objectprimaryContent_tocItem",
+            "infoPage_myTab_object_docContentInfoDetails_objectattachments_tocItem",
+            "wrap_infoPage_myTab_object_docContentInfoDetails_objectprimaryContent",
+            "wrap_infoPage_myTab_object_docContentInfoDetails_objectattachments"
+          ],
+          "grids": [
+            {
+              "gridId": "attachments.table.primary",
+              "columns": [
+                {
+                  "actualLabel": "Label or File Name",
+                  "nativeColumnToken": "attachmentsName"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageActionAttachment"
+                },
+                {
+                  "actualLabel": "Format Icon",
+                  "nativeColumnToken": "formatIcon"
+                },
+                {
+                  "actualLabel": "Format",
+                  "nativeColumnToken": "formatName"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "thePersistInfo_modifyStamp"
+                },
+                {
+                  "actualLabel": "Modified By",
+                  "nativeColumnToken": "modifier"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "attachments.table.primary.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "attachments.table.secondary",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Label or File Name",
+                  "nativeColumnToken": "attachmentsName"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageActionAttachment"
+                },
+                {
+                  "actualLabel": "Format Icon",
+                  "nativeColumnToken": "formatIcon"
+                },
+                {
+                  "actualLabel": "Format",
+                  "nativeColumnToken": "formatName"
+                },
+                {
+                  "actualLabel": "Attachment Description",
+                  "nativeColumnToken": "description"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "thePersistInfo_modifyStamp"
+                },
+                {
+                  "actualLabel": "Modified By",
+                  "nativeColumnToken": "modifier"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "attachments.table.secondary.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docRelatedObjectsInfo",
+          "label": "Related Objects",
+          "panelLocator": "#infoPage_myTab_object_docRelatedObjectsInfo",
+          "componentIds": [
+            "infoPage_myTab_object_docRelatedObjectsInfo_objectrelatedDocumentTable_tocItem",
+            "infoPage_myTab_object_docRelatedObjectsInfo_objectwhereUsed_tocItem",
+            "infoPage_myTab_object_docRelatedObjectsInfo_documentrelatedDocumentsDocuments_tocItem",
+            "infoPage_myTab_object_docRelatedObjectsInfo_documentrelatedDocumentsReferencedBy_tocItem",
+            "infoPage_myTab_object_docRelatedObjectsInfo_documentrelatedDocumentsParts_tocItem",
+            "wrap_infoPage_myTab_object_docRelatedObjectsInfo_objectrelatedDocumentTable",
+            "wrap_infoPage_myTab_object_docRelatedObjectsInfo_objectwhereUsed",
+            "wrap_infoPage_myTab_object_docRelatedObjectsInfo_documentrelatedDocumentsDocuments",
+            "wrap_infoPage_myTab_object_docRelatedObjectsInfo_documentrelatedDocumentsReferencedBy",
+            "wrap_infoPage_myTab_object_docRelatedObjectsInfo_documentrelatedDocumentsParts"
+          ],
+          "grids": [
+            {
+              "gridId": "document.relatedDoc.list",
+              "columns": [
+                {
+                  "actualLabel": "Document Number",
+                  "nativeColumnToken": "docNumber"
+                },
+                {
+                  "actualLabel": "Document Version",
+                  "nativeColumnToken": "docVersion"
+                },
+                {
+                  "actualLabel": "Related Document Operation",
+                  "nativeColumnToken": "linkType"
+                },
+                {
+                  "actualLabel": "Document Type",
+                  "nativeColumnToken": "docType"
+                },
+                {
+                  "actualLabel": "Document Title",
+                  "nativeColumnToken": "docName"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "document.relatedDoc.list.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "whereUsed.view",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Number",
+                  "nativeColumnToken": "number"
+                },
+                {
+                  "actualLabel": "Version",
+                  "nativeColumnToken": "groupedVersions"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "name"
+                },
+                {
+                  "actualLabel": "Context",
+                  "nativeColumnToken": "containerName"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "whereUsed.viewfilterSelect",
+                  "type": "text",
+                  "value": "Latest",
+                  "emptyClass": false
+                },
+                {
+                  "id": "whereUsed.view.fitTextField",
+                  "type": "text",
+                  "value": "Find in tree",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "document.relatedDocsReferencesDocuments.list",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Number",
+                  "nativeColumnToken": "number"
+                },
+                {
+                  "actualLabel": "Version",
+                  "nativeColumnToken": "version"
+                },
+                {
+                  "actualLabel": "editComment",
+                  "nativeColumnToken": "editComment"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageAction"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "name"
+                },
+                {
+                  "actualLabel": "Context",
+                  "nativeColumnToken": "containerName"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "last_updated"
+                },
+                {
+                  "actualLabel": "Comments",
+                  "nativeColumnToken": "linkDescription"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "document.relatedDocsReferencesDocuments.listfilterSelect",
+                  "type": "text",
+                  "value": "Default",
+                  "emptyClass": false
+                },
+                {
+                  "id": "document.relatedDocsReferencesDocuments.list.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "document.relatedDocsReferencedByDocuments.list",
+              "columns": [
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Number",
+                  "nativeColumnToken": "number"
+                },
+                {
+                  "actualLabel": "Version",
+                  "nativeColumnToken": "version"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageAction"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "name"
+                },
+                {
+                  "actualLabel": "Context",
+                  "nativeColumnToken": "containerName"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "last_updated"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "document.relatedDocsReferencedByDocuments.listfilterSelect",
+                  "type": "text",
+                  "value": "Default",
+                  "emptyClass": false
+                },
+                {
+                  "id": "document.relatedDocsReferencedByDocuments.list.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "part.relatedDocumentsDescribesParts.list",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Number",
+                  "nativeColumnToken": "number"
+                },
+                {
+                  "actualLabel": "Version",
+                  "nativeColumnToken": "version"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageAction"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "name"
+                },
+                {
+                  "actualLabel": "Context",
+                  "nativeColumnToken": "containerName"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "last_updated"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "part.relatedDocumentsDescribesParts.listfilterSelect",
+                  "type": "text",
+                  "value": "Default",
+                  "emptyClass": false
+                },
+                {
+                  "id": "part.relatedDocumentsDescribesParts.list.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docObjectsHistoryTab",
+          "label": "History",
+          "panelLocator": "#infoPage_myTab_object_docObjectsHistoryTab",
+          "componentIds": [
+            "infoPage_myTab_object_docObjectsHistoryTab_historyversionHistory_tocItem",
+            "infoPage_myTab_object_docObjectsHistoryTab_historytimelineHistory_tocItem",
+            "wrap_infoPage_myTab_object_docObjectsHistoryTab_historyversionHistory",
+            "wrap_infoPage_myTab_object_docObjectsHistoryTab_historytimelineHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "version.history.document",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "General Status",
+                  "nativeColumnToken": "statusFamily_General"
+                },
+                {
+                  "actualLabel": "Change Status",
+                  "nativeColumnToken": "statusFamily_Change"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Version",
+                  "nativeColumnToken": "version"
+                },
+                {
+                  "actualLabel": "Format Icon",
+                  "nativeColumnToken": "formatIcon"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "versionInfoPageAction"
+                },
+                {
+                  "actualLabel": "Open Associated Content",
+                  "nativeColumnToken": "openAsscContent"
+                },
+                {
+                  "actualLabel": "Information compare",
+                  "nativeColumnToken": "infoCompareAction"
+                },
+                {
+                  "actualLabel": "File Name",
+                  "nativeColumnToken": "fileName"
+                },
+                {
+                  "actualLabel": "Size",
+                  "nativeColumnToken": "fileSize"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Comments",
+                  "nativeColumnToken": "iterationNote"
+                },
+                {
+                  "actualLabel": "Modified By",
+                  "nativeColumnToken": "modified_by"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "thePersistInfo_modifyStamp"
+                },
+                {
+                  "actualLabel": "Authorization",
+                  "nativeColumnToken": "authorization"
+                },
+                {
+                  "actualLabel": "Predecessor",
+                  "nativeColumnToken": "predecessor"
+                },
+                {
+                  "actualLabel": "Revision",
+                  "nativeColumnToken": "revision"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "version.history.documentfilterSelect",
+                  "type": "text",
+                  "value": " General",
+                  "emptyClass": false
+                },
+                {
+                  "id": "version.history.document.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": [
+            "timelineIFrame"
+          ]
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_225694243",
+          "label": "附件",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_225694243",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_225694243_objectattachments_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_225694243_objectattachments"
+          ],
+          "grids": [
+            {
+              "gridId": "attachments.table.secondary",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Label or File Name",
+                  "nativeColumnToken": "attachmentsName"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageActionAttachment"
+                },
+                {
+                  "actualLabel": "Format Icon",
+                  "nativeColumnToken": "formatIcon"
+                },
+                {
+                  "actualLabel": "Format",
+                  "nativeColumnToken": "formatName"
+                },
+                {
+                  "actualLabel": "Attachment Description",
+                  "nativeColumnToken": "description"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "thePersistInfo_modifyStamp"
+                },
+                {
+                  "actualLabel": "Modified By",
+                  "nativeColumnToken": "modifier"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "attachments.table.secondary.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_45658671",
+          "label": "工作流进程",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_45658671",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_45658671_workflowprocessHistory_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_45658671_workflowprocessHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "processHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "procName"
+                },
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "procStatus"
+                },
+                {
+                  "actualLabel": "Initiated By",
+                  "nativeColumnToken": "creator"
+                },
+                {
+                  "actualLabel": "Date Started",
+                  "nativeColumnToken": "startTime"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "endTime"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "processHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "taskStatusTableId",
+              "columns": [
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "ASSIGNMENT_STATUS"
+                },
+                {
+                  "actualLabel": "Latest action performed.",
+                  "nativeColumnToken": "ASSIGNMENT_REASSIGNED"
+                },
+                {
+                  "actualLabel": "Workflow Signatures",
+                  "nativeColumnToken": "workSigRequired"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "workName"
+                },
+                {
+                  "actualLabel": "Assignee",
+                  "nativeColumnToken": "workAssignee"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "workRole"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "workVote"
+                },
+                {
+                  "actualLabel": "Comments",
+                  "nativeColumnToken": "workComments"
+                },
+                {
+                  "actualLabel": "Completed By",
+                  "nativeColumnToken": "workCompletedBy"
+                },
+                {
+                  "actualLabel": "Due Date",
+                  "nativeColumnToken": "workDeadline"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "workCompletedDate"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "taskStatusTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "taskHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "activityName"
+                },
+                {
+                  "actualLabel": "Original Assignee",
+                  "nativeColumnToken": "originalAssignee"
+                },
+                {
+                  "actualLabel": "New Assignee",
+                  "nativeColumnToken": "newAssignee"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "actionName"
+                },
+                {
+                  "actualLabel": "Performed By",
+                  "nativeColumnToken": "actionPerformedBy"
+                },
+                {
+                  "actualLabel": "Reason for Action",
+                  "nativeColumnToken": "reasonForAction"
+                },
+                {
+                  "actualLabel": "Performed On",
+                  "nativeColumnToken": "actionPerformedOn"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "taskHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988688",
+          "label": "成员",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_866988688",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_866988688_teamlistTeamCC_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_866988688_teamlistTeamCC"
+          ],
+          "grids": [
+            {
+              "gridId": "windchill.enterprise.team.commonTeam",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "teamMemberImage"
+                },
+                {
+                  "actualLabel": "Roles/Members",
+                  "nativeColumnToken": "name_proj"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "team_infoPageAction"
+                },
+                {
+                  "actualLabel": "Description",
+                  "nativeColumnToken": "description"
+                },
+                {
+                  "actualLabel": "E-mail",
+                  "nativeColumnToken": "email"
+                },
+                {
+                  "actualLabel": "Phone",
+                  "nativeColumnToken": "phoneNumber"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "windchill.enterprise.team.commonTeamfilterSelect",
+                  "type": "text",
+                  "value": "Shared Team Roles and Members",
+                  "emptyClass": false
+                },
+                {
+                  "id": "windchill.enterprise.team.commonTeam.fitTextField",
+                  "type": "text",
+                  "value": null,
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_object_sbRelatedTab",
+          "label": "SB Relate Tab",
+          "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+          "componentIds": [
+            "infoPage_myTab_object_sbRelatedTab_sbsbTreeReport_tocItem",
+            "wrap_infoPage_myTab_object_sbRelatedTab_sbsbTreeReport"
+          ],
+          "grids": [
+            {
+              "gridId": "mytreetable",
+              "columns": [
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Number",
+                  "nativeColumnToken": "number"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageAction"
+                },
+                {
+                  "actualLabel": "Primary Content",
+                  "nativeColumnToken": "primaryAttachmentProperties"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "name"
+                },
+                {
+                  "actualLabel": "SB处理单编号",
+                  "nativeColumnToken": "IBA|BizNo"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Created By",
+                  "nativeColumnToken": "creator"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "thePersistInfo_modifyStamp"
+                }
+              ],
+              "queryControls": [],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_object_sbStatusLink",
+          "label": "SB Status Link",
+          "panelLocator": "#infoPage_myTab_object_sbStatusLink",
+          "componentIds": [
+            "infoPage_myTab_object_sbStatusLink_sbsbStatusLinkList_tocItem",
+            "wrap_infoPage_myTab_object_sbStatusLink_sbsbStatusLinkList"
+          ],
+          "grids": [
+            {
+              "gridId": "document.sbstatuslink.list",
+              "columns": [
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Number",
+                  "nativeColumnToken": "number"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "name"
+                },
+                {
+                  "actualLabel": "业务对象编号",
+                  "nativeColumnToken": "BizNo"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Stand Alone",
+                  "nativeColumnToken": "Standalone"
+                },
+                {
+                  "actualLabel": "Status Link",
+                  "nativeColumnToken": "SBStatus"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "document.sbstatuslink.list.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988689",
+          "label": "笔记本",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_866988689",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_866988689_historytimelineHistory_tocItem",
+            "infoPage_myTab_tab_jcaGen_866988689_historylegacyLCHistory_tocItem",
+            "infoPage_myTab_tab_jcaGen_866988689_workflowprocessHistory_tocItem",
+            "infoPage_myTab_tab_jcaGen_866988689_notebookreference_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_historytimelineHistory",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_historylegacyLCHistory",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_workflowprocessHistory",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_notebookreference"
+          ],
+          "grids": [
+            {
+              "gridId": "lifecycleHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Life Cycle Name",
+                  "nativeColumnToken": "lifeCycleName"
+                },
+                {
+                  "actualLabel": "Team",
+                  "nativeColumnToken": "teamTemplateIdentity"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "lifecyclehistoryaction"
+                },
+                {
+                  "actualLabel": "User",
+                  "nativeColumnToken": "lifeCycleUserName"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "lifecycleHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "votingHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "roleName"
+                },
+                {
+                  "actualLabel": "Signer",
+                  "nativeColumnToken": "signerFullName"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "lcVote"
+                },
+                {
+                  "actualLabel": "Comment",
+                  "nativeColumnToken": "comments"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "votingHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "processHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "procName"
+                },
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "procStatus"
+                },
+                {
+                  "actualLabel": "Initiated By",
+                  "nativeColumnToken": "creator"
+                },
+                {
+                  "actualLabel": "Date Started",
+                  "nativeColumnToken": "startTime"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "endTime"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "processHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "taskStatusTableId",
+              "columns": [
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "ASSIGNMENT_STATUS"
+                },
+                {
+                  "actualLabel": "Latest action performed.",
+                  "nativeColumnToken": "ASSIGNMENT_REASSIGNED"
+                },
+                {
+                  "actualLabel": "Workflow Signatures",
+                  "nativeColumnToken": "workSigRequired"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "workName"
+                },
+                {
+                  "actualLabel": "Assignee",
+                  "nativeColumnToken": "workAssignee"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "workRole"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "workVote"
+                },
+                {
+                  "actualLabel": "Comments",
+                  "nativeColumnToken": "workComments"
+                },
+                {
+                  "actualLabel": "Completed By",
+                  "nativeColumnToken": "workCompletedBy"
+                },
+                {
+                  "actualLabel": "Due Date",
+                  "nativeColumnToken": "workDeadline"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "workCompletedDate"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "taskStatusTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "taskHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "activityName"
+                },
+                {
+                  "actualLabel": "Original Assignee",
+                  "nativeColumnToken": "originalAssignee"
+                },
+                {
+                  "actualLabel": "New Assignee",
+                  "nativeColumnToken": "newAssignee"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "actionName"
+                },
+                {
+                  "actualLabel": "Performed By",
+                  "nativeColumnToken": "actionPerformedBy"
+                },
+                {
+                  "actualLabel": "Reason for Action",
+                  "nativeColumnToken": "reasonForAction"
+                },
+                {
+                  "actualLabel": "Performed On",
+                  "nativeColumnToken": "actionPerformedOn"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "taskHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "netmarkets.notebookfolder.referenceNotebook",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "notebookNameId"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "viewInfoAction"
+                },
+                {
+                  "actualLabel": "New Link",
+                  "nativeColumnToken": "newLinkAction"
+                },
+                {
+                  "actualLabel": "Edit Link",
+                  "nativeColumnToken": "editLinkAction"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "netmarkets.notebookfolder.referenceNotebook.fitTextField",
+                  "type": "text",
+                  "value": null,
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": [
+            "timelineIFrame"
+          ]
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_1902225244",
+          "label": "新建选项卡 1",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_1902225244",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_1902225244_objectattributes_tocItem",
+            "infoPage_myTab_tab_jcaGen_1902225244_historylegacyLCHistory_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_1902225244_objectattributes",
+            "wrap_infoPage_myTab_tab_jcaGen_1902225244_historylegacyLCHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "lifecycleHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Life Cycle Name",
+                  "nativeColumnToken": "lifeCycleName"
+                },
+                {
+                  "actualLabel": "Team",
+                  "nativeColumnToken": "teamTemplateIdentity"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "lifecyclehistoryaction"
+                },
+                {
+                  "actualLabel": "User",
+                  "nativeColumnToken": "lifeCycleUserName"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "lifecycleHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "votingHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "roleName"
+                },
+                {
+                  "actualLabel": "Signer",
+                  "nativeColumnToken": "signerFullName"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "lcVote"
+                },
+                {
+                  "actualLabel": "Comment",
+                  "nativeColumnToken": "comments"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "votingHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [
+            {
+              "sectionId": "BusinessAttributesGroup",
+              "label": "Business",
+              "dataStoreId": "dataStoreBusinessAttributesGroup",
+              "labels": [
+                "SB/SL文档编号:",
+                "SB/SL版本:",
+                "OEM厂商类型:",
+                "OEM厂商:",
+                "类型:",
+                "SB/SL标题:",
+                "是否紧急:",
+                "颁发日期:",
+                "原创建者:",
+                "原创建时间:"
+              ]
+            },
+            {
+              "sectionId": "MoreAttributesGroup",
+              "label": "System",
+              "dataStoreId": "dataStoreMoreAttributesGroup",
+              "labels": [
+                "Description:",
+                "",
+                "Format Name:",
+                "State:",
+                "Context:",
+                "Location:",
+                "Life Cycle Template:",
+                "Team Template:",
+                "Created By:",
+                "Modified By:",
+                "Created On:",
+                "Last Modified:"
+              ]
+            }
+          ],
+          "embeddedIds": []
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_5831746073",
+          "label": "新建选项卡 2",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_5831746073",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_5831746073_historylegacyLCHistory_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_5831746073_historylegacyLCHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "lifecycleHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Life Cycle Name",
+                  "nativeColumnToken": "lifeCycleName"
+                },
+                {
+                  "actualLabel": "Team",
+                  "nativeColumnToken": "teamTemplateIdentity"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "lifecyclehistoryaction"
+                },
+                {
+                  "actualLabel": "User",
+                  "nativeColumnToken": "lifeCycleUserName"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "lifecycleHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            },
+            {
+              "gridId": "votingHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "roleName"
+                },
+                {
+                  "actualLabel": "Signer",
+                  "nativeColumnToken": "signerFullName"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "lcVote"
+                },
+                {
+                  "actualLabel": "Comment",
+                  "nativeColumnToken": "comments"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ],
+              "queryControls": [
+                {
+                  "id": "votingHistoryTableId.searchInListTextBox",
+                  "type": "text",
+                  "value": "Search in table",
+                  "emptyClass": true
+                }
+              ],
+              "visible": true
+            }
+          ],
+          "sections": [],
+          "embeddedIds": []
+        }
+      ]
+    },
+    "REVIEWED_SB_ANONYMOUS_STRICT_BLANK_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-anonymous-strict-blank.v1",
+      "modelRevision": "tdms-reviewed-sb-anonymous-strict-blank@1",
+      "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument",
+      "nativeHeaderType": "SB文档",
+      "scopeIds": [
+        "SB",
+        "SIL",
+        "SB-IN",
+        "SL",
+        "MT"
+      ],
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "panelLocator": "#infoPage_myTab_object_docInfoDefaultDetails",
+      "sectionId": "MoreAttributesGroup",
+      "dataStoreId": "dataStoreMoreAttributesGroup",
+      "rowChildClasses": [
+        "attributePanel-asterisk",
+        "attributePanel-label",
+        "attributePanel-value",
+        "attributePanel-asterisk",
+        "attributePanel-label",
+        "attributePanel-value"
+      ]
+    },
+    "REVIEWED_SB_DOCUMENT_STRUCTURE_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-document-structure-native.v1",
+      "modelRevision": "tdms-reviewed-sb-document-structure-native@1",
+      "scopeIds": [
+        "SB",
+        "SIL",
+        "SB-IN",
+        "SL",
+        "MT"
+      ],
+      "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument",
+      "nativeHeaderType": "SB文档",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_docsb_docStructureGWT",
+      "panelLocator": "#infoPage_myTab_docsb_docStructureGWT",
+      "label": "Structure",
+      "frameId": "docsbIFrame",
+      "framePath": "/Windchill/netmarkets/jsp/docsb/docsb-iframe.jsp",
+      "componentId": "catGSEViewMainPanel",
+      "innerTitle": "Windchill PDMLink",
+      "purpose": "REQUIRED_NATIVE_DOCUMENT_STRUCTURE_RELATIONS",
+      "tableId": "docsb.DOCSB.uses",
+      "tableTitle": "Uses",
+      "detailTabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "detailPanelLocator": "#infoPage_myTab_object_docInfoDefaultDetails",
+      "stopReason": "TDMS_COMPLETE_SB_STRUCTURE_END_UNPROVEN",
+      "nativeEmptyText": "No data to display",
+      "findPlaceholder": "Find in Structure",
+      "usesSearchPlaceholder": "Search in Uses",
+      "inputSha256": "c40c488ed7ba7c3e052ce7fa2bbc65f9a513f8223f993010cc96403f4a6480c0",
+      "treeColumn": {
+        "actualLabel": "Identity",
+        "nativeColumnToken": "Child:identityBuilder"
+      },
+      "usesColumns": [
+        {
+          "actualLabel": "",
+          "nativeColumnToken": "tableIcon",
+          "read": false
+        },
+        {
+          "actualLabel": "Number",
+          "nativeColumnToken": "Master:number",
+          "read": true
+        },
+        {
+          "actualLabel": "Name",
+          "nativeColumnToken": "Master:name",
+          "read": true
+        },
+        {
+          "actualLabel": "",
+          "nativeColumnToken": "Child:checkOutStatus",
+          "read": false
+        },
+        {
+          "actualLabel": "",
+          "nativeColumnToken": "Child:statusFamily_Share",
+          "read": false
+        },
+        {
+          "actualLabel": "",
+          "nativeColumnToken": "Child:noteStat",
+          "read": false
+        },
+        {
+          "actualLabel": "Version",
+          "nativeColumnToken": "Child:version",
+          "read": true
+        },
+        {
+          "actualLabel": "Description",
+          "nativeColumnToken": "Child:description",
+          "read": false
+        },
+        {
+          "actualLabel": "State",
+          "nativeColumnToken": "Child:lifeCycleState",
+          "read": true
+        }
+      ],
+      "attributeLabels": [
+        "Number:",
+        "Name:",
+        "Version:",
+        "Type:",
+        "Primary Content:",
+        "Latest Iteration:",
+        "State:",
+        "Status:",
+        "Modified By:",
+        "Last Modified:"
+      ],
+      "configuration": {
+        "typeRaw": "Latest",
+        "detailsRaw": "Working",
+        "applyToTopLevelObjectChecked": true,
+        "applyLatestForUnresolvedDependentsChecked": false
+      },
+      "checkboxLabels": [
+        "Apply to top level object",
+        "Apply latest for unresolved dependents"
+      ]
+    },
+    "REVIEWED_SB_NATIVE_TREE_MODEL": {
+      "modelRevision": "tdms-reviewed-sb-document-native-tree@1",
+      "scopeIds": [
+        "SB",
+        "SIL",
+        "SB-IN",
+        "SL",
+        "MT"
+      ],
+      "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument",
+      "nativeHeaderType": "SB文档",
+      "tabId": "infoPageinfoPanelID__infoPage_myTab_object_sbRelatedTab",
+      "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+      "gridId": "mytreetable",
+      "tableTitle": "SB RelationShip",
+      "numberRole": "SB_NATIVE_NUMBER_REFERENCE",
+      "scopeMeaning": "EXACT_OWNER_CURRENT_NATIVE_SB_RELATE_TREE",
+      "inputSha256": "c40c488ed7ba7c3e052ce7fa2bbc65f9a513f8223f993010cc96403f4a6480c0",
+      "numberTreeSha256": "da841d28c1ec04dabddc78c8442b92459268619716baabed7bdcc07444a5bd1b",
+      "leafMarkerInputSha256": "f014ddeee8eed2130e315e04b1bc2396e06644a24d45d3461161066af745b1af",
+      "leafMarkerSecondInputSha256": "bda8b3d672601a3b0bafce34731565108ca9063bd08f54def6c27e7699b6d19c",
+      "reviewedLeafMarkers": [
+        "ux-maximgb-tg-elbow-end"
+      ],
+      "targetIndicators": [
+        {
+          "scopeId": "SB_PROCESSING_FORM",
+          "nativeClass": "wt.change2.WTChangeRequest2",
+          "title": "SB处理单",
+          "src": "netmarkets/images/chgreqst.gif"
+        },
+        {
+          "scopeId": "SB_ASSESSMENT_FORM",
+          "nativeClass": "wt.change2.WTChangeOrder2",
+          "title": "SB评估单",
+          "src": "netmarkets/images/chgnotice.gif"
+        }
+      ],
+      "columns": [
+        {
+          "actualLabel": "Object Type Indicator",
+          "nativeColumnToken": "type_icon"
+        },
+        {
+          "actualLabel": "Number",
+          "nativeColumnToken": "number"
+        },
+        {
+          "actualLabel": "View Information",
+          "nativeColumnToken": "infoPageAction"
+        },
+        {
+          "actualLabel": "Primary Content",
+          "nativeColumnToken": "primaryAttachmentProperties"
+        },
+        {
+          "actualLabel": "Name",
+          "nativeColumnToken": "name"
+        },
+        {
+          "actualLabel": "SB处理单编号",
+          "nativeColumnToken": "IBA|BizNo"
+        },
+        {
+          "actualLabel": "State",
+          "nativeColumnToken": "state"
+        },
+        {
+          "actualLabel": "Created By",
+          "nativeColumnToken": "creator"
+        },
+        {
+          "actualLabel": "Last Modified",
+          "nativeColumnToken": "thePersistInfo_modifyStamp"
+        }
+      ]
+    },
+    "REVIEWED_SB_ATTACHMENT_ALIAS_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-attachment-alias.v1",
+      "modelRevision": "tdms-reviewed-sb-attachment-alias@1",
+      "reasonCode": "TDMS_COMPLETE_SB_ATTACHMENT_CANONICAL_ALIAS",
+      "canonicalTabId": "infoPageinfoPanelID__infoPage_myTab_object_docContentInfoDetails",
+      "panels": [
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_225694243",
+          "label": "附件",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_225694243",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_225694243_objectattachments_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_225694243_objectattachments"
+          ],
+          "grids": [
+            {
+              "gridId": "attachments.table.secondary",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Label or File Name",
+                  "nativeColumnToken": "attachmentsName"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "infoPageActionAttachment"
+                },
+                {
+                  "actualLabel": "Format Icon",
+                  "nativeColumnToken": "formatIcon"
+                },
+                {
+                  "actualLabel": "Format",
+                  "nativeColumnToken": "formatName"
+                },
+                {
+                  "actualLabel": "Attachment Description",
+                  "nativeColumnToken": "description"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "thePersistInfo_modifyStamp"
+                },
+                {
+                  "actualLabel": "Modified By",
+                  "nativeColumnToken": "modifier"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "REVIEWED_SB_FIELDS_ALIAS_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-fields-alias.v1",
+      "modelRevision": "tdms-reviewed-sb-fields-alias@1",
+      "reasonCode": "TDMS_COMPLETE_SB_FIELDS_CANONICAL_ALIAS",
+      "canonicalTabId": "infoPageinfoPanelID__infoPage_myTab_object_docInfoDefaultDetails",
+      "panels": [
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_1902225244",
+          "label": "新建选项卡 1",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_1902225244",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_1902225244_objectattributes_tocItem",
+            "infoPage_myTab_tab_jcaGen_1902225244_historylegacyLCHistory_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_1902225244_objectattributes",
+            "wrap_infoPage_myTab_tab_jcaGen_1902225244_historylegacyLCHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "lifecycleHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Life Cycle Name",
+                  "nativeColumnToken": "lifeCycleName"
+                },
+                {
+                  "actualLabel": "Team",
+                  "nativeColumnToken": "teamTemplateIdentity"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "lifecyclehistoryaction"
+                },
+                {
+                  "actualLabel": "User",
+                  "nativeColumnToken": "lifeCycleUserName"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ]
+            },
+            {
+              "gridId": "votingHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "roleName"
+                },
+                {
+                  "actualLabel": "Signer",
+                  "nativeColumnToken": "signerFullName"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "lcVote"
+                },
+                {
+                  "actualLabel": "Comment",
+                  "nativeColumnToken": "comments"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ]
+            }
+          ],
+          "sections": [
+            {
+              "sectionId": "BusinessAttributesGroup",
+              "label": "Business",
+              "dataStoreId": "dataStoreBusinessAttributesGroup",
+              "labels": [
+                "SB/SL文档编号:",
+                "SB/SL版本:",
+                "OEM厂商类型:",
+                "OEM厂商:",
+                "类型:",
+                "SB/SL标题:",
+                "是否紧急:",
+                "颁发日期:",
+                "原创建者:",
+                "原创建时间:"
+              ]
+            },
+            {
+              "sectionId": "MoreAttributesGroup",
+              "label": "System",
+              "dataStoreId": "dataStoreMoreAttributesGroup",
+              "labels": [
+                "Description:",
+                "",
+                "Format Name:",
+                "State:",
+                "Context:",
+                "Location:",
+                "Life Cycle Template:",
+                "Team Template:",
+                "Created By:",
+                "Modified By:",
+                "Created On:",
+                "Last Modified:"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "REVIEWED_SB_HISTORY_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-history-reference.v2",
+      "modelRevision": "tdms-reviewed-sb-history-reference@2",
+      "reasonCode": "TDMS_COMPLETE_SB_HISTORY_REFERENCE_ONLY",
+      "panels": [
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_object_docObjectsHistoryTab",
+          "label": "History",
+          "panelLocator": "#infoPage_myTab_object_docObjectsHistoryTab",
+          "componentIds": [
+            "infoPage_myTab_object_docObjectsHistoryTab_historyversionHistory_tocItem",
+            "infoPage_myTab_object_docObjectsHistoryTab_historytimelineHistory_tocItem",
+            "wrap_infoPage_myTab_object_docObjectsHistoryTab_historyversionHistory",
+            "wrap_infoPage_myTab_object_docObjectsHistoryTab_historytimelineHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "version.history.document",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "General Status",
+                  "nativeColumnToken": "statusFamily_General"
+                },
+                {
+                  "actualLabel": "Change Status",
+                  "nativeColumnToken": "statusFamily_Change"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Version",
+                  "nativeColumnToken": "version"
+                },
+                {
+                  "actualLabel": "Format Icon",
+                  "nativeColumnToken": "formatIcon"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "versionInfoPageAction"
+                },
+                {
+                  "actualLabel": "Open Associated Content",
+                  "nativeColumnToken": "openAsscContent"
+                },
+                {
+                  "actualLabel": "Information compare",
+                  "nativeColumnToken": "infoCompareAction"
+                },
+                {
+                  "actualLabel": "File Name",
+                  "nativeColumnToken": "fileName"
+                },
+                {
+                  "actualLabel": "Size",
+                  "nativeColumnToken": "fileSize"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Comments",
+                  "nativeColumnToken": "iterationNote"
+                },
+                {
+                  "actualLabel": "Modified By",
+                  "nativeColumnToken": "modified_by"
+                },
+                {
+                  "actualLabel": "Last Modified",
+                  "nativeColumnToken": "thePersistInfo_modifyStamp"
+                },
+                {
+                  "actualLabel": "Authorization",
+                  "nativeColumnToken": "authorization"
+                },
+                {
+                  "actualLabel": "Predecessor",
+                  "nativeColumnToken": "predecessor"
+                },
+                {
+                  "actualLabel": "Revision",
+                  "nativeColumnToken": "revision"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "REVIEWED_SB_MANAGEMENT_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-management-reference.v1",
+      "modelRevision": "tdms-reviewed-sb-management-reference@1",
+      "reasonCode": "TDMS_COMPLETE_SB_MANAGEMENT_REFERENCE_ONLY",
+      "panels": [
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_45658671",
+          "label": "工作流进程",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_45658671",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_45658671_workflowprocessHistory_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_45658671_workflowprocessHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "processHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "procName"
+                },
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "procStatus"
+                },
+                {
+                  "actualLabel": "Initiated By",
+                  "nativeColumnToken": "creator"
+                },
+                {
+                  "actualLabel": "Date Started",
+                  "nativeColumnToken": "startTime"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "endTime"
+                }
+              ]
+            },
+            {
+              "gridId": "taskStatusTableId",
+              "columns": [
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "ASSIGNMENT_STATUS"
+                },
+                {
+                  "actualLabel": "Latest action performed.",
+                  "nativeColumnToken": "ASSIGNMENT_REASSIGNED"
+                },
+                {
+                  "actualLabel": "Workflow Signatures",
+                  "nativeColumnToken": "workSigRequired"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "workName"
+                },
+                {
+                  "actualLabel": "Assignee",
+                  "nativeColumnToken": "workAssignee"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "workRole"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "workVote"
+                },
+                {
+                  "actualLabel": "Comments",
+                  "nativeColumnToken": "workComments"
+                },
+                {
+                  "actualLabel": "Completed By",
+                  "nativeColumnToken": "workCompletedBy"
+                },
+                {
+                  "actualLabel": "Due Date",
+                  "nativeColumnToken": "workDeadline"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "workCompletedDate"
+                }
+              ]
+            },
+            {
+              "gridId": "taskHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "activityName"
+                },
+                {
+                  "actualLabel": "Original Assignee",
+                  "nativeColumnToken": "originalAssignee"
+                },
+                {
+                  "actualLabel": "New Assignee",
+                  "nativeColumnToken": "newAssignee"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "actionName"
+                },
+                {
+                  "actualLabel": "Performed By",
+                  "nativeColumnToken": "actionPerformedBy"
+                },
+                {
+                  "actualLabel": "Reason for Action",
+                  "nativeColumnToken": "reasonForAction"
+                },
+                {
+                  "actualLabel": "Performed On",
+                  "nativeColumnToken": "actionPerformedOn"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988688",
+          "label": "成员",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_866988688",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_866988688_teamlistTeamCC_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_866988688_teamlistTeamCC"
+          ],
+          "grids": [
+            {
+              "gridId": "windchill.enterprise.team.commonTeam",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "teamMemberImage"
+                },
+                {
+                  "actualLabel": "Roles/Members",
+                  "nativeColumnToken": "name_proj"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "team_infoPageAction"
+                },
+                {
+                  "actualLabel": "Description",
+                  "nativeColumnToken": "description"
+                },
+                {
+                  "actualLabel": "E-mail",
+                  "nativeColumnToken": "email"
+                },
+                {
+                  "actualLabel": "Phone",
+                  "nativeColumnToken": "phoneNumber"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_5831746073",
+          "label": "新建选项卡 2",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_5831746073",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_5831746073_historylegacyLCHistory_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_5831746073_historylegacyLCHistory"
+          ],
+          "grids": [
+            {
+              "gridId": "lifecycleHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Life Cycle Name",
+                  "nativeColumnToken": "lifeCycleName"
+                },
+                {
+                  "actualLabel": "Team",
+                  "nativeColumnToken": "teamTemplateIdentity"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "lifecyclehistoryaction"
+                },
+                {
+                  "actualLabel": "User",
+                  "nativeColumnToken": "lifeCycleUserName"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ]
+            },
+            {
+              "gridId": "votingHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "roleName"
+                },
+                {
+                  "actualLabel": "Signer",
+                  "nativeColumnToken": "signerFullName"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "lcVote"
+                },
+                {
+                  "actualLabel": "Comment",
+                  "nativeColumnToken": "comments"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "REVIEWED_SB_NOTEBOOK_MODEL": {
+      "schemaVersion": "wiselink.tdms-sb-notebook-mixed.v2",
+      "modelRevision": "tdms-reviewed-sb-notebook-mixed@2",
+      "reasonCode": "TDMS_COMPLETE_SB_NOTEBOOK_MIXED",
+      "businessGridId": "netmarkets.notebookfolder.referenceNotebook",
+      "panels": [
+        {
+          "tabId": "infoPageinfoPanelID__infoPage_myTab_tab_jcaGen_866988689",
+          "label": "笔记本",
+          "panelLocator": "#infoPage_myTab_tab_jcaGen_866988689",
+          "componentIds": [
+            "infoPage_myTab_tab_jcaGen_866988689_historytimelineHistory_tocItem",
+            "infoPage_myTab_tab_jcaGen_866988689_historylegacyLCHistory_tocItem",
+            "infoPage_myTab_tab_jcaGen_866988689_workflowprocessHistory_tocItem",
+            "infoPage_myTab_tab_jcaGen_866988689_notebookreference_tocItem",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_historytimelineHistory",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_historylegacyLCHistory",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_workflowprocessHistory",
+            "wrap_infoPage_myTab_tab_jcaGen_866988689_notebookreference"
+          ],
+          "grids": [
+            {
+              "gridId": "lifecycleHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Life Cycle Name",
+                  "nativeColumnToken": "lifeCycleName"
+                },
+                {
+                  "actualLabel": "Team",
+                  "nativeColumnToken": "teamTemplateIdentity"
+                },
+                {
+                  "actualLabel": "State",
+                  "nativeColumnToken": "state"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "lifecyclehistoryaction"
+                },
+                {
+                  "actualLabel": "User",
+                  "nativeColumnToken": "lifeCycleUserName"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ]
+            },
+            {
+              "gridId": "votingHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "roleName"
+                },
+                {
+                  "actualLabel": "Signer",
+                  "nativeColumnToken": "signerFullName"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "lcVote"
+                },
+                {
+                  "actualLabel": "Comment",
+                  "nativeColumnToken": "comments"
+                },
+                {
+                  "actualLabel": "Date",
+                  "nativeColumnToken": "thePersistInfo_createStamp"
+                }
+              ]
+            },
+            {
+              "gridId": "processHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "type_icon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "procName"
+                },
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "procStatus"
+                },
+                {
+                  "actualLabel": "Initiated By",
+                  "nativeColumnToken": "creator"
+                },
+                {
+                  "actualLabel": "Date Started",
+                  "nativeColumnToken": "startTime"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "endTime"
+                }
+              ]
+            },
+            {
+              "gridId": "taskStatusTableId",
+              "columns": [
+                {
+                  "actualLabel": "Status",
+                  "nativeColumnToken": "ASSIGNMENT_STATUS"
+                },
+                {
+                  "actualLabel": "Latest action performed.",
+                  "nativeColumnToken": "ASSIGNMENT_REASSIGNED"
+                },
+                {
+                  "actualLabel": "Workflow Signatures",
+                  "nativeColumnToken": "workSigRequired"
+                },
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "workName"
+                },
+                {
+                  "actualLabel": "Assignee",
+                  "nativeColumnToken": "workAssignee"
+                },
+                {
+                  "actualLabel": "Role",
+                  "nativeColumnToken": "workRole"
+                },
+                {
+                  "actualLabel": "Vote",
+                  "nativeColumnToken": "workVote"
+                },
+                {
+                  "actualLabel": "Comments",
+                  "nativeColumnToken": "workComments"
+                },
+                {
+                  "actualLabel": "Completed By",
+                  "nativeColumnToken": "workCompletedBy"
+                },
+                {
+                  "actualLabel": "Due Date",
+                  "nativeColumnToken": "workDeadline"
+                },
+                {
+                  "actualLabel": "Date Completed",
+                  "nativeColumnToken": "workCompletedDate"
+                }
+              ]
+            },
+            {
+              "gridId": "taskHistoryTableId",
+              "columns": [
+                {
+                  "actualLabel": "Object Type Indicator",
+                  "nativeColumnToken": "workIcon"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "activityName"
+                },
+                {
+                  "actualLabel": "Original Assignee",
+                  "nativeColumnToken": "originalAssignee"
+                },
+                {
+                  "actualLabel": "New Assignee",
+                  "nativeColumnToken": "newAssignee"
+                },
+                {
+                  "actualLabel": "Action",
+                  "nativeColumnToken": "actionName"
+                },
+                {
+                  "actualLabel": "Performed By",
+                  "nativeColumnToken": "actionPerformedBy"
+                },
+                {
+                  "actualLabel": "Reason for Action",
+                  "nativeColumnToken": "reasonForAction"
+                },
+                {
+                  "actualLabel": "Performed On",
+                  "nativeColumnToken": "actionPerformedOn"
+                }
+              ]
+            },
+            {
+              "gridId": "netmarkets.notebookfolder.referenceNotebook",
+              "columns": [
+                {
+                  "actualLabel": "",
+                  "nativeColumnToken": "checker"
+                },
+                {
+                  "actualLabel": "Name",
+                  "nativeColumnToken": "notebookNameId"
+                },
+                {
+                  "actualLabel": "View Information",
+                  "nativeColumnToken": "viewInfoAction"
+                },
+                {
+                  "actualLabel": "New Link",
+                  "nativeColumnToken": "newLinkAction"
+                },
+                {
+                  "actualLabel": "Edit Link",
+                  "nativeColumnToken": "editLinkAction"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "profiles": {
+    "SB": {
+      "nativeClass": "wt.doc.WTDocument",
+      "kind": "MANUFACTURER_FILE",
+      "detailLabel": "Details",
+      "detailPanel": "#infoPage_myTab_object_docInfoDefaultDetails",
+      "relationTables": [
+        {
+          "tableTitle": "SB RelationShip",
+          "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+          "gridId": "mytreetable",
+          "tabLabel": "SB Relate Tab",
+          "relationshipRole": "CURRENT_CONTENT"
+        },
+        {
+          "tableTitle": "History Table",
+          "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+          "gridId": "sb.adhistory.list",
+          "tabLabel": "SB Relate Tab",
+          "relationshipRole": "HISTORICAL_REFERENCE"
+        }
+      ],
+      "ownDocumentHeaderVersionSlot": true,
+      "scopeId": "SB",
+      "profileId": "SB_DOCUMENT",
+      "objectType": "SB文档",
+      "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument",
+      "businessVersionLabel": "SB/SL版本:",
+      "businessTypeLabel": "类型:",
+      "businessType": "SB"
+    },
+    "SL": {
+      "nativeClass": "wt.doc.WTDocument",
+      "kind": "MANUFACTURER_FILE",
+      "detailLabel": "Details",
+      "detailPanel": "#infoPage_myTab_object_docInfoDefaultDetails",
+      "relationTables": [
+        {
+          "tableTitle": "SB RelationShip",
+          "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+          "gridId": "mytreetable",
+          "tabLabel": "SB Relate Tab",
+          "relationshipRole": "CURRENT_CONTENT"
+        },
+        {
+          "tableTitle": "History Table",
+          "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+          "gridId": "sb.adhistory.list",
+          "tabLabel": "SB Relate Tab",
+          "relationshipRole": "HISTORICAL_REFERENCE"
+        }
+      ],
+      "ownDocumentHeaderVersionSlot": true,
+      "scopeId": "SL",
+      "profileId": "SB_DOCUMENT",
+      "objectType": "SB文档",
+      "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument",
+      "businessVersionLabel": "SB/SL版本:",
+      "businessTypeLabel": "类型:",
+      "businessType": "SL"
+    },
+    "AD": {
+      "nativeClass": "wt.doc.WTDocument",
+      "kind": "MANUFACTURER_FILE",
+      "detailLabel": "Details",
+      "detailPanel": "#infoPage_myTab_object_docInfoDefaultDetails",
+      "relationTables": [],
+      "ownDocumentHeaderVersionSlot": true,
+      "scopeId": "AD",
+      "profileId": "AD_DOCUMENT",
+      "objectType": "AD文档",
+      "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.ADDocument",
+      "businessVersionLabel": null,
+      "layoutEvidencePending": true
+    },
+    "MT": {
+      "nativeClass": "wt.doc.WTDocument",
+      "kind": "MANUFACTURER_FILE",
+      "detailLabel": "Details",
+      "detailPanel": "#infoPage_myTab_object_docInfoDefaultDetails",
+      "relationTables": [
+        {
+          "tableTitle": "SB RelationShip",
+          "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+          "gridId": "mytreetable",
+          "tabLabel": "SB Relate Tab",
+          "relationshipRole": "CURRENT_CONTENT"
+        },
+        {
+          "tableTitle": "History Table",
+          "panelLocator": "#infoPage_myTab_object_sbRelatedTab",
+          "gridId": "sb.adhistory.list",
+          "tabLabel": "SB Relate Tab",
+          "relationshipRole": "HISTORICAL_REFERENCE"
+        }
+      ],
+      "ownDocumentHeaderVersionSlot": true,
+      "scopeId": "MT",
+      "profileId": "SB_DOCUMENT",
+      "objectType": "SB文档",
+      "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.SBDocument",
+      "businessVersionLabel": "SB/SL版本:",
+      "businessTypeLabel": "类型:",
+      "businessType": "MT"
+    }
+  }
+}

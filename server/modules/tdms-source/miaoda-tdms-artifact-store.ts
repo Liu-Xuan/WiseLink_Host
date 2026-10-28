@@ -9,6 +9,8 @@ import { Injectable } from '@nestjs/common';
 import { FileService } from '@lark-apaas/fullstack-nestjs-core';
 import { MiaodaFileServiceArtifactStore } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
+import { deterministicId } from '../document-management/src/runtime/valueTools.js';
+import { controlledPdfByteView } from '../document-management/src/migrated/ingress/pdfDocumentIdentityOwner.js';
 import type { TdmsPackageArtifact } from '@shared/tdms-source.interface';
 import type { HostedFileServiceSelection } from '../document-management/src/hosted/miaodaFileServiceArtifactStore.js';
 import type { TdmsArtifactStore } from './tdms-source.types';
@@ -110,6 +112,14 @@ export class MiaodaTdmsArtifactStore implements TdmsArtifactStore {
     upload?: HostedFileServiceSelection,
   ) {
     const { artifact: a, scope, actor } = input;
+    const pdf = a.mediaType === 'application/pdf';
+    if (pdf) {
+      try {
+        controlledPdfByteView(bytes);
+      } catch {
+        throw tdmsError('TDMS_PDF_ARTIFACT_FORMAT_INVALID', 422);
+      }
+    }
     let canonical: CanonicalArtifact | null =
       await this.catalog.readSourceArtifactByContent({
         sha256: a.sha256,
@@ -120,14 +130,17 @@ export class MiaodaTdmsArtifactStore implements TdmsArtifactStore {
       verified = await this.verifyCanonical(canonical, a, bytes);
     } else {
       const bucketId = await this.files.getDefaultBucket();
-      // Arbitrary source types stay arbitrary; no PDF identity or formal DV pipeline.
-      const filePath = `/tdms-source/candidate/sha256/${a.sha256.slice(0, 2)}/${a.sha256}.bin`;
+      // Share canonical PDF bytes with ordinary intake, without granting a formal DVI.
+      // Other attachment types retain their existing candidate storage and identity.
+      const filePath = pdf
+        ? `/document-management/source/sha256/${a.sha256.slice(0, 2)}/${a.sha256}.pdf`
+        : `/tdms-source/candidate/sha256/${a.sha256.slice(0, 2)}/${a.sha256}.bin`;
       const builder = this.files.from(bucketId);
       let metadata = await builder.getFileMetadata(filePath);
       if (!metadata)
         metadata = await builder.upload(bytes, {
           filePath: filePath.replace(/^\//u, ''),
-          fileName: `${a.sha256}.bin`,
+          fileName: `${a.sha256}.${pdf ? 'pdf' : 'bin'}`,
           contentType: a.mediaType,
           upsert: false,
         });
@@ -139,8 +152,9 @@ export class MiaodaTdmsArtifactStore implements TdmsArtifactStore {
       )
         throw tdmsError('TDMS_ARTIFACT_READBACK_MISMATCH');
       canonical = {
-        sourceArtifactId:
-          'TDMS-SA-' + hash([a.sha256, a.byteLength, a.mediaType]),
+        sourceArtifactId: pdf
+          ? deterministicId('source_artifact', a.sha256, a.byteLength)
+          : 'TDMS-SA-' + hash([a.sha256, a.byteLength, a.mediaType]),
         sha256: a.sha256,
         byteLength: a.byteLength,
         mediaType: a.mediaType,

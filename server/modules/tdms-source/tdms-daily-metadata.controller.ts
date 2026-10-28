@@ -1,9 +1,11 @@
+import { tdmsError } from './tdms-source.types';
 import {
   Body,
   Controller,
   Get,
   Header,
   Param,
+  Optional,
   Post,
   Query,
   Req,
@@ -16,6 +18,9 @@ import {
   ProductionMiaodaBrowserObjectIngressGuard,
 } from '../work-item/production-miaoda-browser-ingress';
 import { TdmsSourceService } from './tdms-source.service';
+import { TdmsReceiverService } from './tdms-receiver.service';
+import { withDocumentSourceReadRequest } from '../document-management/src/hosted/nest/document-source-read.port';
+import { expectedTdmsReceiver } from './tdms-receiver-expectation';
 import { object, strict } from './tdms-source.validation';
 import { dailyRequestId, dailySourceRef } from './tdms-daily-metadata.readback';
 
@@ -23,15 +28,22 @@ import { dailyRequestId, dailySourceRef } from './tdms-daily-metadata.readback';
 @UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
 @Controller('api')
 export class TdmsDailyMetadataController {
-  constructor(private readonly service: TdmsSourceService) {}
+  constructor(private readonly service: TdmsSourceService,
+    @Optional() private readonly receiver?: TdmsReceiverService) {}
+  private withRequest<T>(req: Request, operation: () => Promise<T>, importing = false): Promise<T> {
+    const expected = expectedTdmsReceiver(req);
+    if (expected && !this.receiver) throw tdmsError('TDMS_RECEIVER_EXPECTATION_UNCONFIGURED', 503);
+    return withDocumentSourceReadRequest(req, () => this.receiver && (importing || expected)
+      ? this.receiver.withExpected(req, operation) : operation());
+  }
   @Post('tdms-source-imports')
   @Header('Cache-Control', 'private, no-store')
   submit(@Req() req: Request, @Body() body: unknown, @Query() query: unknown) {
     strict(object(query), []);
-    return this.service.importDailyMetadata(
+    return this.withRequest(req, () => this.service.importDailyMetadata(
       miaodaHostedFinalUserActor(req.userContext),
       body,
-    );
+    ), true);
   }
   @Get('tdms-source-imports/:requestId')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
@@ -42,10 +54,10 @@ export class TdmsDailyMetadataController {
     @Query() query: unknown,
   ) {
     strict(object(query), []);
-    return this.service.readDailyMetadataImport(
+    return this.withRequest(req, () => this.service.readDailyMetadataImport(
       miaodaHostedFinalUserActor(req.userContext),
       dailyRequestId(requestId),
-    );
+    ), false);
   }
   @Get('tdms-source-refs')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
@@ -53,9 +65,9 @@ export class TdmsDailyMetadataController {
   sourceRef(@Req() req: Request, @Query() query: unknown) {
     const q = object(query);
     strict(q, ['sourceRef']);
-    return this.service.readDailySourceRef(
+    return this.withRequest(req, () => this.service.readDailySourceRef(
       miaodaHostedFinalUserActor(req.userContext),
       dailySourceRef(q.sourceRef),
-    );
+    ), false);
   }
 }

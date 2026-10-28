@@ -1,5 +1,6 @@
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import type { DocumentUploadAuthority } from './document-upload-authority';
+import type { DocumentSourceReadContext } from './document-source-read.port';
 export const DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER = Symbol(
   'DOCUMENT_MANAGEMENT_INGEST_AUTHORIZER',
 );
@@ -44,5 +45,6 @@ export interface DocumentManagementIngestAuthorizer {
     roles: string[];
     action: 'DOCUMENT_READ';
     documentVersionId: string;
+    sourceReadContext?: DocumentSourceReadContext;
   }, database?: PostgresJsDatabase): Promise<void>;
 }

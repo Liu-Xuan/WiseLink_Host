@@ -1,0 +1,60 @@
+{
+  "sourceVersion": "0.2.92",
+  "sourceFile": "daily-ingestion/reviewed-complete-source-types.mjs",
+  "sourceSha256": "a40012ad5adc3acd380952052fcc5fb71741bb4310d96b2e7badf56648b13985",
+  "model": {
+    "modelRevision": "tdms-reviewed-ad-same-row-business-version@1",
+    "schemaVersion": "wiselink.tdms-ad-same-row-business-version.v1",
+    "scopeId": "AD",
+    "nativeTypeId": "WCTYPE|wt.doc.WTDocument|com.airchina.ADDocument",
+    "nativeHeaderType": "AD文档",
+    "tabId": "infoPageinfoPanelID__infoPage_myTab_object_adRelatedTab",
+    "panelLocator": "#infoPage_myTab_object_adRelatedTab",
+    "gridIds": [
+      "subTree",
+      "subByTree"
+    ],
+    "columns": [
+      {
+        "actualLabel": "Number",
+        "nativeColumnToken": "number"
+      },
+      {
+        "actualLabel": "AD编号",
+        "nativeColumnToken": "IBA|BizNo"
+      },
+      {
+        "actualLabel": "AD版本",
+        "nativeColumnToken": "IBA|BizVersion"
+      },
+      {
+        "actualLabel": "View Information",
+        "nativeColumnToken": "infoPageAction"
+      },
+      {
+        "actualLabel": "Name",
+        "nativeColumnToken": "name"
+      },
+      {
+        "actualLabel": "State",
+        "nativeColumnToken": "state"
+      },
+      {
+        "actualLabel": "Created By",
+        "nativeColumnToken": "creator"
+      },
+      {
+        "actualLabel": "Last Modified",
+        "nativeColumnToken": "thePersistInfo_modifyStamp"
+      }
+    ],
+    "evidenceRef": "native-input-closure-root-20261015/AD_SAME_ROW_VERSION_INPUT.json",
+    "evidenceSha256": "77e06d54641751b8764105f396d83899aaa34f851df41f3a11a7838b2d65cdd0",
+    "stopReason": "TDMS_COMPLETE_AD_SAME_ROW_QUERY_AND_END_UNREVIEWED",
+    "nativeCount": {
+      "nodeTag": "SPAN",
+      "nodeClassToken": "tableCount",
+      "candidateLimit": 2
+    }
+  }
+}
