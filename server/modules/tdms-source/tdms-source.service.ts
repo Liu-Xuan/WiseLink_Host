@@ -4,7 +4,8 @@ import type {
   TdmsFileServiceRecordReadResponse,
 } from '@shared/tdms-file-service-import.interface';
 import type { TdmsPackageArtifact } from '@shared/tdms-source.interface';
-import type { TdmsDocumentSourceReadRequest } from '@shared/tdms-source-reading.interface';
+import type { TdmsDocumentObservedLinksRequest, TdmsDocumentSourceReadRequest } from '@shared/tdms-source-reading.interface';
+import { readDocumentObservedLinks } from './tdms-document-observed-link-reading';
 import {
   readDocumentVersionSources,
   sourceRecordReadReceipt,
@@ -615,6 +616,19 @@ export class TdmsSourceService {
       documents: this.documents,
       assertGrant: (grant: TdmsSourceGrant, scope?: TdmsSourceScope) => this.assertGrant(actor, grant, scope),
       recheck: (grant: TdmsSourceGrant, context: TdmsReadContext) => this.recheck(actor, grant, 'READ_RECORD', context),
+      receipt: (ref: string, grant: TdmsSourceGrant, context: TdmsReadContext) =>
+        this.receipt(ref, 'WIKI_NATIVE_RECORD', grant, context),
+      limitations: LIMITATIONS,
+    });
+  }
+  readDocumentObservedLinks(actor: TdmsPublicActor, input: TdmsDocumentObservedLinksRequest) {
+    return readDocumentObservedLinks(actor, input, {
+      repository: this.repository,
+      authorization: this.authorization,
+      documents: this.documents,
+      assertGrant: (grant: TdmsSourceGrant, scope?: TdmsSourceScope) => this.assertGrant(actor, grant, scope),
+      recheck: (grant: TdmsSourceGrant, action: 'READ_RECORD' | 'READ_RELATIONS', context: TdmsReadContext) =>
+        this.recheck(actor, grant, action, context),
       receipt: (ref: string, grant: TdmsSourceGrant, context: TdmsReadContext) =>
         this.receipt(ref, 'WIKI_NATIVE_RECORD', grant, context),
       limitations: LIMITATIONS,

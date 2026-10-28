@@ -9,6 +9,7 @@ import type {
   TdmsCapture,
   TdmsCataloguePage,
   TdmsDocumentCataloguePage,
+  TdmsObservedChildrenPage,
   TdmsRecordHead,
   TdmsRelationHead,
   TdmsRepository,
@@ -19,6 +20,7 @@ import type {
   TdmsTransaction,
 } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
+import { retainedCaptureIndex } from './tdms-processing-set-source-facts';
 /** Existing verified HTTP middleware owns DB actor context; never impersonates a service caller. */
 @Injectable()
 export class MiaodaTdmsSourceRepository implements TdmsRepository {
@@ -98,7 +100,7 @@ export class SqlTdmsTransaction implements TdmsTransaction {
         WHERE v.tenant_id=${s.tenantId} AND v.source_key=${s.sourceKey}
           AND v.source_instance_id=${s.sourceInstanceId} AND v.scope_id=${s.scopeId}
           AND (jsonb_exists(v.data->'record'->'relatedDocumentVersionIds',${page.documentVersionId})
-            OR v.source_revision_ref IN (SELECT jsonb_array_elements_text(${JSON.stringify(page.sourceRevisionRefs ?? [])}::jsonb)))
+            OR v.source_revision_ref IN (SELECT jsonb_array_elements_text(${JSON.stringify(page.sourceRevisionRefs ?? [])}::text::jsonb)))
           ${permittedRecords(page)}
         ORDER BY v.record_ref,
           coalesce(h.source_revision_ref = v.source_revision_ref, false) DESC,
@@ -111,6 +113,60 @@ export class SqlTdmsTransaction implements TdmsTransaction {
       LIMIT ${page.limit}
     `);
     return rows.map((row) => row.data);
+  }
+  async observedCaptureIndex(s: TdmsSourceScope, packageId: string) {
+    const rows = await this.db.execute<{ data: unknown }>(sql`
+      SELECT ${observedIndexProjection()} AS data FROM tdms_capture c
+      WHERE c.tenant_id=${s.tenantId} AND c.source_key=${s.sourceKey}
+        AND c.source_instance_id=${s.sourceInstanceId} AND c.scope_id=${s.scopeId}
+        AND c.package_id=${packageId} LIMIT 2`);
+    if (!rows.length) return null;
+    if (rows.length !== 1) throw tdmsError('TDMS_OBSERVED_CAPTURE_INVALID', 409);
+    return retainedCaptureIndex(rows[0]!.data);
+  }
+  async observedChildren(s: TdmsSourceScope, page: TdmsObservedChildrenPage) {
+    if (!Number.isSafeInteger(page.limit) || page.limit < 1 || page.limit > 51)
+      throw tdmsError('TDMS_OBSERVED_LIMIT_INVALID');
+    const parent = page.parent;
+    const after = page.after ? sql`AND c.capture_ref > ${page.after}` : sql``;
+    const revision = page.childRevisionRef
+      ? sql`AND native->>'sourceRevisionRef'=${page.childRevisionRef}` : sql``;
+    if ((parent.originalPackageId === undefined) !== (parent.packageHash === undefined))
+      throw tdmsError('TDMS_OBSERVED_PARENT_INVALID');
+    const parentPackage = parent.originalPackageId === undefined ? sql`` : sql`
+      AND source_record#>>'{rawFields,completeOwnedSource,requestedCriteria,sourceProof,parentPackageId}'=${parent.originalPackageId}
+      AND source_record#>>'{rawFields,completeOwnedSource,requestedCriteria,sourceProof,parentPackageSha256}'=${parent.packageHash}`;
+    const rows = await this.db.execute<{ data: unknown }>(sql`
+      SELECT ${observedIndexProjection()} AS data FROM tdms_capture c
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(c.data#>'{dailyMetadata,envelope,package,records}')='array'
+          THEN c.data#>'{dailyMetadata,envelope,package,records}' ELSE '[]'::jsonb END
+      ) source_record
+      CROSS JOIN LATERAL jsonb_array_elements(
+        CASE WHEN jsonb_typeof(c.data#>'{dailyMetadata,nativeRetention,records}')='array'
+          THEN c.data#>'{dailyMetadata,nativeRetention,records}' ELSE '[]'::jsonb END
+      ) native
+      WHERE c.tenant_id=${s.tenantId} AND c.source_key=${s.sourceKey}
+        AND c.source_instance_id=${s.sourceInstanceId} AND c.scope_id=${s.scopeId}
+        AND c.data#>>'{dailyMetadata,applicationScopeId}'=${parent.applicationScopeId}
+        AND source_record->>'snapshotId'=native->>'snapshotId'
+        AND source_record->>'sourceRecordId'=native->>'sourceRecordId'
+        AND source_record->>'kind'=native->>'sourceKind'
+        AND source_record#>>'{rawFields,completeOwnedSource,requestedCriteria,sourceProof,kind}'='REQUIRED_RELATION_TARGET'
+        ${parentPackage}
+        AND source_record#>>'{rawFields,completeOwnedSource,requestedCriteria,sourceProof,parentSnapshotId}'=${parent.snapshotId}
+        AND source_record#>>'{rawFields,completeOwnedSource,requestedCriteria,sourceProof,parentSourceRecordId}'=${parent.sourceRecordId}
+        AND source_record#>'{rawFields,completeOwnedSource,requestedCriteria,sourceProof,parentSourceVersion}'=${JSON.stringify(parent.sourceVersion)}::text::jsonb
+        AND EXISTS (SELECT 1 FROM jsonb_array_elements(${JSON.stringify(page.permittedRecords)}::text::jsonb) member
+          WHERE member->>'recordKind'=native->>'nativeKind'
+            AND member->>'sourceRecordId'=native->>'sourceRecordId')
+        ${after} ${revision}
+      ORDER BY c.capture_ref LIMIT ${page.limit}`);
+    return rows.map((row) => retainedCaptureIndex(row.data));
+  }
+  observedAssertion(s: TdmsSourceScope, ref: string) {
+    return this.one<TdmsStoredAssertion>(sql`SELECT data FROM tdms_relation_assertion
+      WHERE ${scope(s)} AND assertion_ref=${ref}`);
   }
   async history(s: TdmsSourceScope, recordRef: string) {
     const rows = await this.db.execute<{ data: TdmsStoredRevision }>(
@@ -201,6 +257,16 @@ export class SqlTdmsTransaction implements TdmsTransaction {
     );
   }
 }
+function observedIndexProjection(): SQL {
+  return sql`jsonb_build_object('scope',c.data->'scope','packageId',c.package_id,
+    'packageHash',c.data->'packageHash','captureRef',c.capture_ref,
+    'applicationScopeId',c.data#>'{dailyMetadata,applicationScopeId}',
+    'records',c.data#>'{dailyMetadata,nativeRetention,records}',
+    'relations',c.data#>'{dailyMetadata,nativeRetention,relations}',
+    'artifacts',c.data#>'{dailyMetadata,nativeRetention,artifacts}',
+    'recordRevisionRefs',c.data#>'{receipt,recordRevisionRefs}',
+    'assertionRefs',c.data#>'{receipt,assertionRefs}')`;
+}
 function scope(s: TdmsSourceScope): SQL {
   return sql`tenant_id=${s.tenantId} AND source_key=${s.sourceKey} AND source_instance_id=${s.sourceInstanceId} AND scope_id=${s.scopeId}`;
 }
@@ -208,7 +274,7 @@ function scope(s: TdmsSourceScope): SQL {
 /** Current Host member scope is applied before DISTINCT/seek/limit and body materialization. */
 function permittedRecords(page: TdmsCataloguePage): SQL {
   if (page.permittedRecords === undefined) return sql``;
-  return sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements(${JSON.stringify(page.permittedRecords)}::jsonb) member
+  return sql`AND EXISTS (SELECT 1 FROM jsonb_array_elements(${JSON.stringify(page.permittedRecords)}::text::jsonb) member
     WHERE member->>'recordKind'=v.data->'record'->>'recordKind'
       AND member->>'sourceRecordId'=v.data->'record'->>'sourceRecordId')`;
 }

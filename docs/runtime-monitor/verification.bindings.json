@@ -17,18 +17,18 @@
         "P0",
         "P1"
       ],
-      "sourceRevision": "799defbe3c3573e76f5fbc0316636bc51a538b71",
+      "sourceRevision": "58b3ccfcca1609ae1abf8a39cfc0fe5b8a1a8e3a",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 已定位published原文/SourceRef→delivered或READ→SAVE权威行→Overall previousWork/finish/artifact→同快照阅读的现有消费者；work1四问题/同work消费与同DVI阅读有限核对成立，新模型语义输入及SEM尚未验收。 本轮当前联合本地Host产品799defbe（父43d，tree2f57acd9d9e26c3f3fcdae8f63c88a0726163a56）串行组合P1 eb53三文件与P2 43d四文件，无路径交集、七文件与各自接受来源逐blob相等，正常hook提交且干净。只登记本地源码/测试，未同步/发布；线上仍b8/c238、reader待验，原AD SAVE0/Overall空、真实SEM/Reference/CMCF/OPS质量及Native可信上下文缺口保持。 准确联合799标准完整build run02已exit0（44.680512秒、前后clean、四fresh子日志）；run01仅step0官方CLI沙箱DNS失败且未编译，原件/旧日志不改记成功。仍为未同步/发布的本地产品。",
+      "reviewScope": "58b 已官方技术发布；b993 起的 Review 共享无写诊断、运输、保存及准确 READ 与后继 Overall 消费者已接受。新 SB 尚无真实 SAVE／独立 READ／同版 Overall 证据。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/document-management/src/hosted/nest/document-parsing-hosted.service.ts#inspectPublishedIdentity/#loadPublished → document-original-store.ts#loadForReading → document-original-adapter.ts#documentOriginalStructuredSource；server/modules/canonical-host/document-original-engineering-reading.ts#prepareDocumentOriginalEngineeringReader交付准确原文。jobaid-problem-task.ts#buildJobAidProblemTask区分availableSources目录、deliveredEvidence实际内容及完整previousWork；JobAidWorkRepository.save保存权威工作。JA-AC独立method:severity-definitions材料按原范围保留。",
-      "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput / #commitOverall；jobaidReadingResult → readStoredOverallEvidence / overallModelEvidenceRegistry → consumeOpenClawOverallSynthesisOutput消费准确方法材料和保存正文。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 本地P1 eb53已接ReviewConversationService原WorkItem UPDATE admission → authenticated append/readback及原请求重放；之后仍由现有任务/delivered/READ、保存问题正文和commitOverall消费者完成语义链。本地PG没有新attempt/SAVE，不宣称这些后继已执行。",
+      "consumer": "CanonicalJobAidProblemService 的原准确 saved-work READ 与 Overall 消费／提交入口；INITIAL、Review、CHAT-UPDATE 保留各自原合同。",
       "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeHostedWorkItem / #runHostedInitialStage：当前有效领取者执行；Host action_attempt约束唯一fence。",
       "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#MiaodaWorkItemRepository.claimAutoProcessingCandidate：Host核对封存原结果，原owner/fence恢复；消费者通过原入口接续，不另建结果真源。",
       "authority": {
         "requestRecord": "action_attempt.task_envelope_json / attempt_id / operation_ref；server/modules/canonical-host/canonical-jobaid-problem.service.ts#begin",
         "artifactRecord": "assessment_work_revision的workRevisionRef/workRevision/actionAttemptId/basedOnWorkItemRevision/documentVersionId/previousRef/commandJson/contentJson；历史parseRun沿原actionAttempt.taskEnvelope追溯。Overall不可变artifact.analysis/readingResult及work_item.projection_json.integratedAssessment.overallSynthesis；CanonicalJobAidProblemService.commitOverall。",
-        "consumedInputField": "jobaid-problem-task的modelInput.deliveredEvidence及实际READ refs/保存证据快照；availableSources只是目录。task_envelope_json.modelInput.previousWork（完整工作）与实际模型投影、finish.modelOutput.workRevisionRef、Overall.basedOnJobAidWorkRevisionRef；相同ref不代替真实正文使用验收。",
+        "consumedInputField": "原 SAVE key、准确 workRef／revision、该修订的完整独立 READ 与 Overall 实际输入引用；不以 latest 或 SAVE 回包替代。",
         "ready": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#buildInput：读取准确已存工作，核对最新工作、文档版次和roundCompletion；保留允许的未核实条件，不以翻译完成替代本项条件。",
         "saved": "server/modules/canonical-host/jobaid-work.repository.ts#JobAidWorkRepository.save：来源授权、actor、lease fence、工作修订CAS及事务；保存与执行终态分别成立。",
         "current": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall：jobAidWorkRevisionGuard和projection CAS；#readBrowser按准确workRef判CURRENT/STALE，不按保存时间猜消费。"
@@ -63,17 +63,48 @@
         {
           "id": "research.overall.semantic",
           "kind": "runtime",
-          "reason": "JA-AC§3.1四级一般严重性定义已取得并随787接入实际任务/SAVE/Overall消费者；受控Host版次仍VERSION_UNCONFIRMED/null DVI。有限UI读取work1四问题及同work综合成立，但真实SEM后果、暴露/控制事实与正文级实际模型→SAVE→Overall使用尚未验收。 本地UPDATE-only admission已独立适配且服务33/PG3通过；它不证明真实SEM正文已经更新。",
-          "nextAction": "从已有准确工作及实际任务/交付/READ输入、保存问题正文、Overall previousWork/finish/artifact核对真实语义；补具体后果/暴露/控制资料或保留未知，受控JA-AC版次另核，不重做既有保存链。 准确P1/P2 Host联合候选可独立交付，不以Native表格补丁、Document CHAT版本pin或0082/83为前置；实际内容仍按原授权核对，不以合成PG替代。"
+          "reason": "新 SB 未产生真实 SAVE／独立 READ／同版 Overall；真实工程语义、方法和事实的实际消费仍未验。",
+          "nextAction": "在合法新任务真实保存后，核同一 workRef／revision 的独立 READ、Overall 实际输入和成果，不以合成 PG 或引用号代替语义。"
         },
         {
           "id": "research.overall.m3-scope",
           "kind": "runtime",
-          "reason": "M3选中执行观察已随787技术部署，仍是同快照有限选中行及独立latest dynamic。有限UI不证明完整请求历史、动态权限/版本转换、Ready/首次可读或新业务内容。",
-          "nextAction": "沿实际父响应核对准确动作/attempt/时间及成果、覆盖、ACK分列；保留历史缺失和既有失败，按受影响真实请求推进，不为图登记重造请求集合。"
+          "reason": "已接受 UI v3 的原进度和准确结果显示接线随 eed／58b 进入 Host；58b 实际双端运行、用户页面与新 SB 同版阅读未核。",
+          "nextAction": "正式浏览器恢复后按原权限核同版工作及 Overall、当前进度和 ACK，保留缺失历史。"
         }
       ],
-      "previousReviewedRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48"
+      "previousReviewedRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "reviewHistory": [
+        {
+          "recordedAt": "2026-10-28T16:07:25.065921+00:00",
+          "sourceRevision": "799defbe3c3573e76f5fbc0316636bc51a538b71",
+          "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 已定位published原文/SourceRef→delivered或READ→SAVE权威行→Overall previousWork/finish/artifact→同快照阅读的现有消费者；work1四问题/同work消费与同DVI阅读有限核对成立，新模型语义输入及SEM尚未验收。 本轮当前联合本地Host产品799defbe（父43d，tree2f57acd9d9e26c3f3fcdae8f63c88a0726163a56）串行组合P1 eb53三文件与P2 43d四文件，无路径交集、七文件与各自接受来源逐blob相等，正常hook提交且干净。只登记本地源码/测试，未同步/发布；线上仍b8/c238、reader待验，原AD SAVE0/Overall空、真实SEM/Reference/CMCF/OPS质量及Native可信上下文缺口保持。 准确联合799标准完整build run02已exit0（44.680512秒、前后clean、四fresh子日志）；run01仅step0官方CLI沙箱DNS失败且未编译，原件/旧日志不改记成功。仍为未同步/发布的本地产品。",
+          "consumer": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#CanonicalJobAidProblemService.buildInput / #commitOverall；jobaidReadingResult → readStoredOverallEvidence / overallModelEvidenceRegistry → consumeOpenClawOverallSynthesisOutput消费准确方法材料和保存正文。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 本地P1 eb53已接ReviewConversationService原WorkItem UPDATE admission → authenticated append/readback及原请求重放；之后仍由现有任务/delivered/READ、保存问题正文和commitOverall消费者完成语义链。本地PG没有新attempt/SAVE，不宣称这些后继已执行。",
+          "authority": {
+            "requestRecord": "action_attempt.task_envelope_json / attempt_id / operation_ref；server/modules/canonical-host/canonical-jobaid-problem.service.ts#begin",
+            "artifactRecord": "assessment_work_revision的workRevisionRef/workRevision/actionAttemptId/basedOnWorkItemRevision/documentVersionId/previousRef/commandJson/contentJson；历史parseRun沿原actionAttempt.taskEnvelope追溯。Overall不可变artifact.analysis/readingResult及work_item.projection_json.integratedAssessment.overallSynthesis；CanonicalJobAidProblemService.commitOverall。",
+            "consumedInputField": "jobaid-problem-task的modelInput.deliveredEvidence及实际READ refs/保存证据快照；availableSources只是目录。task_envelope_json.modelInput.previousWork（完整工作）与实际模型投影、finish.modelOutput.workRevisionRef、Overall.basedOnJobAidWorkRevisionRef；相同ref不代替真实正文使用验收。",
+            "ready": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#buildInput：读取准确已存工作，核对最新工作、文档版次和roundCompletion；保留允许的未核实条件，不以翻译完成替代本项条件。",
+            "saved": "server/modules/canonical-host/jobaid-work.repository.ts#JobAidWorkRepository.save：来源授权、actor、lease fence、工作修订CAS及事务；保存与执行终态分别成立。",
+            "current": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall：jobAidWorkRevisionGuard和projection CAS；#readBrowser按准确workRef判CURRENT/STALE，不按保存时间猜消费。"
+          },
+          "gaps": [
+            {
+              "id": "research.overall.semantic",
+              "kind": "runtime",
+              "reason": "JA-AC§3.1四级一般严重性定义已取得并随787接入实际任务/SAVE/Overall消费者；受控Host版次仍VERSION_UNCONFIRMED/null DVI。有限UI读取work1四问题及同work综合成立，但真实SEM后果、暴露/控制事实与正文级实际模型→SAVE→Overall使用尚未验收。 本地UPDATE-only admission已独立适配且服务33/PG3通过；它不证明真实SEM正文已经更新。",
+              "nextAction": "从已有准确工作及实际任务/交付/READ输入、保存问题正文、Overall previousWork/finish/artifact核对真实语义；补具体后果/暴露/控制资料或保留未知，受控JA-AC版次另核，不重做既有保存链。 准确P1/P2 Host联合候选可独立交付，不以Native表格补丁、Document CHAT版本pin或0082/83为前置；实际内容仍按原授权核对，不以合成PG替代。"
+            },
+            {
+              "id": "research.overall.m3-scope",
+              "kind": "runtime",
+              "reason": "M3选中执行观察已随787技术部署，仍是同快照有限选中行及独立latest dynamic。有限UI不证明完整请求历史、动态权限/版本转换、Ready/首次可读或新业务内容。",
+              "nextAction": "沿实际父响应核对准确动作/attempt/时间及成果、覆盖、ACK分列；保留历史缺失和既有失败，按受影响真实请求推进，不为图登记重造请求集合。"
+            }
+          ],
+          "sourceRevisions": null
+        }
+      ]
     },
     {
       "id": "translation.reading",
@@ -160,21 +191,21 @@
         "P1",
         "P6"
       ],
-      "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+      "sourceRevision": "58b3ccfcca1609ae1abf8a39cfc0fe5b8a1a8e3a",
       "originReviewedRevision": "1ec900f05ed28e1a0164a084fb3ee7b0f618d9f0",
-      "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 ACK独立父读模型、Review/Native封存恢复和锁序修复均已交付；本次未新增业务SAVE/ACK或V08/V10通过数。",
+      "reviewScope": "58b 的原 SAVE、独立 exact READ、同版 Overall 与外层 ACK 分列；COMMITTING／UNKNOWN 查原 key，READ 不确定不重 SAVE。g17 指针释放仅是历史维护，不是业务 ACK。",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
       "producer": "server/modules/canonical-host/jobaid-work.repository.ts#JobAidWorkRepository.save",
-      "consumer": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#ActionAttemptLifecycleService.finishProjectionSuccess; openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim; CanonicalJobAidProblemService.readBrowser.autoProcessingAcknowledgement → useJobAidWorkingRead → WorkItemRuntimeDiagnostic",
+      "consumer": "Host 原保存／准确 revision READ、Overall 投影和外层 ACK；已保存工作在 Overall／ACK 前可按原授权读取。",
       "executionOwner": "openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#consumeAutomaticWorkItemQueueTick：单一active-claim owner执行；Host分别维护action_attempt和auto_work_item_authorization，不能以清本地记录代替释放。",
       "recoveryOwner": "server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate：核对原owner/generation/封存结果hash；投影已写则校正终态，否则延续COMMITTING。外层消费者仅以准确token/generation调用ACK。；含Native证据时复核真实队列调用者、过期COMMITTING及精确已保存结果，后续未消费READ不污染原结果恢复。",
       "authority": {
         "requestRecord": "action_attempt.task_envelope_json/result_envelope_json/result_content_hash及auto_work_item_authorization；server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate",
         "artifactRecord": "assessment_work_revision、work_item.projection_json、action_attempt.projection_applied；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit",
-        "consumedInputField": "封存result.modelOutput.workRevisionRef、task.baseRevision、原attemptId/leaseGeneration；auto_work_item_authorization的requestId/token/generation；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit; server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease；新浏览器四字段ACK保持原workItemId/requestId/documentVersionId/acknowledgedAt，不从当前inner attempt重造。",
+        "consumedInputField": "封存原请求、SAVE key、workRef／revision 及原 attempt／lease fence；恢复不换 key 或重生成。",
         "ready": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#AutomaticWorkItemDispatchService.acknowledgeWorkItem：重新授权准确租约并由readCurrentInitialAnalysis检查Host成功判据；不是worker退出即成功。",
         "saved": "server/modules/canonical-host/jobaid-work.repository.ts#save及server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork：幂等SAVE与独立读回在执行终态前即可成立。",
-        "current": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess：准确投影完成；server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease：确认当前授权完成；本地active-claim仅在有效ACK后清理。；已完成原请求ACK可与后继inner RUNNING/COMMITTING共存，父hook消费ACK出现/替换/null。"
+        "current": "正常成功消费时，Host 完成准确投影并核对原授权后由外层有效 ACK 确认，本地 active-claim 随正常成功收尾清理；g17 的显式原字节归档和指针释放是独立历史维护，不是业务 ACK，也不改变 Host 业务状态。已完成原请求 ACK 与后继 inner RUNNING／COMMITTING 可并列观察。"
       },
       "decisionEntry": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#prepareCommit; server/modules/canonical-host/automatic-work-item-dispatch.service.ts#acknowledgeWorkItem",
       "projectionEntry": "server/modules/canonical-host/canonical-jobaid-problem.service.ts#commitOverall; server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess",
@@ -206,16 +237,53 @@
           "id": "save.finish.capacity",
           "kind": "runtime",
           "reason": "真实单事项时间和同窗官方聚合已取得，但Ready/首次可读/生产ACK、未知调用/提交积压以及容量上限仍未知；不能把长等待归因于资源饱和。",
-          "nextAction": "在已发布787及原c235上，按真实受影响请求观察正常恢复/准确对账和实际新增时间；未取得的Ready/首次可读/生产ACK仍未知，不先扩worker或替换队列。"
+          "nextAction": "以官方已发布 58b 和已安装但未启动的 11f2 为技术基线；待新 SB 合法准入后，按同一请求观察实际领取、时间、SAVE、独立 READ、同版 Overall 与 ACK。未知时保留原状态，不重放旧请求、不预设扩容或新队列。"
         },
         {
           "id": "save.finish.c235-switch",
           "kind": "deployment",
-          "reason": "787已单次正常finished发布，原c235实际141文件匹配、安装目录1852测试通过，online三条policy一致，原C136一次恢复且其他15项disabled。技术切换已完成，本次没有新业务SAVE/ACK、V08/V10或全队列清空证明。",
-          "nextAction": "保留现有安装/发布/恢复事实及原失败；后续只按准确业务请求核对SAVE、封存恢复、终态与外层ACK，不重复切换、安装、清checkpoint或制造新SAVE。"
+          "reason": "旧 c235／787 的安装与调度观察是历史；当前 58b 技术发布已完成，新 SB SAVE／独立 READ／Overall／ACK 均未验。",
+          "nextAction": "按新真实任务逐项取得原保存、准确独立 READ、同版 Overall 与外层 ACK；不修改或重启旧 C136。"
         }
       ],
-      "previousReviewedRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc"
+      "previousReviewedRevision": "16b727a3a440d9c164cbbc6c29a97836229709dc",
+      "reviewHistory": [
+        {
+          "recordedAt": "2026-10-28T16:07:25.065921+00:00",
+          "sourceRevision": "78797f5ab30d645e8231cfc4baf7f2b398a75e48",
+          "reviewScope": "当前787已正常发布，公开安全a909同tree、非docs受控输入与4255相同；准确原测试/构建身份保留，未为切换重跑。本次追加实际发布、online policy、原c235安装/测试、一次调度恢复与有限读回，不把技术交付当业务整体完成。 ACK独立父读模型、Review/Native封存恢复和锁序修复均已交付；本次未新增业务SAVE/ACK或V08/V10通过数。",
+          "consumer": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#ActionAttemptLifecycleService.finishProjectionSuccess; openclaw/skills/wiselink-research-and-synthesize/scripts/consume-hosted-work-item.mjs#acknowledgeAndClearAutoClaim; CanonicalJobAidProblemService.readBrowser.autoProcessingAcknowledgement → useJobAidWorkingRead → WorkItemRuntimeDiagnostic",
+          "authority": {
+            "requestRecord": "action_attempt.task_envelope_json/result_envelope_json/result_content_hash及auto_work_item_authorization；server/modules/work-item/miaoda-work-item.repository.ts#claimAutoProcessingCandidate",
+            "artifactRecord": "assessment_work_revision、work_item.projection_json、action_attempt.projection_applied；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit",
+            "consumedInputField": "封存result.modelOutput.workRevisionRef、task.baseRevision、原attemptId/leaseGeneration；auto_work_item_authorization的requestId/token/generation；server/modules/canonical-host/canonical-jobaid-problem.service.ts#commit; server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease；新浏览器四字段ACK保持原workItemId/requestId/documentVersionId/acknowledgedAt，不从当前inner attempt重造。",
+            "ready": "server/modules/canonical-host/automatic-work-item-dispatch.service.ts#AutomaticWorkItemDispatchService.acknowledgeWorkItem：重新授权准确租约并由readCurrentInitialAnalysis检查Host成功判据；不是worker退出即成功。",
+            "saved": "server/modules/canonical-host/jobaid-work.repository.ts#save及server/modules/canonical-host/canonical-jobaid-problem.service.ts#readAttemptWork：幂等SAVE与独立读回在执行终态前即可成立。",
+            "current": "server/modules/action-attempt/action-attempt-lifecycle.service.ts#finishProjectionSuccess：准确投影完成；server/modules/work-item/miaoda-work-item.repository.ts#acknowledgeAutoProcessingLease：确认当前授权完成；本地active-claim仅在有效ACK后清理。；已完成原请求ACK可与后继inner RUNNING/COMMITTING共存，父hook消费ACK出现/替换/null。"
+          },
+          "gaps": [
+            {
+              "id": "save.finish.timeline",
+              "kind": "runtime",
+              "reason": "历史就绪时刻、首次可读持久事件不在现有记录中；dynamic completedAt也不是队列ACK时间。",
+              "nextAction": "报告中分别保留未提供字段和实际首次读回/ACK观察时刻；不从updatedAt或导入时间回填。"
+            },
+            {
+              "id": "save.finish.capacity",
+              "kind": "runtime",
+              "reason": "真实单事项时间和同窗官方聚合已取得，但Ready/首次可读/生产ACK、未知调用/提交积压以及容量上限仍未知；不能把长等待归因于资源饱和。",
+              "nextAction": "在已发布787及原c235上，按真实受影响请求观察正常恢复/准确对账和实际新增时间；未取得的Ready/首次可读/生产ACK仍未知，不先扩worker或替换队列。"
+            },
+            {
+              "id": "save.finish.c235-switch",
+              "kind": "deployment",
+              "reason": "787已单次正常finished发布，原c235实际141文件匹配、安装目录1852测试通过，online三条policy一致，原C136一次恢复且其他15项disabled。技术切换已完成，本次没有新业务SAVE/ACK、V08/V10或全队列清空证明。",
+              "nextAction": "保留现有安装/发布/恢复事实及原失败；后续只按准确业务请求核对SAVE、封存恢复、终态与外层ACK，不重复切换、安装、清checkpoint或制造新SAVE。"
+            }
+          ],
+          "sourceRevisions": null
+        }
+      ]
     },
     {
       "id": "feedback.reading",
@@ -593,18 +661,18 @@
         "P0",
         "P2"
       ],
-      "sourceRevision": "799defbe3c3573e76f5fbc0316636bc51a538b71",
+      "sourceRevision": "58b3ccfcca1609ae1abf8a39cfc0fe5b8a1a8e3a",
       "authorRevision": "0fd28f3d5514a9187fa67c39cd1e19e4d0854492",
       "evidenceScopeRef": "docs/coordination/WISELINK_FIRST_BATCH_20261022.md",
-      "reviewScope": "原787/a7有限阅读与历史401、标签失败和四GET读回保留原时点。公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。技术发布及故障对账不增加完整业务场景通过。 本轮当前联合本地Host产品799defbe（父43d，tree2f57acd9d9e26c3f3fcdae8f63c88a0726163a56）串行组合P1 eb53三文件与P2 43d四文件，无路径交集、七文件与各自接受来源逐blob相等，正常hook提交且干净。只登记本地源码/测试，未同步/发布；线上仍b8/c238、reader待验，原AD SAVE0/Overall空、真实SEM/Reference/CMCF/OPS质量及Native可信上下文缺口保持。 准确联合799标准完整build run02已exit0（44.680512秒、前后clean、四fresh子日志）；run01仅step0官方CLI沙箱DNS失败且未编译，原件/旧日志不改记成功。仍为未同步/发布的本地产品。",
+      "reviewScope": "394 UI v3 的 25 文件已集成至 eed／58b；21 文件逐字相同、4 共用文件的后继保留原消费者。58b 技术发布不代表页面或新 SB 同版阅读已验证。",
       "producer": "既有 DocumentVersion/version.readerWorkItemId、Quicklook、fullpage 和 JobAid 已保存工作/Overall；没有新写入生产者。 普通CHAT由Host既有Review turn保存问题与候选回复，不产生评估工作或正式采用。",
-      "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall、applicability-selection、configuration-evidence现有controller/service的原生身份接线已随准确a7发布，继续复用DialogueBrowserScope（GET runRead、POST runNativeWrite）及request-local native actor，保留NeedLogin/production guard、owner/action/source/version及CAS。原正常用户页面与官方短窗日志只读核对200/409 NOT_CONFIGURED/200/200；不把未配置Source/受控选择或新的初次分析后继当作已运行。 本地P1 UPDATE-only入口复用server/modules/review-persistence/review-conversation.service.ts的原append/readback及官方ACTIVE mapping核权，仅现有WorkItem自动更新评估purpose；不是独立文档CHAT，也未生成/保存新评估成果。",
+      "consumer": "ChecklistManager 内置定义只读；ChecklistPanel／JobAidProblemWorkspace 展示 selected 任务封存定义及 current／exact 历史逐项结果；ReviewConversationTurn 展示本轮 TaskChecklist；WorkItemRuntimeDiagnostic 显示原进度／活动／ACK。",
       "executionOwner": "浏览器原session内的独立读取；useDocumentAssessmentPage核对fresh fullpage，父级一份useJobAidWorkingRead；隐藏panel暂停poll。显式业务动作仍由原Host入口核权。 普通CHAT显式appendReviewTextTurn(CHAT/AUTOMATIC)，Host提供当前owner/OAuth/executor能力；短轮询读回并暂停隐藏panel，CHAT不触发工作刷新。",
       "recoveryOwner": "原页面读取epoch/session隔离及草稿scope继续有效；未知CHAT保留原requestId/body/会话和业务范围，读回核对或显式原样重试。同会话STALE_CONTEXT仍须Host当前能力；CLOSED/空/换会话由用户显式归档结果未知记录，不复制或自动重发。新问题/会话另需显式操作，草稿和未知记录仅页面内存；session变化清除。未知SAVE仍走原Host恢复。",
       "authority": {
         "requestRecord": "原DVI/version reader WI与Quicklook确切关联；getDocumentParsingPage(workItemId, freshness:mutation)独立授权，本UI不新建action_attempt。 CHAT沿Host ReviewConversation/turn requestId、准确reviewScope核权和对账，不新造评估对象。",
         "artifactRecord": "原WorkItem.projection、assessment_work_revision、Overall准确artifact及document parsed artifact；只读原保存正文。 Host Review turn仅保存讨论与候选，不替代assessment_work_revision。",
-        "consumedInputField": "fullpage.workItem/source.documentVersionId、workingRead.current.workRevisionRef、Overall.basedOnJobAidWorkRevisionRef；保存evidence.locator的parseRunId/sourceRefId。 CHAT消费conversation.reviewConversationId/workItemId/reviewScope/status/automaticExecutionAvailable及turn.requestId/purpose；原意图消息正文保持不变。",
+        "consumedInputField": "准确任务封存 definitionVersion／原 contentHash／selection／acceptance 和原 workRef／revision；不得以当前内置定义回填历史。",
         "ready": "确切session+DVI+WI、fresh fullpage与当前association/wikiError授权proof一致；读取不是生成/保存前置探测。 CHAT另要求Host报告的automaticExecutionAvailable；STALE_CONTEXT只对已有原意图在同一会话/范围重试，不开启新请求。",
         "saved": "仅显示既有已保存成果；ReviewImpactPreview之后的显式legacy/CAS与AEO确认/生成保留原Host决定权，不自动保存。 普通CHAT不更新评估或正式采用，更新评估保留独立按钮及原Host保存/确认链。",
         "current": "Overall自身CANDIDATE_ONLY且staleReason null、working CURRENT与准确workRef共同判断；同DVI新解析/保存成果更新不重建稳定草稿实例。"
@@ -648,8 +716,8 @@
         {
           "id": "document.assessment-reading.runtime",
           "kind": "runtime",
-          "reason": "公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。旧受控选择未配置、构型来源未接通及SEM/CHAT/Aily等内容缺口仍分列。 以上5d/500为原时点；当前b8/c238、原ATT5 TIMED_OUT/外层BLOCK/SAVE0/Overall空另按现有证据保留。联合799的UPDATE admission只是本地窄修，未新增线上运行。",
-          "nextAction": "来源授权事务修复已按原8d/31证据技术交付，当前已核b8/c238；原AD ATT5已期限终态，不重复等待、提交或切执行器。准确联合799仅本地Host候选，独立交付不依赖0082/83、Native表格或Document CHAT版本pin；后续仍按原授权核真实原文/模型输入、准确SAVE、Overall消费及同版阅读，保留UNKNOWN和原checkpoint，不用局部PG关闭reader或完整业务验收。"
+          "reason": "UI v3 已被集成且 Host 58b 官方 finished；正常用户在该版本的实际页面、新 SB 的同版成果及准确历史阅读仍未验。",
+          "nextAction": "浏览器能力恢复且真实成果形成后，以原用户权限读同一 workRef／revision 和 Overall，核逐项结果、位置及历史。"
         },
         {
           "id": "document.assessment-reading.openclaw-chat-ui",
@@ -666,11 +734,54 @@
         {
           "id": "document.assessment-reading.selected-execution-runtime",
           "kind": "runtime",
-          "reason": "4255的M3父响应selected观察已随787部署；本次有限同版阅读不证明生产完整尝试集合、准确Ready/首次可读或新内容验收。",
-          "nextAction": "复用父响应的准确动作/attempt/时间和范围提示核对，沿已有调查/综合面板导航；不伪造逐attempt详情或正式业务状态。"
+          "reason": "原进度／活动／ACK 显示已有实际消费者；当前 58b 双端运行指纹、页面及新 SB 完整准入仍未读回。",
+          "nextAction": "按正常页面真实父响应核当前进度和 ACK，不从旧失败或图生成结果推导执行成功。"
         }
       ],
-      "previousReviewedRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69"
+      "previousReviewedRevision": "5d84d9569eed27d7d15e03fde6b10a2d5fd9fe69",
+      "reviewHistory": [
+        {
+          "recordedAt": "2026-10-28T16:07:25.065921+00:00",
+          "sourceRevision": "42db2fd6e15bb9f93f10a65bf537f078c63eb342",
+          "reviewScope": "当前42db已发布并核前后端同版；旧analysis准确跳DVI，获权FTD既有内容只读核对通过，未增加其运行权限或模型/SAVE。3c5167ab/Host7d07平台HTTP200读取错误展示小修已同步未发布，不代表3db上传超时或新成果阅读已闭合。以下保留历史审查，各结论仅适用原时点：原787/a7有限阅读与历史401、标签失败和四GET读回保留原时点。公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。技术发布及故障对账不增加完整业务场景通过。 本轮当前联合本地Host产品799defbe（父43d，tree2f57acd9d9e26c3f3fcdae8f63c88a0726163a56）串行组合P1 eb53三文件与P2 43d四文件，无路径交集、七文件与各自接受来源逐blob相等，正常hook提交且干净。只登记本地源码/测试，未同步/发布；线上仍b8/c238、reader待验，原AD SAVE0/Overall空、真实SEM/Reference/CMCF/OPS质量及Native可信上下文缺口保持。 准确联合799标准完整build run02已exit0（44.680512秒、前后clean、四fresh子日志）；run01仅step0官方CLI沙箱DNS失败且未编译，原件/旧日志不改记成功。仍为未同步/发布的本地产品。",
+          "consumer": "client/src/pages/DocumentParsingPage/DocumentVersionReadingPage.tsx → DocumentAssessmentWorkspace.tsx → DocumentAssessmentOverview/JobAidProblemWorkspace/DocumentAssessmentReview/AssessmentProcessDetails/WorkItemRuntimeDiagnostic；原条件 DocumentAssessmentAeo。 当前CHAT实际链为DocumentAssessmentReview → ContinuousReviewPanel → ReviewChatComposer；既有WorkItem/Matter复用同一获权Review面板。 M3父级useJobAidWorkingRead → adaptJobAidWorkingRead → WorkItemRuntimeDiagnostic按selectedExecution.actionType归属，有限尝试/准确事件时间不覆盖成果、覆盖或外层ACK。 ReviewOverall、applicability-selection、configuration-evidence现有controller/service的原生身份接线已随准确a7发布，继续复用DialogueBrowserScope（GET runRead、POST runNativeWrite）及request-local native actor，保留NeedLogin/production guard、owner/action/source/version及CAS。原正常用户页面与官方短窗日志只读核对200/409 NOT_CONFIGURED/200/200；不把未配置Source/受控选择或新的初次分析后继当作已运行。 本地P1 UPDATE-only入口复用server/modules/review-persistence/review-conversation.service.ts的原append/readback及官方ACTIVE mapping核权，仅现有WorkItem自动更新评估purpose；不是独立文档CHAT，也未生成/保存新评估成果。",
+          "authority": {
+            "requestRecord": "原DVI/version reader WI与Quicklook确切关联；getDocumentParsingPage(workItemId, freshness:mutation)独立授权，本UI不新建action_attempt。 CHAT沿Host ReviewConversation/turn requestId、准确reviewScope核权和对账，不新造评估对象。",
+            "artifactRecord": "原WorkItem.projection、assessment_work_revision、Overall准确artifact及document parsed artifact；只读原保存正文。 Host Review turn仅保存讨论与候选，不替代assessment_work_revision。",
+            "consumedInputField": "fullpage.workItem/source.documentVersionId、workingRead.current.workRevisionRef、Overall.basedOnJobAidWorkRevisionRef；保存evidence.locator的parseRunId/sourceRefId。 CHAT消费conversation.reviewConversationId/workItemId/reviewScope/status/automaticExecutionAvailable及turn.requestId/purpose；原意图消息正文保持不变。",
+            "ready": "确切session+DVI+WI、fresh fullpage与当前association/wikiError授权proof一致；读取不是生成/保存前置探测。 CHAT另要求Host报告的automaticExecutionAvailable；STALE_CONTEXT只对已有原意图在同一会话/范围重试，不开启新请求。",
+            "saved": "仅显示既有已保存成果；ReviewImpactPreview之后的显式legacy/CAS与AEO确认/生成保留原Host决定权，不自动保存。 普通CHAT不更新评估或正式采用，更新评估保留独立按钮及原Host保存/确认链。",
+            "current": "Overall自身CANDIDATE_ONLY且staleReason null、working CURRENT与准确workRef共同判断；同DVI新解析/保存成果更新不重建稳定草稿实例。"
+          },
+          "gaps": [
+            {
+              "id": "document.assessment-reading.runtime",
+              "kind": "runtime",
+              "reason": "公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。旧受控选择未配置、构型来源未接通及SEM/CHAT/Aily等内容缺口仍分列。 以上5d/500为原时点；当前b8/c238、原ATT5 TIMED_OUT/外层BLOCK/SAVE0/Overall空另按现有证据保留。联合799的UPDATE admission只是本地窄修，未新增线上运行。",
+              "nextAction": "来源授权事务修复已按原8d/31证据技术交付，当前已核b8/c238；原AD ATT5已期限终态，不重复等待、提交或切执行器。准确联合799仅本地Host候选，独立交付不依赖0082/83、Native表格或Document CHAT版本pin；后续仍按原授权核真实原文/模型输入、准确SAVE、Overall消费及同版阅读，保留UNKNOWN和原checkpoint，不用局部PG关闭reader或完整业务验收。"
+            },
+            {
+              "id": "document.assessment-reading.openclaw-chat-ui",
+              "kind": "deployment",
+              "reason": "获权WorkItem/Matter CHAT251941f4及未知发送恢复已随准确787技术发布，正常构建/原59与后继31用例按真实来源保留；此部署已完成，不代表真实对话验收。",
+              "nextAction": "沿已有获权事项实际对话及原request对账/显式原样重试/CLOSED未知记录核对；原测试不相加，新实例与独立文档另按接线范围推进。"
+            },
+            {
+              "id": "document.assessment-reading.openclaw-chat-runtime",
+              "kind": "runtime",
+              "reason": "CHAT代码已部署787，但真实CHAT模型、STALE_CONTEXT未知发送对账、CLOSED/换会话及身份/对象切换的线上验收尚未执行；独立文档入口与新Aily跨对象问答尚未接通。",
+              "nextAction": "依已有获权WorkItem/Matter具体范围验证一次实际对话与原请求恢复，保持聊天和评估更新分开；独立文档随后，新Aily须可信身份与Host适配。"
+            },
+            {
+              "id": "document.assessment-reading.selected-execution-runtime",
+              "kind": "runtime",
+              "reason": "4255的M3父响应selected观察已随787部署；本次有限同版阅读不证明生产完整尝试集合、准确Ready/首次可读或新内容验收。",
+              "nextAction": "复用父响应的准确动作/attempt/时间和范围提示核对，沿已有调查/综合面板导航；不伪造逐attempt详情或正式业务状态。"
+            }
+          ],
+          "sourceRevisions": null
+        }
+      ]
     },
     {
       "id": "dialogue.cross-object-reading",
@@ -912,6 +1023,7 @@
         "surface.reading"
       ],
       "edgeIds": [
+        "request.action",
         "original.research",
         "research.overall",
         "artifact.reading"
@@ -925,8 +1037,8 @@
       "workPackageIds": [
         "P7"
       ],
-      "consumer": "正常程序评估入口→准确mode/model任务→完整材料与文件快照→现有SAVE/独立READ→合法初评确定性Overall→正常阅读/准确workRef下钻；进度与各终态分列",
-      "sourceRevision": "a65a80925073e4b88aba6d84413a77aa3c814ff6",
+      "consumer": "DocumentAssessmentWorkspace → JobAidProblemWorkspace 读取 continuationOperations；InitialAnalysisContinueButton 在合法准入后显式创建 EVALUATE。11f2 消费已封存定义并派生模型 view、shape 和反馈。",
+      "sourceRevision": "58b3ccfcca1609ae1abf8a39cfc0fe5b8a1a8e3a",
       "environmentId": "host:app_17bzc551rsg:online",
       "sourceRefs": [
         "server/modules/canonical-host/canonical-initial-analysis-continuation.service.ts",
@@ -938,7 +1050,18 @@
         "client/src/pages/DocumentParsingPage/runtime-monitor/adapt-jobaid-working-read.ts",
         "server/modules/canonical-host/program-assessment-materials.ts",
         "client/src/pages/DocumentParsingPage/ProgramAssessmentMaterials.tsx",
-        "client/src/pages/DocumentParsingPage/runtime-monitor/WorkItemRuntimeDiagnostic.tsx"
+        "client/src/pages/DocumentParsingPage/runtime-monitor/WorkItemRuntimeDiagnostic.tsx",
+        "server/modules/action-attempt/cancelled-initial-continuation.ts",
+        "server/modules/work-item/miaoda-work-item.repository.ts",
+        "openclaw/codex-evaluator/codex-generation.mjs",
+        "server/modules/canonical-host/program-agent-policy.ts",
+        "server/modules/canonical-host/jobaid-problem-task.ts",
+        "server/modules/model-settings/canonical-execution-model.ts",
+        "server/modules/model-settings/canonical-model-output-budget.ts",
+        "server/modules/work-item/cancelled-auto-processing-lease.ts",
+        "client/src/pages/DocumentParsingPage/DocumentAssessmentWorkspace.tsx",
+        "client/src/pages/DocumentParsingPage/JobAidProblemWorkspace.tsx",
+        "server/modules/canonical-host/canonical-host-initial-analysis-status.service.ts"
       ],
       "validationRefs": [
         "docs/coordination/WISELINK_PROGRAM_CONTROLLED_ASSESSMENT_20261025.md",
@@ -955,18 +1078,619 @@
         "openclaw/codex-evaluator/program-finish-recovery.test.mjs",
         "docs/coordination/host-codex-interface-20261025/README.md",
         "docs/coordination/WISELINK_CODEX_RUNTIME_ACCEPTANCE_20261025.md",
-        "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md"
+        "docs/coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md",
+        "test/node/native-initial-continuation-postgres.test.mjs",
+        "test/unit/program-agent-host-contract.spec.ts",
+        "test/unit/canonical-model-output-budget.spec.ts",
+        "test/unit/cancelled-auto-processing-lease.spec.ts",
+        "test/unit/cancelled-initial-continuation.spec.ts",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/HOST_PROGRAM_CANCEL_BINDING_DELIVERY",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-v3-entry-followup-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-f730-semantic-followup-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-f730-field-acceptance-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-721-host-g16-snapshot-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-721-host-g16-field-confirmation-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-721-local-receipt-readback-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-a060-admission-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-a060-running-20261027-host-terra/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-a060-save-attention-20261027-host-terra/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-a060-expired-unreconciled-20261027-host-terra/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-a060-host-local-acceptance-20261027/DELIVERY_RECEIPT",
+        "private:native-protocol-capability-review-20261026/combined-agent-deployment-20261026/host-program-cancel-binding-delivery-20261027/progress-502-offline-preparation-20261027/DELIVERY_RECEIPT",
+        "private:wiring-progress-a060-stage2-20261027/DELIVERY_RECEIPT",
+        "private:wiring-progress-502-eff712-g17-20261027/DELIVERY_RECEIPT",
+        "private:wiring-progress-table-lock-native-p1-20261027/DELIVERY_RECEIPT",
+        "private:wiring-progress-192-host-e2-20261027/DELIVERY_RECEIPT",
+        "private:wiring-progress-host-g17-first-validation-20261027/DELIVERY_RECEIPT",
+        "private:wiring-progress-rc1-priority-20261027/DELIVERY_RECEIPT"
       ],
       "gaps": [
         {
           "id": "program.initial-live",
           "kind": "runtime",
-          "reason": "输入prompt/上游body/启动前父run关联已由19d必要增量在本地接入；原SAVE key双READ、COMMITTING及授权边界保留。实际宿主/安装/两个私有持久root、API origin、独立身份/路径scope、准确新事项与真实SAVE/READ/Overall/结束/同版阅读仍待。Linux恢复12项本机未验，离线通过不证明现场。",
-          "nextAction": "补齐现成宿主、目录、非秘密配置与一个新事项参数，固定准确Host/客户端组合和一次审批草案；获准后单worker完整闭环。P1翻译、2/4worker及旧数据清理重生独立，不要求旧兼容。"
+          "reason": "11f2 已按准确 272 条目独占安装但未启动；新 SB 两项存储绑定匹配，当前 fresh 准入、按钮、stage／model／consumer 及真实 SAVE／READ／Overall／ACK 未证。",
+          "nextAction": "正式浏览器恢复后正常刷新同一 WI／DVI，读允许操作；合法新请求受理后才按既有授权启动一次准确 consumer 并取原回执。"
+        },
+        {
+          "id": "program.semantic-feedback",
+          "kind": "runtime",
+          "reason": "原 source_review 缺口已有 b993/11f2 接收及分层 Host→Native 反馈证据；真实 GLM 同源消费、工程语义质量和新 SB 同版成果仍未验。",
+          "nextAction": "以正常新任务的实际材料／模型 view／反馈与保存结果核对同版内容；离线测试和安装不代替业务验收。"
         }
       ],
-      "previousReviewedRevision": "7b03975971f079c4bb5edb64b1c5d91b9cb3c554",
-      "reviewScope": "线上映射仍为准确a65/c240；本地f57+19d首测必要组合按图契约v1.9登记。源码/离线与现场metadata分别取证，未部署、未配置、不提升业务场景。"
+      "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19",
+      "reviewScope": "Host 58b 已官方 finished；Native 11f2 准确安装但未激活。任务可信 full 保留 RC1 definition／selection／acceptance，模型 view 与控制身份分离；97 离线及 272 条目安装不证明真实模型消费。新 SB 两项存储绑定匹配，fresh 准入／按钮未知，stage、model、consumer 为 0。",
+      "sourceRevisions": {
+        "host": "58b3ccfcca1609ae1abf8a39cfc0fe5b8a1a8e3a",
+        "native": "11f2e02c33ea59fd4ba6adba9ae760b30fa76f0a",
+        "public": "1a579f4a1be2c431997ead55e935c081db8e1c90",
+        "nativeHostContract": "b9938f3d739d057b0d5511e7df9c6ddb60bc7daa"
+      },
+      "reviewHistory": [
+        {
+          "recordedAt": "2026-10-26T18:47:33.724915+00:00",
+          "sourceRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19",
+          "sourceRevisions": {
+            "host": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19",
+            "native": "12c4d78c84bec05c5c95f1ed4ca846f88282d0df",
+            "public": "407112a615c3c48920f4637a6773c2efeca24a94",
+            "publicHostCandidate": "407112a615c3c48920f4637a6773c2efeca24a94",
+            "privateHostCandidate": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19",
+            "nativeCandidate": "2e87bbc3ac688c682f3ffcd12d9b214020ace66f"
+          },
+          "reviewScope": "721f已实际多轮运行并消费原文/方法资料：18:03:56Z交付引用27/私有units30，18:22:52.187217Z停止快照已为引用32/units30；read_sources6、read_private_units6（含首次拒绝）、validate_candidate9，成功交付读取选择无完全重复。最新dispatch22/23均有完整tool_calls回执，23是reservedDispatches，不冒充已核上游HTTP总数。早期tool8/9的UNDELIVERED_EVIDENCE_REF经补读在同候选tool11消除；ISSUE_BODY_REFERENCE_REQUIRED反复存在，末轮tool19/21另有WORK_REQUIRED_FIELDS_INVALID，无VALID/可信final/SAVE。实际封存prompt及首个上游请求已按原字节核同，均无[[ref]]规范；这将断点定位为“提示规范未接入→候选反馈不可操作”。18:25:05Z取证的原session-stop为PROGRAM_AGENT_CLI_OUTPUT_LIMIT、reservedDispatches23/inFlight0，worker已停、g15 consumerStopped=true，断点是“累计CLI日志限制→多轮提前停止”。18:20:45.832Z第一次fresh guard因最新候选错误变化拒绝，cancelCalls0/signals0；随后18:28:18.051Z唯一正常MCP取消成功，同AQ进入CANCELLED/CANCELLED_BY_REQUEST、projectionApplied=false，无kill/新worker/DB/期限/checkpoint修改。独立Host02:30:34.199571+08:00读回CANCELLED、action lease空、active0/result无/SAVE0、独立READ0；队列当时仍LEASED g15，旧g14 blockedAt不是g15归档。2e87三文件规范/反馈修复已在双远端同名新分支精确读回，初始4项目标和唯一措辞后受影响1项通过；未传中间包、未安装。运行端仍12c，Host b4与固定75项SDK保持。 721f没有VALID候选、Host保存、保存后独立READ、同版Overall或正常成功ACK，取消成功与g15正常收尾分开：本轮证据只确认Host已终态，g15归档仍未证，不写首单完成。材料/方法读取和真实模型多轮接线已有实证，剩余两项具体修订是实际提示/可操作反馈和累计CLI日志捕获限制。日志流式落盘后继因唯一作者范围核对已暂缓；HEAD仍2e87，仅gateway未暂存74+/21-初稿，未测试、新commit、同步、打包或安装，不列为已接受后继。2e87源码同步与目标检查不代表现场已消费修复；不传中间包，待主控协调唯一Native作者及准确组合后继。旧UNKNOWN与原期限保持，不重放。V55—V58及保存闭环仍未验收。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "721f没有VALID候选、Host保存、保存后独立READ、同版Overall或正常成功ACK，取消成功与g15正常收尾分开：本轮证据只确认Host已终态，g15归档仍未证，不写首单完成。材料/方法读取和真实模型多轮接线已有实证，剩余两项具体修订是实际提示/可操作反馈和累计CLI日志捕获限制。日志流式落盘后继因唯一作者范围核对已暂缓；HEAD仍2e87，仅gateway未暂存74+/21-初稿，未测试、新commit、同步、打包或安装，不列为已接受后继。2e87源码同步与目标检查不代表现场已消费修复；不传中间包，待主控协调唯一Native作者及准确组合后继。旧UNKNOWN与原期限保持，不重放。V55—V58及保存闭环仍未验收。",
+              "nextAction": "由主控协调唯一Native作者，准确接入已确认缺失的引用规范/可操作反馈，并处理累计CLI日志的流式落盘；日志初稿保持暂停状态，未获准确后继及审查回执不写通过。唯一操作员按既有正常协议核对g15后续Host/queue收尾，只有对应原件到达后才记BLOCK/归档；不以取消成功替代队列证据，不重放721f或旧UNKNOWN。接受准确组合后继后再按既有串行安装/目标验收范围推进，保持Host b4、固定SDK与正式保存/采用边界；本图不派发业务，不重做全量gate。"
+            }
+          ],
+          "previousReviewedRevision": "7d07d656ca4577eecd0f72fd2d3bea7662daa9c7"
+        },
+        {
+          "recordedAt": "2026-10-26T19:57:24.891840+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "12c4d78c84bec05c5c95f1ed4ca846f88282d0df",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "2e87bbc3ac688c682f3ffcd12d9b214020ace66f"
+          },
+          "reviewScope": "Host取消模型绑定与新浏览器意图领取已完成准确四文件修复：公开bbb929dc（父407）、私有e6a896f2（父b4）最终同树4800e12a；140项定向测试、server类型、原提交hooks和提交后server build通过。三精确同名ref已正常同步并读回，官方完整DB发布差异为空、无在途发布后，仅创建一次Host release 7701061854014475294，19:41:38Z finished/e6a。19:48:52Z原登录runtime-probe实际XHR200/SERVER_BUILD_ARTIFACT/PASS，前后端均e6a，候选阅读仍VERIFICATION_PENDING/7项。初次灰底保留为加载观察，未认定代码根因。 正式initial_request v1及JobAid v2/v3分别解析，显式程序保留task/attempt/expected完整快照，普通legacy仍owner完整相等；不拿当前设置重选或覆盖owner。取消继续与CANCELLED→WAITING→新queued共用历史模型依据，要求新正式PROGRAM意图且历史idempotency键不复用。721f实际嵌套programOriginal四来源字段、actor、单一outer SourceRef及task身份/hash已定点核同，sha为bare64、bytes为number。 生产PARK和新业务请求均未在本批执行，未改租约/队列/模型或做DB迁移。721f原请求已取消，最后独立业务读回SAVE0/独立保存READ0、无VALID/同版Overall/成功ACK；该业务观察时间不随本次Host发布前移。g15归档仍待Native修复与正常协议证明，不能把Host发布或旧g14回执当作归档。运行Native仍12c、SDK固定75项；2e87仅双远端同步未安装。引用规范/可操作反馈与累计CLI日志限制的实际运行历史保留；Native日志流式落盘及v2取消模型parser组合后继仍待唯一作者。v3消息/包只本地准备，等待用户明确许可，未代发。V55—V58及业务保存闭环仍未验收。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "生产PARK和新业务请求均未在本批执行，未改租约/队列/模型或做DB迁移。721f原请求已取消，最后独立业务读回SAVE0/独立保存READ0、无VALID/同版Overall/成功ACK；该业务观察时间不随本次Host发布前移。g15归档仍待Native修复与正常协议证明，不能把Host发布或旧g14回执当作归档。运行Native仍12c、SDK固定75项；2e87仅双远端同步未安装。引用规范/可操作反馈与累计CLI日志限制的实际运行历史保留；Native日志流式落盘及v2取消模型parser组合后继仍待唯一作者。v3消息/包只本地准备，等待用户明确许可，未代发。V55—V58及业务保存闭环仍未验收。",
+              "nextAction": "本批到此收口并停止追加动作，等待用户明确允许向唯一Native作者外发v3交接。主控随后协调准确Native后继与独审、既有串行安装及必要检查；未取得对应原件前不运行生产PARK、不新建业务、不重放721f或旧UNKNOWN，不以g15过期或HTTP计数0推导重放许可。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T00:09:31.032702+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "12c4d78c84bec05c5c95f1ed4ca846f88282d0df",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "2e87bbc3ac688c682f3ffcd12d9b214020ace66f"
+          },
+          "reviewScope": "Host取消模型绑定与新浏览器意图领取已完成准确四文件修复：公开bbb929dc（父407）、私有e6a896f2（父b4）最终同树4800e12a；140项定向测试、server类型、原提交hooks和提交后server build通过。三精确同名ref已正常同步并读回，官方完整DB发布差异为空、无在途发布后，仅创建一次Host release 7701061854014475294，19:41:38Z finished/e6a。19:48:52Z原登录runtime-probe实际XHR200/SERVER_BUILD_ARTIFACT/PASS，前后端均e6a，候选阅读仍VERIFICATION_PENDING/7项。初次灰底保留为加载观察，未认定代码根因。 正式initial_request v1及JobAid v2/v3分别解析，显式程序保留task/attempt/expected完整快照，普通legacy仍owner完整相等；不拿当前设置重选或覆盖owner。取消继续与CANCELLED→WAITING→新queued共用历史模型依据，要求新正式PROGRAM意图且历史idempotency键不复用。721f实际嵌套programOriginal四来源字段、actor、单一outer SourceRef及task身份/hash已定点核同，sha为bare64、bytes为number。 用户已明确批准，intake于北京时间2026-10-27 07:23:56一次向唯一作者《确认接手窄修》发送完整原文与准确v3附件。发送后实际正文5803B/SHA7812c654…、附件580689B/SHAfcfa419d…精确读回；5859B工具投影中的56B附件注记与实际正文分开。作者在发送读回时为active；未取得新的Native交付、测试、提交、安装回执，当前等待作者交付，不再标待授权。 原17gr在07:23–07:25只读观察及07:27一次普通页面刷新后仍终端加载中，此为当时未核状态，不能推断重建或依赖丢失。用户随后报告提示符已恢复，原操作员在同页实际确认提示符，并于07:33:19+08执行一次有界只读元数据检查：12c原commit/manifest及247文件hash+模式全对；Python3.10.12、LiteLLM1.106.4、OpenAI2.54.0、mcp/mcp-types2.3.0与固定75/75依赖metadata同版，missing0/错版0、隔离正确。两配置、原721/g15 stopped claim、UNKNOWN与session-stop均保持；相关生产进程0、原worker88608不存在。本次SDK导入/合成复测/安装/运行时写入/网络/worker/NEXT/PARK/续租/模型均0；同boot-id等元数据不构成实例连续性或重建证明。 Host e6/PASS、140项目标测试及既有类型/构建事实保持；生产PARK与新业务请求仍未运行。原721已取消、SAVE0/保存后独立READ0、g15待归档是最后已证业务事实，Host业务观察时间不随本次Native元数据核对前移；候选阅读7项仍待验证，V55—V58与业务闭环未验收。当前原页已实际恢复并核得12c/固定75SDK/配置/保留状态，不再写等待用户恢复入口；2e87仍仅同步未安装，新v3后继未交付或接受。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "Host e6/PASS、140项目标测试及既有类型/构建事实保持；生产PARK与新业务请求仍未运行。原721已取消、SAVE0/保存后独立READ0、g15待归档是最后已证业务事实，Host业务观察时间不随本次Native元数据核对前移；候选阅读7项仍待验证，V55—V58与业务闭环未验收。当前原页已实际恢复并核得12c/固定75SDK/配置/保留状态，不再写等待用户恢复入口；2e87仍仅同步未安装，新v3后继未交付或接受。 用户已明确批准，intake于北京时间2026-10-27 07:23:56一次向唯一作者《确认接手窄修》发送完整原文与准确v3附件。发送后实际正文5803B/SHA7812c654…、附件580689B/SHAfcfa419d…精确读回；5859B工具投影中的56B附件注记与实际正文分开。作者在发送读回时为active；未取得新的Native交付、测试、提交、安装回执，当前等待作者交付，不再标待授权。",
+              "nextAction": "等待已收到准确v3交接的唯一Native作者交付可审阅后继，由主控独审；原唯一操作员已完成当前元数据核对并停止追加动作。未取得接受的新产物及相应正常收尾范围前，不安装、不NEXT/PARK/续租、不发模型或新业务、不重放721或旧UNKNOWN；不以终端恢复、同boot-id或HTTP0代替业务授权。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T00:26:54.676569+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "12c4d78c84bec05c5c95f1ed4ca846f88282d0df",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "唯一Native作者已交准确f730c1f9（父2e87、tree4f972f50）；原交接ZIP1825091B/SHA13e1917f…精确接收，四文件静态审查无阻断。完整候选249源文件+manifest/250条目，ZIP1564184B/SHAf0f8d8b0785fb85173e0472718e1167207cbc9c1bc323d594442e4102399550c，manifest SHAe532b62f111013d8f2b620088e259ac0d2e7f9507773c62091611c5ee68e6836；相对12c为2新增/4修改/243同/0删除，含已接受2e87引用规范及反馈父链。origin于2026-10-27T00:07:23.984180Z、github于00:07:46.680874Z正常单条同名新分支codex/native-cli-cancel-v2-20261027精确读回f730，保留hooks、无force/no-verify/其他ref更新。主控已接受并交唯一操作员准备私传、并排安装、Linux33与原CODEX握手；尚无安装/现场验收完成回执，不提前记已安装。 f730本地33个唯一目标通过：13项首轮通过；20项回环监听首轮EPERM失败，取得工具运行权限后仅复跑这20项并20/20通过，未重复首轮13项、不称首轮33/33。完成时间2026-10-27T00:02:26.397460Z；Node24.14.1/darwin arm64，249源文件前后保持。原失败日志与两个原回执保留，真实模型/Host/PARK0，未升级环境/SDK，未重复历史全量套件。 只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。 Host准确e6及release/PASS、140项/类型/构建保持，本批不重发；现场最近核验安装仍12c/247、固定75依赖与原配置。f730已准确接收/静态接受/本地33唯一目标通过/双远端同名精确读回，安装和Linux现场33/原CODEX握手待回执。原721已取消、SAVE0/保存后独立READ0、g15待正常归档仍为最后已证业务事实；本次本地验收不前移Host业务观察时间。新真实评估尚未启动，候选阅读7项、同版Overall、V55—V58与业务闭环未验收。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "Host准确e6及release/PASS、140项/类型/构建保持，本批不重发；现场最近核验安装仍12c/247、固定75依赖与原配置。f730已准确接收/静态接受/本地33唯一目标通过/双远端同名精确读回，安装和Linux现场33/原CODEX握手待回执。原721已取消、SAVE0/保存后独立READ0、g15待正常归档仍为最后已证业务事实；本次本地验收不前移Host业务观察时间。新真实评估尚未启动，候选阅读7项、同版Overall、V55—V58与业务闭环未验收。",
+              "nextAction": "按主控已接受范围由唯一GPT-6.1 Sol max操作员继续准确f730私传/并排安装、必要Linux33及原CODEX握手，取得原回执后再补现场状态；Host e6不重发、SDK75不重装。当前不以通用语义开发阻断这两项窄修；之后新真实评估沿既有准确提示，内容与保存尾链分验，若Host语义拒绝先查原请求并停止、不盲重跑；不重放721/c1或旧UNKNOWN。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T01:44:52.841156+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 f730已实际并排安装并通过现场33项目标与原CODEX握手；Host e6不重发、SDK固定75项与配置/旧状态保持。生产原721/g15正常取消收尾尚未NEXT/PARK，原721已取消、SAVE0/保存后独立READ0、g15待正常归档仍是最后已证业务事实；本次技术验收不前移Host业务观察时间。新真实评估未启动；候选阅读7项、同版Overall、V55—V58及业务闭环仍未验收。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "f730已实际并排安装并通过现场33项目标与原CODEX握手；Host e6不重发、SDK固定75项与配置/旧状态保持。生产原721/g15正常取消收尾尚未NEXT/PARK，原721已取消、SAVE0/保存后独立READ0、g15待正常归档仍是最后已证业务事实；本次技术验收不前移Host业务观察时间。新真实评估未启动；候选阅读7项、同版Overall、V55—V58及业务闭环仍未验收。",
+              "nextAction": "唯一GPT-6.1 Sol max操作员按主控已限定范围先fresh核对原721取消对象绑定，再走正常专用协议收尾；本批证据未显示已NEXT/PARK或归档，不提前标完成。后续新评估沿既有准确提示，内容、SAVE和独立READ分验；Host语义拒绝先查原请求并停止，不盲重跑。保持原UNKNOWN/期限，不重放旧请求，不升级SDK或重发Host。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T01:46:50.855997+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 主控转述现场阶段回执：原08:31唯一收尾命令于08:31:44退出0，报告ORIGINAL_CANCELLED_CLAIM_FINALIZED、NEXT1/BLOCK2、intent/archive已写且activeClaim已清；本次资料归并未取得原始现场回执，archive/UNKNOWN与进程仍由唯一现场操作员只读核对，strict replay和归档尚未独立确认，阶段报告不等于最终归档验收。 Host仅证明上述09:41快照，现场命令完成与本地写入为主控转述的阶段回执；原始回执及archive/UNKNOWN、进程、strict replay的独立核对仍待完成。候选阅读7项、同版Overall、V55—V58及业务闭环仍未验收；本次查询与资料归并未调用模型或执行业务SAVE，不推断其他时段的模型调用。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "Host仅证明上述09:41快照，现场命令完成与本地写入为主控转述的阶段回执；原始回执及archive/UNKNOWN、进程、strict replay的独立核对仍待完成。候选阅读7项、同版Overall、V55—V58及业务闭环仍未验收；本次查询与资料归并未调用模型或执行业务SAVE，不推断其他时段的模型调用。",
+              "nextAction": "由唯一17gr现场操作员完成原始命令回执及archive/UNKNOWN、进程的只读核对并回传证据；strict replay和归档未被独立确认前不标最终完成，状态未知的操作不重发。后续是否继续由主控依据实际回执决定，保持原UNKNOWN、已有授权及Host正式采用边界。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T01:48:42.382317+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实（主控转述唯一现场操作员的核验结果；原始final-receipt尚未接回本地）：08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同；现场核实g16 archive存在且SHA与final-receipt一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照与CANCELLED/BLOCKED g16/SAVE0一致。 原评估本身SAVE0、独立READ0，现场确认新评估尚未创建；以上现场核验的原始final-receipt及归档核对材料尚待接回本地，不能把队列正常收尾当作候选成果或业务完成。候选阅读7项、同版Overall、V55—V58及业务主线闭环仍未验收。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "原评估本身SAVE0、独立READ0，现场确认新评估尚未创建；以上现场核验的原始final-receipt及归档核对材料尚待接回本地，不能把队列正常收尾当作候选成果或业务完成。候选阅读7项、同版Overall、V55—V58及业务主线闭环仍未验收。",
+              "nextAction": "由唯一现场操作员提供原始final-receipt及相关归档核对材料供本地审阅；后续新评估按既有授权与当前状态决定，原评估不重放，保持UNKNOWN、来源授权和Host正式采用边界。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T02:03:56.567764+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 原评估本身SAVE0、独立READ0，新评估尚未创建；独立READ0与新评估状态为现场/主控回报，不把队列正常收尾当作候选成果或业务完成。候选阅读7项、同版Overall、V55—V58及业务主线闭环仍未验收。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "原评估本身SAVE0、独立READ0，新评估尚未创建；独立READ0与新评估状态为现场/主控回报，不把队列正常收尾当作候选成果或业务完成。候选阅读7项、同版Overall、V55—V58及业务主线闭环仍未验收。",
+              "nextAction": "后续新评估按既有授权与当前状态决定，原评估不重放；保持UNKNOWN、来源授权及Host正式采用边界。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T02:19:56.267553+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 新a060请求已受理且最近只读为QUEUED/WAITING；现场终端正在恢复，本轮模型、业务SAVE和独立READ尚未发生，后续运行结果仍待实际证据。原721取消任务的g16正常收尾已核实，原UNKNOWN保留；候选阅读7项、同版Overall、V55—V58及业务主线闭环仍未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 主控报告原17gr重新唤醒后终端加载中，唯一现场操作员正在恢复；本轮worker和模型尚未启动，不凭加载状态推断任务失败或实例重建，也不再创建或重发请求。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "新a060请求已受理且最近只读为QUEUED/WAITING；现场终端正在恢复，本轮模型、业务SAVE和独立READ尚未发生，后续运行结果仍待实际证据。原721取消任务的g16正常收尾已核实，原UNKNOWN保留；候选阅读7项、同版Overall、V55—V58及业务主线闭环仍未验收。",
+              "nextAction": "由唯一现场操作员恢复原17gr并先核对该原请求、队列、在途与期限；仅按已授权范围和实际读回继续，不重新创建请求或重发未知操作。CHAT/Aily方案单独待接线与验收，不改变当前Hosted模型、来源授权或Host正式采用边界。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T02:27:27.617867+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 新a060请求已真实启动；10:17:35 Host只读为RUNNING/LEASED g17，材料阶段已记录，模型最终结果、业务SAVE、独立READ、同版Overall和正常ACK尚未见。原721取消任务的g16正常收尾已核实，原UNKNOWN保留；候选阅读7项、V55—V58及业务主线闭环仍未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "新a060请求已真实启动；10:17:35 Host只读为RUNNING/LEASED g17，材料阶段已记录，模型最终结果、业务SAVE、独立READ、同版Overall和正常ACK尚未见。原721取消任务的g16正常收尾已核实，原UNKNOWN保留；候选阅读7项、V55—V58及业务主线闭环仍未验收。",
+              "nextAction": "保持唯一现场操作员监控同一原请求；按已有授权和观察时间只读核对原模型回执、SAVE、独立READ、同版Overall与正常ACK，不重发请求或补做业务动作。CHAT/Aily方案单独待接线与验收，不改变Hosted模型、来源授权或Host正式采用边界。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T02:57:13.413683+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 本轮模型最终回执已落，原SAVE遭语义要求拒绝；10:26:03 Host同原键保存0、独立READ0，同版Overall及正常ACK未见。本地worker已退出、consumerStopped未确认，Host仍RUNNING/LEASED g17，两端待对账，不能视为完成或已收尾。原721/g16正常收尾与原UNKNOWN保留；候选阅读7项、V55—V58及业务主线闭环仍未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "本轮模型最终回执已落，原SAVE遭语义要求拒绝；10:26:03 Host同原键保存0、独立READ0，同版Overall及正常ACK未见。本地worker已退出、consumerStopped未确认，Host仍RUNNING/LEASED g17，两端待对账，不能视为完成或已收尾。原721/g16正常收尾与原UNKNOWN保留；候选阅读7项、V55—V58及业务主线闭环仍未验收。",
+              "nextAction": "保留原候选、错误、SAVE键及各时点回执；仅按已有授权只读核对同一请求、租约和持久记录，等待原因审查及后续明确安排，不重发SAVE或补做业务动作。CHAT/Aily方案独立待接线与验收；Host保有来源授权和正式采用决定权。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T03:31:42.741744+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 a060的任务deadline和attempt lease均已过，但10:56:11 Host仍RUNNING、queue LEASED g17；现场worker已退出，consumerStopped未确认，状态待对账。原SAVE遭语义要求拒绝，原键SAVE0/独立READ0，Overall及ACK未见；候选阅读7项、V55—V58和业务主线闭环未验收。原721/g16正常收尾与原UNKNOWN保留。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "a060的任务deadline和attempt lease均已过，但10:56:11 Host仍RUNNING、queue LEASED g17；现场worker已退出，consumerStopped未确认，状态待对账。原SAVE遭语义要求拒绝，原键SAVE0/独立READ0，Overall及ACK未见；候选阅读7项、V55—V58和业务主线闭环未验收。原721/g16正常收尾与原UNKNOWN保留。",
+              "nextAction": "保留原候选、SAVE键、错误和回执，仅按已有授权只读核对原请求、租约及持久状态；等待对账与明确安排，不自动恢复、取消或重跑。共享预检和Native修订须先取得源码、审查和实际验证证据，不能视为已发布或成功。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T03:50:03.069478+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "privateHostCandidate": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "nativeCandidate": "f730c1f94f61945e39de9c21a4cceb66a0fc924f"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 Host修复仅为本地已审与测试通过的双提交，尚未推送、发布或对接Native；Native作者交付尚未见。a060最后的Host业务观察为10:56:11：期限已过但attempt仍RUNNING、queue LEASED g17，原SAVE/独立READ0，状态待对账；该历史快照不代表当前实时状态或业务完成。原721/g16正常收尾及原UNKNOWN保持，候选阅读、同版Overall、V55—V58和主线闭环未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "Host修复仅为本地已审与测试通过的双提交，尚未推送、发布或对接Native；Native作者交付尚未见。a060最后的Host业务观察为10:56:11：期限已过但attempt仍RUNNING、queue LEASED g17，原SAVE/独立READ0，状态待对账；该历史快照不代表当前实时状态或业务完成。原721/g16正常收尾及原UNKNOWN保持，候选阅读、同版Overall、V55—V58和主线闭环未验收。",
+              "nextAction": "保留原候选、请求、claim、SAVE键、错误及UNKNOWN；后续依已有授权先只读核对当前持久状态，等待Native作者的实际交付及主控安排，不自动恢复、取消、重跑、推送或发布。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T04:56:16.908601+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "a863559484add66e9afeef310802308375221dc7",
+            "privateHostCandidate": "e2b2e7b9e266a2b817fd42f3f8da13f606c41460",
+            "nativeCandidate": "502235abd2aa8371a7fcc9637a1ac8f6ccc8d518"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 Native 502已准确接收、静态审查及macOS/Node24合成测试，但候选包仍待接受，Linux/Node22、安装、现场收尾和完整业务链均未验证；Host e2/a863不能单独上线到f730。a060最后Host业务观察为10:56:11：期限已过而attempt仍RUNNING、queue LEASED g17、原SAVE/独立READ0；此为历史快照，不代表当前实时状态或处理已结束。原claim、SAVE失败及UNKNOWN保留。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 历史协调观察：主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。 Native阶段一作者后继502235ab…、唯一父f730c1f9…、tree90f33047…；11:43:17接收回执核对作者ZIP共254项、253项清单校验、补丁双重哈希和隔离重建tree一致。 主控转述独立Astra静态审查无P0–P2；作者包内另有独立内部静态审阅无阻断。两项均只覆盖静态范围，不等于安装、现场验证或候选包批准。 11:46:45本机独立离线合成回归四组分别70/70、27/27、8/8、28/28通过；环境为macOS arm64 / Node 24.14.1，网络与子进程守卫计数为零。Linux / Node22目标、安装及现场收尾未验证；作者先前基线复现与测试断言修正历史保留。 截至2026-10-27T11:50:03+08:00的本地资料核对，502准确候选包仅离线准备，含249个源码文件，状态PENDING_ACCEPTANCE，未批准、未上传、未安装；Host e2/a863虽已本地通过检查，不能单独上线到f730组合。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "Native 502已准确接收、静态审查及macOS/Node24合成测试，但候选包仍待接受，Linux/Node22、安装、现场收尾和完整业务链均未验证；Host e2/a863不能单独上线到f730。a060最后Host业务观察为10:56:11：期限已过而attempt仍RUNNING、queue LEASED g17、原SAVE/独立READ0；此为历史快照，不代表当前实时状态或处理已结束。原claim、SAVE失败及UNKNOWN保留。",
+              "nextAction": "保留原请求、claim、SAVE键、错误和UNKNOWN，后续依已有授权核对当前持久状态；候选包及目标环境验证由主控按已授权分工另行安排，不自动安装、发布、恢复或重跑。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。当前本地validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。",
+              "nextAction": "保留为具体反馈接线与字段语义缺口，不设本轮f730技术事务或新真实评估的泛化开发前置；任何后续实现另按准确范围审查。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T05:14:34.383167+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "a863559484add66e9afeef310802308375221dc7",
+            "privateHostCandidate": "e2b2e7b9e266a2b817fd42f3f8da13f606c41460",
+            "nativeCandidate": "502235abd2aa8371a7fcc9637a1ac8f6ccc8d518",
+            "nativeStageTwoCandidate": "eb4058e39d8dde18ab942554defabda56b584227"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 原a060的12:12:20 Host快照仍为RUNNING/LEASED g17、SAVE 0、无完成或投影，原claim与UNKNOWN保留，不能推断已收尾。502目标预检被NETWORK_ROUTE_FORBIDDEN阻断，测试未开始、原因待查；Host g17隔离收尾候选待测试／发布。Native eb4058e已接收但三项独立审查问题待修复复核；新运行不限额要求尚未全部落实。现场安装、匹配切换及完整业务链均未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 历史协调观察：主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。 Native阶段一作者后继502235ab…、唯一父f730c1f9…、tree90f33047…；11:43:17接收回执核对作者ZIP共254项、253项清单校验、补丁双重哈希和隔离重建tree一致。 主控转述独立Astra静态审查无P0–P2；作者包内另有独立内部静态审阅无阻断。两项均只覆盖静态范围，不等于安装、现场验证或候选包批准。 11:46:45本机独立离线合成回归四组分别70/70、27/27、8/8、28/28通过；环境为macOS arm64 / Node 24.14.1，网络与子进程守卫计数为零。Linux / Node22目标、安装及现场收尾未验证；作者先前基线复现与测试断言修正历史保留。 截至2026-10-27T11:50:03+08:00的本地资料核对，502准确候选包仅离线准备，含249个源码文件，状态PENDING_ACCEPTANCE，未批准、未上传、未安装；Host e2/a863虽已本地通过检查，不能单独上线到f730组合。 2026-10-27 12:12:20+08 Host生产只读快照：原a060仍RUNNING，队列LEASED g17，SAVE 0、完成与投影未见；这是该时点快照，不代表实时状态或已收尾。原请求、SAVE失败、claim和UNKNOWN保持。 主控转述唯一现场操作员的核验：17gr实际f730的249文件与原清单核同，运行环境Linux/Node 22.22.1，原claim仍保留；本次图更新未进入现场，原核验时间未在转述中给出。 主控报告502阶段一验收包已私有上传并核SHA；首次目标验收在网络guard预检返回NETWORK_ROUTE_FORBIDDEN，测试尚未开始，原因待查。该结果不等于目标测试通过，502尚未安装。 原a060的Host g17精确收尾候选已在隔离本地实现；截至本轮协调转述尚无测试或发布回执，不能据此标记原任务已收尾。 Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 用户要求新运行不人为设置预算、处理数量或模型调用次数上限；现有产品中的相关限制已定位，仍待修订，不能标为全部完成。17gr现有GLM-5.3配置maxTokens为64000；原a060的Host封存请求为131072，两者是配置／请求事实，均不证明厂家当前服务支持的最大输出。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "原a060的12:12:20 Host快照仍为RUNNING/LEASED g17、SAVE 0、无完成或投影，原claim与UNKNOWN保留，不能推断已收尾。502目标预检被NETWORK_ROUTE_FORBIDDEN阻断，测试未开始、原因待查；Host g17隔离收尾候选待测试／发布。Native eb4058e已接收但三项独立审查问题待修复复核；新运行不限额要求尚未全部落实。现场安装、匹配切换及完整业务链均未验收。",
+              "nextAction": "保护原请求、claim、SAVE键及UNKNOWN；按现有授权查明目标预检阻断并完成适用验证，由原责任方继续隔离候选测试和Native修订复审。不得凭历史快照推断终态或业务闭环。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。现场f730的validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。 Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。",
+              "nextAction": "由唯一Native作者修订并经独立复审，保留既有身份、来源、版本、租约及UNKNOWN边界；候选接收不等于部署或业务验收。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T05:17:54.198510+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "a863559484add66e9afeef310802308375221dc7",
+            "privateHostCandidate": "e2b2e7b9e266a2b817fd42f3f8da13f606c41460",
+            "nativeCandidate": "502235abd2aa8371a7fcc9637a1ac8f6ccc8d518",
+            "nativeStageTwoCandidate": "eff7125f2e791a1c6bdf564daad7186f8405fc31"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 原a060的12:12:20 Host快照为RUNNING/LEASED g17、SAVE 0、无完成或投影；原claim、SAVE键和UNKNOWN保留，不能推断已收尾。502目标合成验收通过但未安装；Host g17候选受身份行锁阻断、未发布，无DDL表锁备选仍在验证。eff7125f已接收，作者声明待独立审查，晚于该提交的listBrief和缺语义版本反馈未获修复证明；现场组合及完整业务链尚未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 历史协调观察：主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。 Native阶段一作者后继502235ab…、唯一父f730c1f9…、tree90f33047…；11:43:17接收回执核对作者ZIP共254项、253项清单校验、补丁双重哈希和隔离重建tree一致。 主控转述独立Astra静态审查无P0–P2；作者包内另有独立内部静态审阅无阻断。两项均只覆盖静态范围，不等于安装、现场验证或候选包批准。 11:46:45本机独立离线合成回归四组分别70/70、27/27、8/8、28/28通过；环境为macOS arm64 / Node 24.14.1，网络与子进程守卫计数为零。Linux / Node22目标、安装及现场收尾未验证；作者先前基线复现与测试断言修正历史保留。 截至2026-10-27T11:50:03+08:00的本地资料核对，502准确候选包仅离线准备，含249个源码文件，状态PENDING_ACCEPTANCE，未批准、未上传、未安装；Host e2/a863虽已本地通过检查，不能单独上线到f730组合。 2026-10-27 12:12:20+08 Host生产只读快照：原a060仍RUNNING，队列LEASED g17，SAVE 0、完成与投影未见；这是该时点快照，不代表实时状态或已收尾。原请求、SAVE失败、claim和UNKNOWN保持。 主控转述唯一现场操作员的核验：17gr实际f730的249文件与原清单核同，运行环境Linux/Node 22.22.1，原claim仍保留；本次图更新未进入现场，原核验时间未在转述中给出。 截至2026-10-27 12:56的历史记录：主控报告502阶段一验收包已私有上传并核SHA；首次目标验收在网络guard预检返回NETWORK_ROUTE_FORBIDDEN，测试尚未开始，原因待查。该结果不等于目标测试通过，502尚未安装。 截至2026-10-27 12:56的历史记录：原a060的Host g17精确收尾候选已在隔离本地实现；截至本轮协调转述尚无测试或发布回执，不能据此标记原任务已收尾。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 用户要求新运行不人为设置预算、处理数量或模型调用次数上限；现有产品中的相关限制已定位，仍待修订，不能标为全部完成。17gr现有GLM-5.3配置maxTokens为64000；原a060的Host封存请求为131072，两者是配置／请求事实，均不证明厂家当前服务支持的最大输出。 2026-10-27 12:59:47+08，502235ab在17gr Linux / Node 22.22.1隔离合成验收通过，四组分别70、27、8、28项，失败0；这些是测试项计数，不是业务完成率。首次驱动预检因IPv4路由文件为空而误判，测试尚未启动；保留原失败并仅修测试驱动后单次验收。网络命名空间仅loopback，网络/子进程守卫计数0；原claim、配置和f730安装清单前后SHA不变。502未安装，现场仍是f730。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 Host原a060的g17精确收尾候选未发布。隔离PostgreSQL 14.17身份行锁探针，普通SELECT=1而FOR SHARE=0，FOR KEY SHARE亦为0，具体阻断行锁方案；撤权并发阶段未开始。无DDL表SHARE锁备选仍在验证，不能称通过或代表线上可用。原a060的12:12:20 Host快照是历史观察，不能据此推断当前终态。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "原a060的12:12:20 Host快照为RUNNING/LEASED g17、SAVE 0、无完成或投影；原claim、SAVE键和UNKNOWN保留，不能推断已收尾。502目标合成验收通过但未安装；Host g17候选受身份行锁阻断、未发布，无DDL表锁备选仍在验证。eff7125f已接收，作者声明待独立审查，晚于该提交的listBrief和缺语义版本反馈未获修复证明；现场组合及完整业务链尚未验收。",
+              "nextAction": "保留原请求、SAVE键、claim和UNKNOWN；由责任方继续Host锁方案验证与Native独立复审，后续现场操作按已有授权读取实际状态，不凭历史快照推断终态或业务闭环。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。现场f730的validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。",
+              "nextAction": "由唯一Native作者及独立审查继续核对语义版本和listBrief反馈，保留身份、来源、版本、租约及UNKNOWN边界；候选接收不等于修复、部署或业务验收。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T05:31:12.918644+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "a863559484add66e9afeef310802308375221dc7",
+            "privateHostCandidate": "e2b2e7b9e266a2b817fd42f3f8da13f606c41460",
+            "nativeCandidate": "502235abd2aa8371a7fcc9637a1ac8f6ccc8d518",
+            "nativeStageTwoCandidate": "eff7125f2e791a1c6bdf564daad7186f8405fc31"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 原a060的12:12:20 Host快照为RUNNING/LEASED g17、SAVE 0、无完成或投影；原claim、SAVE键和UNKNOWN保留，不能推断已收尾。502目标合成验收通过但未安装；Host g17候选受身份行锁阻断、未发布，无DDL表锁备选仍在验证。eff7125f已接收，作者声明待独立审查，晚于该提交的listBrief和缺语义版本反馈未获修复证明；现场组合及完整业务链尚未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 历史协调观察：主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。 Native阶段一作者后继502235ab…、唯一父f730c1f9…、tree90f33047…；11:43:17接收回执核对作者ZIP共254项、253项清单校验、补丁双重哈希和隔离重建tree一致。 主控转述独立Astra静态审查无P0–P2；作者包内另有独立内部静态审阅无阻断。两项均只覆盖静态范围，不等于安装、现场验证或候选包批准。 11:46:45本机独立离线合成回归四组分别70/70、27/27、8/8、28/28通过；环境为macOS arm64 / Node 24.14.1，网络与子进程守卫计数为零。Linux / Node22目标、安装及现场收尾未验证；作者先前基线复现与测试断言修正历史保留。 截至2026-10-27T11:50:03+08:00的本地资料核对，502准确候选包仅离线准备，含249个源码文件，状态PENDING_ACCEPTANCE，未批准、未上传、未安装；Host e2/a863虽已本地通过检查，不能单独上线到f730组合。 2026-10-27 12:12:20+08 Host生产只读快照：原a060仍RUNNING，队列LEASED g17，SAVE 0、完成与投影未见；这是该时点快照，不代表实时状态或已收尾。原请求、SAVE失败、claim和UNKNOWN保持。 主控转述唯一现场操作员的核验：17gr实际f730的249文件与原清单核同，运行环境Linux/Node 22.22.1，原claim仍保留；本次图更新未进入现场，原核验时间未在转述中给出。 截至2026-10-27 12:56的历史记录：主控报告502阶段一验收包已私有上传并核SHA；首次目标验收在网络guard预检返回NETWORK_ROUTE_FORBIDDEN，测试尚未开始，原因待查。该结果不等于目标测试通过，502尚未安装。 截至2026-10-27 12:56的历史记录：原a060的Host g17精确收尾候选已在隔离本地实现；截至本轮协调转述尚无测试或发布回执，不能据此标记原任务已收尾。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 用户要求新运行不人为设置预算、处理数量或模型调用次数上限；现有产品中的相关限制已定位，仍待修订，不能标为全部完成。17gr现有GLM-5.3配置maxTokens为64000；原a060的Host封存请求为131072，两者是配置／请求事实，均不证明厂家当前服务支持的最大输出。 2026-10-27 12:59:47+08，502235ab在17gr Linux / Node 22.22.1隔离合成验收通过，四组分别70、27、8、28项，失败0；这些是测试项计数，不是业务完成率。首次驱动预检因IPv4路由文件为空而误判，测试尚未启动；保留原失败并仅修测试驱动后单次验收。网络命名空间仅loopback，网络/子进程守卫计数0；原claim、配置和f730安装清单前后SHA不变。502未安装，现场仍是f730。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 Host原a060的g17精确收尾候选未发布。隔离PostgreSQL 14.17身份行锁探针，普通SELECT=1而FOR SHARE=0，FOR KEY SHARE亦为0，具体阻断行锁方案；撤权并发阶段未开始。无DDL表SHARE锁备选仍在验证，不能称通过或代表线上可用。原a060的12:12:20 Host快照是历史观察，不能据此推断当前终态。 补充2026-10-27 13:12+08证据：无DDL表SHARE锁备选在隔离临时PostgreSQL 14.17的既有fixture ACL下2项测试均通过；2是测试项计数，不是业务完成率。该锁持有期间会短暂阻塞跨租户身份INSERT/UPDATE/DELETE，生产ACL尚未证实，Host g17草稿未部署，不能将本地探针称为生产可用。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "原a060的12:12:20 Host快照为RUNNING/LEASED g17、SAVE 0、无完成或投影；原claim、SAVE键和UNKNOWN保留，不能推断已收尾。502目标合成验收通过但未安装；Host g17候选受身份行锁阻断、未发布，无DDL表锁备选仍在验证。eff7125f已接收，作者声明待独立审查，晚于该提交的listBrief和缺语义版本反馈未获修复证明；现场组合及完整业务链尚未验收。 补充2026-10-27 13:12+08证据：无DDL表SHARE锁备选在隔离临时PostgreSQL 14.17的既有fixture ACL下2项测试均通过；2是测试项计数，不是业务完成率。该锁持有期间会短暂阻塞跨租户身份INSERT/UPDATE/DELETE，生产ACL尚未证实，Host g17草稿未部署，不能将本地探针称为生产可用。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。",
+              "nextAction": "保留原请求、SAVE键、claim和UNKNOWN；由责任方继续Host锁方案验证与Native独立复审，后续现场操作按已有授权读取实际状态，不凭历史快照推断终态或业务闭环。 继续核实生产ACL、跨租户锁影响和Native阶段切换绑定竞态；保留原请求、claim、SAVE键和UNKNOWN，现有候选与作者报告均不代表部署或业务验收。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。现场f730的validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。",
+              "nextAction": "由唯一Native作者及独立审查继续核对语义版本和listBrief反馈，保留身份、来源、版本、租约及UNKNOWN边界；候选接收不等于修复、部署或业务验收。 继续核实生产ACL、跨租户锁影响和Native阶段切换绑定竞态；保留原请求、claim、SAVE键和UNKNOWN，现有候选与作者报告均不代表部署或业务验收。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T05:40:20.842137+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "a863559484add66e9afeef310802308375221dc7",
+            "privateHostCandidate": "e2b2e7b9e266a2b817fd42f3f8da13f606c41460",
+            "nativeCandidate": "502235abd2aa8371a7fcc9637a1ac8f6ccc8d518",
+            "nativeStageTwoCandidate": "1921777cb6afd541043fd876a5f090fd36bf5094"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 原a060的12:12:20 Host快照为RUNNING/LEASED g17、SAVE 0、无完成或投影；原claim、SAVE键和UNKNOWN保留，不能推断已收尾。502目标合成验收通过但未安装；Host g17候选受身份行锁阻断、未发布，无DDL表锁备选仍在验证。eff7125f已接收，作者声明待独立审查，晚于该提交的listBrief和缺语义版本反馈未获修复证明；现场组合及完整业务链尚未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 历史协调观察：主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。 Native阶段一作者后继502235ab…、唯一父f730c1f9…、tree90f33047…；11:43:17接收回执核对作者ZIP共254项、253项清单校验、补丁双重哈希和隔离重建tree一致。 主控转述独立Astra静态审查无P0–P2；作者包内另有独立内部静态审阅无阻断。两项均只覆盖静态范围，不等于安装、现场验证或候选包批准。 11:46:45本机独立离线合成回归四组分别70/70、27/27、8/8、28/28通过；环境为macOS arm64 / Node 24.14.1，网络与子进程守卫计数为零。Linux / Node22目标、安装及现场收尾未验证；作者先前基线复现与测试断言修正历史保留。 截至2026-10-27T11:50:03+08:00的本地资料核对，502准确候选包仅离线准备，含249个源码文件，状态PENDING_ACCEPTANCE，未批准、未上传、未安装；Host e2/a863虽已本地通过检查，不能单独上线到f730组合。 2026-10-27 12:12:20+08 Host生产只读快照：原a060仍RUNNING，队列LEASED g17，SAVE 0、完成与投影未见；这是该时点快照，不代表实时状态或已收尾。原请求、SAVE失败、claim和UNKNOWN保持。 主控转述唯一现场操作员的核验：17gr实际f730的249文件与原清单核同，运行环境Linux/Node 22.22.1，原claim仍保留；本次图更新未进入现场，原核验时间未在转述中给出。 截至2026-10-27 12:56的历史记录：主控报告502阶段一验收包已私有上传并核SHA；首次目标验收在网络guard预检返回NETWORK_ROUTE_FORBIDDEN，测试尚未开始，原因待查。该结果不等于目标测试通过，502尚未安装。 截至2026-10-27 12:56的历史记录：原a060的Host g17精确收尾候选已在隔离本地实现；截至本轮协调转述尚无测试或发布回执，不能据此标记原任务已收尾。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 用户要求新运行不人为设置预算、处理数量或模型调用次数上限；现有产品中的相关限制已定位，仍待修订，不能标为全部完成。17gr现有GLM-5.3配置maxTokens为64000；原a060的Host封存请求为131072，两者是配置／请求事实，均不证明厂家当前服务支持的最大输出。 2026-10-27 12:59:47+08，502235ab在17gr Linux / Node 22.22.1隔离合成验收通过，四组分别70、27、8、28项，失败0；这些是测试项计数，不是业务完成率。首次驱动预检因IPv4路由文件为空而误判，测试尚未启动；保留原失败并仅修测试驱动后单次验收。网络命名空间仅loopback，网络/子进程守卫计数0；原claim、配置和f730安装清单前后SHA不变。502未安装，现场仍是f730。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 Host原a060的g17精确收尾候选未发布。隔离PostgreSQL 14.17身份行锁探针，普通SELECT=1而FOR SHARE=0，FOR KEY SHARE亦为0，具体阻断行锁方案；撤权并发阶段未开始。无DDL表SHARE锁备选仍在验证，不能称通过或代表线上可用。原a060的12:12:20 Host快照是历史观察，不能据此推断当前终态。 补充2026-10-27 13:12+08证据：无DDL表SHARE锁备选在隔离临时PostgreSQL 14.17的既有fixture ACL下2项测试均通过；2是测试项计数，不是业务完成率。该锁持有期间会短暂阻塞跨租户身份INSERT/UPDATE/DELETE，生产ACL尚未证实，Host g17草稿未部署，不能将本地探针称为生产可用。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 截至2026-10-27 13:17的历史记录：作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。 Native 1921777cb6afd541043fd876a5f090fd36bf5094←eff7125f…已准确接收：ZIP、8文件清单、补丁双哈希、唯一父提交及隔离重建tree一致；接收不代表安装或整包批准。 独立Astra经主控转述确认192修复listBrief临时规范化和新INITIAL缺语义版本fail-closed，仅覆盖这两项；192早于同claim阶段绑定P1反馈，不能作为该问题已修的最终候选。 本机以真实Host e2的materializeJobAidWork接入192真实session/runner离线合成联验6/6通过，原故障bodyQuote诊断追加2/2通过：错误引句返回对应REPAIR_REQUIRED及准确字段路径，修正后VALID。环境macOS arm64/Node 24.14.1；agent、READ、SAVE、Host传输及ledger/final/receipt均为合成，不证明真实Host服务、线上权限/RLS、网关、目标Linux/Node22或真实业务闭环。测试项数不是业务完成率。 主控转述：Host原a060 g17精确收尾本地草稿已冻结，产品代码PG/Jest/typecheck正在隔离执行，生产ACL只读查询在途、结果尚未知；已有表SHARE锁备选仅在fixture ACL下2/2通过，全表锁会跨租户阻塞身份写入。Host未发布，原g17未触碰不表示已收尾。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "原a060的12:12:20 Host只读快照为RUNNING/LEASED g17、SAVE 0且无完成或投影，只是历史快照；原请求、claim、SAVE键及UNKNOWN保留。502在Linux/Node22合成验收通过但未安装；Host精确收尾草稿未发布，隔离产品测试和生产ACL只读查询在途。192两项修复经局部审查、真实e2内容函数离线联验6/6与语义诊断2/2通过，但192早于同claim阶段绑定P1反馈，P1修复、匹配部署及真实业务SAVE/独立READ闭环仍待证据；用户不限预算、处理数量和模型调用次数要求仍在实现。",
+              "nextAction": "继续取得Host隔离测试和生产ACL只读结果，审查并验证同claim阶段绑定P1的准确后继；保护原请求、claim、SAVE键及UNKNOWN，后续实际状态按既有授权独立读回，不以历史快照或合成测试推断终态。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。现场f730的validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 截至2026-10-27 13:17的历史记录：作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。 独立Astra经主控转述确认192修复listBrief临时规范化和新INITIAL缺语义版本fail-closed，仅覆盖这两项；192早于同claim阶段绑定P1反馈，不能作为该问题已修的最终候选。 本机以真实Host e2的materializeJobAidWork接入192真实session/runner离线合成联验6/6通过，原故障bodyQuote诊断追加2/2通过：错误引句返回对应REPAIR_REQUIRED及准确字段路径，修正后VALID。环境macOS arm64/Node 24.14.1；agent、READ、SAVE、Host传输及ledger/final/receipt均为合成，不证明真实Host服务、线上权限/RLS、网关、目标Linux/Node22或真实业务闭环。测试项数不是业务完成率。",
+              "nextAction": "继续取得Host隔离测试和生产ACL只读结果，审查并验证同claim阶段绑定P1的准确后继；保护原请求、claim、SAVE键及UNKNOWN，后续实际状态按既有授权独立读回，不以历史快照或合成测试推断终态。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-27T06:16:24.920414+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "a863559484add66e9afeef310802308375221dc7",
+            "privateHostCandidate": "e2b2e7b9e266a2b817fd42f3f8da13f606c41460",
+            "nativeCandidate": "502235abd2aa8371a7fcc9637a1ac8f6ccc8d518",
+            "nativeStageTwoCandidate": "1921777cb6afd541043fd876a5f090fd36bf5094"
+          },
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 原a060的12:12:20 Host快照为RUNNING/LEASED g17、SAVE 0、无完成或投影；原claim、SAVE键和UNKNOWN保留，不能推断已收尾。502目标合成验收通过但未安装；Host g17候选受身份行锁阻断、未发布，无DDL表锁备选仍在验证。eff7125f已接收，作者声明待独立审查，晚于该提交的listBrief和缺语义版本反馈未获修复证明；现场组合及完整业务链尚未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 历史协调观察：主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。 Native阶段一作者后继502235ab…、唯一父f730c1f9…、tree90f33047…；11:43:17接收回执核对作者ZIP共254项、253项清单校验、补丁双重哈希和隔离重建tree一致。 主控转述独立Astra静态审查无P0–P2；作者包内另有独立内部静态审阅无阻断。两项均只覆盖静态范围，不等于安装、现场验证或候选包批准。 11:46:45本机独立离线合成回归四组分别70/70、27/27、8/8、28/28通过；环境为macOS arm64 / Node 24.14.1，网络与子进程守卫计数为零。Linux / Node22目标、安装及现场收尾未验证；作者先前基线复现与测试断言修正历史保留。 截至2026-10-27T11:50:03+08:00的本地资料核对，502准确候选包仅离线准备，含249个源码文件，状态PENDING_ACCEPTANCE，未批准、未上传、未安装；Host e2/a863虽已本地通过检查，不能单独上线到f730组合。 2026-10-27 12:12:20+08 Host生产只读快照：原a060仍RUNNING，队列LEASED g17，SAVE 0、完成与投影未见；这是该时点快照，不代表实时状态或已收尾。原请求、SAVE失败、claim和UNKNOWN保持。 主控转述唯一现场操作员的核验：17gr实际f730的249文件与原清单核同，运行环境Linux/Node 22.22.1，原claim仍保留；本次图更新未进入现场，原核验时间未在转述中给出。 截至2026-10-27 12:56的历史记录：主控报告502阶段一验收包已私有上传并核SHA；首次目标验收在网络guard预检返回NETWORK_ROUTE_FORBIDDEN，测试尚未开始，原因待查。该结果不等于目标测试通过，502尚未安装。 截至2026-10-27 12:56的历史记录：原a060的Host g17精确收尾候选已在隔离本地实现；截至本轮协调转述尚无测试或发布回执，不能据此标记原任务已收尾。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 用户要求新运行不人为设置预算、处理数量或模型调用次数上限；现有产品中的相关限制已定位，仍待修订，不能标为全部完成。17gr现有GLM-5.3配置maxTokens为64000；原a060的Host封存请求为131072，两者是配置／请求事实，均不证明厂家当前服务支持的最大输出。 2026-10-27 12:59:47+08，502235ab在17gr Linux / Node 22.22.1隔离合成验收通过，四组分别70、27、8、28项，失败0；这些是测试项计数，不是业务完成率。首次驱动预检因IPv4路由文件为空而误判，测试尚未启动；保留原失败并仅修测试驱动后单次验收。网络命名空间仅loopback，网络/子进程守卫计数0；原claim、配置和f730安装清单前后SHA不变。502未安装，现场仍是f730。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 Host原a060的g17精确收尾候选未发布。隔离PostgreSQL 14.17身份行锁探针，普通SELECT=1而FOR SHARE=0，FOR KEY SHARE亦为0，具体阻断行锁方案；撤权并发阶段未开始。无DDL表SHARE锁备选仍在验证，不能称通过或代表线上可用。原a060的12:12:20 Host快照是历史观察，不能据此推断当前终态。 补充2026-10-27 13:12+08证据：无DDL表SHARE锁备选在隔离临时PostgreSQL 14.17的既有fixture ACL下2项测试均通过；2是测试项计数，不是业务完成率。该锁持有期间会短暂阻塞跨租户身份INSERT/UPDATE/DELETE，生产ACL尚未证实，Host g17草稿未部署，不能将本地探针称为生产可用。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 截至2026-10-27 13:17的历史记录：作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。 Native 1921777cb6afd541043fd876a5f090fd36bf5094←eff7125f…已准确接收：ZIP、8文件清单、补丁双哈希、唯一父提交及隔离重建tree一致；接收不代表安装或整包批准。 独立Astra经主控转述确认192修复listBrief临时规范化和新INITIAL缺语义版本fail-closed，仅覆盖这两项；192早于同claim阶段绑定P1反馈，不能作为该问题已修的最终候选。 本机以真实Host e2的materializeJobAidWork接入192真实session/runner离线合成联验6/6通过，原故障bodyQuote诊断追加2/2通过：错误引句返回对应REPAIR_REQUIRED及准确字段路径，修正后VALID。环境macOS arm64/Node 24.14.1；agent、READ、SAVE、Host传输及ledger/final/receipt均为合成，不证明真实Host服务、线上权限/RLS、网关、目标Linux/Node22或真实业务闭环。测试项数不是业务完成率。 截至2026-10-27 13:31的历史观察：主控转述：Host原a060 g17精确收尾本地草稿已冻结，产品代码PG/Jest/typecheck正在隔离执行，生产ACL只读查询在途、结果尚未知；已有表SHARE锁备选仅在fixture ACL下2/2通过，全表锁会跨租户阻塞身份写入。Host未发布，原g17未触碰不表示已收尾。 Host g17本地草稿首轮隔离验证：Jest三套97/97通过；首轮记录器在取进程状态时EPERM，原子进程退出码未知，按授权各重跑一次取得Jest退出0和类型检查退出1，原记录保留。 server typecheck失败：automatic-work-item-dispatch.service.ts第574行的SELECT/Pick类型未包含requestId，产生TS2339；这是当前本地草稿真实失败，尚不能称修复或就绪。 新增精确收尾隔离PostgreSQL测试22/31通过、9项失败，均涉及测试库dm_document_parse_run.lease_owner缺列；主控转述作者后续诊断为fixture未加载项目既有0044，修订和复验进行中，不能据此推断生产缺列。 旧路径隔离PostgreSQL测试14/15通过，唯一失败在准确父e2重现；主控转述独立Astra定位原用例将时间推进超过任务deadline，正准备拆分有效／过期场景，尚未修复或复验。 2026-10-27 13:29:37.827162+08原Host生产只读系统目录查询：指定预期service角色存在，非superuser、无BYPASSRLS且非表owner；目标identity mapping表SELECT/UPDATE/DELETE/TRUNCATE权限均为true。实际应用运行时角色未独立确认，未在生产取锁；RLS可见性、跨租户影响及持锁时间未证。",
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "原a060的12:12:20 Host只读快照仍仅为历史观察；原请求、claim、SAVE键及UNKNOWN保留，未凭其推断g17已收尾。Host草稿首轮Jest 97/97通过，server typecheck因TS2339失败，新增PG测试22/31、旧路径14/15且父e2可复现；夹具未加载0044及旧用例越deadline属于主控转述的待复验诊断。生产只读观察到预期角色表权限，但实际运行时角色与生产取锁未证；Host未发布。502 Linux/Node22合成通过但未安装；192真实e2内容函数离线联验通过，仍早于同claim绑定P1反馈，P1修复、配套部署及真实业务SAVE/独立READ闭环待证据；不限预算、处理数量及调用次数要求仍在实现。",
+              "nextAction": "由责任方修订类型与隔离fixture、拆分旧用例并复验；依据授权核对实际运行时角色与表锁的生产适用性，继续审查Native同claim绑定P1后继；保护原请求、claim、SAVE键和UNKNOWN，不以本地测试或历史快照推断业务终态。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。现场f730的validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 截至2026-10-27 13:17的历史记录：作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。 独立Astra经主控转述确认192修复listBrief临时规范化和新INITIAL缺语义版本fail-closed，仅覆盖这两项；192早于同claim阶段绑定P1反馈，不能作为该问题已修的最终候选。 本机以真实Host e2的materializeJobAidWork接入192真实session/runner离线合成联验6/6通过，原故障bodyQuote诊断追加2/2通过：错误引句返回对应REPAIR_REQUIRED及准确字段路径，修正后VALID。环境macOS arm64/Node 24.14.1；agent、READ、SAVE、Host传输及ledger/final/receipt均为合成，不证明真实Host服务、线上权限/RLS、网关、目标Linux/Node22或真实业务闭环。测试项数不是业务完成率。",
+              "nextAction": "继续取得Host隔离测试和生产ACL只读结果，审查并验证同claim阶段绑定P1的准确后继；保护原请求、claim、SAVE键及UNKNOWN，后续实际状态按既有授权独立读回，不以历史快照或合成测试推断终态。"
+            }
+          ],
+          "previousReviewedRevision": "b4bcd7a3ae76509eced78f8abe586e2a2c80ff19"
+        },
+        {
+          "recordedAt": "2026-10-28T16:07:25.065921+00:00",
+          "sourceRevision": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+          "reviewScope": "此前技术安装和握手为各自原时点的历史事实：2026-10-27T00:15:25.239765Z（北京时间08:15:25）f730单次并排安装已完成：249源文件hash/mode逐项通过，ZIP及manifest准确；35573项保护清单的旧release/state与两配置保持，原721/g15 stopped claim、UNKNOWN和SDK不变。runtime pointer/计划未改、未启动worker；完整f730已含2e87引用规范与反馈父链，中间2e87包没有单独安装。 现场Node22.22.1首轮不支持Node24稳定参数--test-isolation=none，启动exit9/tests0；49B bad-option stderr与原tests0回执保留，这不是产品测试断言失败。按现场node --help确认支持的--experimental-test-isolation=none，仅调整调用参数和新OUT目录，源码、网络守卫与断言保持。2026-10-27T00:20:30.559445Z同33选定目标实际tests33/pass33/fail0/cancel0/skip0；无真实Host业务/模型，SDK未导入/安装，旧Linux12未复跑。此前本机13+20唯一33通过及首轮回环EPERM历史另保留。 2026-10-27T00:20:34.831563Z原CODEX身份与同Host工具metadata/schema握手通过，业务工具/queue/model均0，两配置不变，未创建新业务或worker。Host准确e6和release7701061854014475294、前后端PASS保持，本批未重发Host。技术总回执2026-10-27T00:23:50.327185Z，22件原始技术证据已由唯一操作员准确接回并核SHA；本次资料归并不复测。 既有语义提示已接入，新真实评估可按现有准确提示产生合法候选；当前本地validate_candidate/validateFinal仍未复用Host materialize语义反馈，同轮可修拒绝缺口保留。若真实SAVE遇Host语义拒绝，应查原请求后停止，不盲重跑。29合成例仅来源会话汇总、未独立复测；已保存阅读使用候选评价/来源报告措辞。该只读缺口不作为本轮f730窄修或新真实评估的通用开发前置。 2026-10-27 09:41:04.990330+08:00，原Host生产环境对原721只读快照：ATT-11876c3c…第9次为CANCELLED、attempt代际1、相关active0、SAVE0、结果信封0；queue为BLOCKED、当前代际g16、阻断代际g16、完成代际空。这只是Host时点快照，不能单凭队列状态推断本地strict replay或归档已独立核实。 原721取消任务的队列正常收尾已独立核实：原始final-receipt已接回本地并与现场原件SHA一致，脱敏现场核验交接已本地复核；08:31:44命令退出0，NEXT一次取g16，PARK一次replayed=false，strict replay一次replayed=true且blockedAt相同。现场核实g16 archive存在且SHA与原始回执一致、active-claim=null，原g15备份及UNKNOWN/ledger/dispatch/配置共138文件SHA与权限一致，无原生产worker。09:41 Host只读快照为CANCELLED、active0、结果0、SAVE0、队列BLOCKED g16。archive本体未单独接回本地，其SHA一致性来自现场核验交接。 原a060的12:12:20 Host快照为RUNNING/LEASED g17、SAVE 0、无完成或投影；原claim、SAVE键和UNKNOWN保留，不能推断已收尾。502目标合成验收通过但未安装；Host g17候选受身份行锁阻断、未发布，无DDL表锁备选仍在验证。eff7125f已接收，作者声明待独立审查，晚于该提交的listBrief和缺语义版本反馈未获修复证明；现场组合及完整业务链尚未验收。 2026-10-27 09:55:39.337+08单次UI请求返回201，创建原WI的新请求a0606283…、ATT-f8638ba4…/AQ-e4baa598…，状态QUEUED，非重放。 09:57:16.726635+08 Host只读快照：新attempt为第10次、QUEUED、startedAt空/claim0，相关active1、结果0/SAVE0/独立READ事件0；队列WAITING、代际g16。09:57:19.384576+08 task只读核得PROGRAM_AGENT_V1、GLM 5.3、输出上限131072，模型请求与工具调用次数上限均为null，原deadline为10:55:43.748+08。 此前主控报告原17gr重新唤醒后终端加载中，当时worker和模型尚未启动；该历史观察已由10:12之后的实际启动证据更新，不曾据加载状态推断失败或重建。 2026-10-27 10:17:35.168143+08 Host官方只读快照：同一a060、ATT-f8638ba4…/AQ-e4baa598…为RUNNING，第10次、claim1/retry0、attempt租约代际1，最近心跳10:17:34.787；队列LEASED g17，旧blocked代际g16。MATERIALS_READY已在10:12:53.484持久记录；结果、SAVE0、独立READ0、Overall及ACK回执尚未见。绑定仍为PROGRAM_AGENT_V1、GLM 5.3、131072、模型/工具次数上限null；原deadline 10:55:43.748。 唯一现场操作员报告原单worker于10:12:37.515+08启动，10:15:34仍存活；10:17:05现场ledger为dispatch保留9、完成8、未闭合1，最近完成的HTTP 200且finish为tool_calls。这是现场阶段元数据；模型最终回执、SAVE、READ和退出当时均未见，不能视为业务完成。 唯一现场操作员于2026-10-27 10:23:13+08报告：同一run的read_sources实际调用5次，均AVAILABLE/EXACT/completeRequestedScope，去重引用26项（DOCUMENT_PASSAGE 23、METHOD_CLAUSE 3）；条目含原文解析版本PRUN-9db7cac3…，条目未逐项列DV，DV身份来自封存任务。这是工具交付元数据，不证明模型理解或正式采用。 现场原run-result报告候选最终回执已落、SAVE started，原SAVE键及预期版本0保留；返回JOBAID_SEMANTIC_REQUIREMENT_BODY_LOCATION_REQUIRED，状态REQUIRES_ATTENTION，无SAVE receipt/独立READ。原worker 10:23:08退出码0，10:24:29现场观察到退出；consumerStoppedObservation为UNCONFIRMED（JOBAID_CONSUMER_STOPPED_LOCAL_BINDING_CHANGED），不能把进程退出解释为业务成功或队列已收尾。 2026-10-27 10:26:03.934747+08 Host官方只读同一a060/ATT-f8638ba4…/AQ-e4baa598…：attempt仍RUNNING、claim1/retry0，queue仍LEASED g17；最近心跳10:22:55.352，内层lease至10:52:55.352、外层至11:12:40.107、原deadline 10:55:43.748。Host于10:23:03.372记录MODEL_RESPONSE_SAVED；按原SAVE键只读核得WI内保存0、本attempt保存0及该键独立READ事件0，Overall/ACK未见；Host未给出终止错误，与本地REQUIRES_ATTENTION尚待对账，不称已收尾。 2026-10-27 10:56:11.167977+08 Host官方只读：原a060的任务deadline 10:55:43.748和attempt lease 10:52:55.352均已过，但同ATT-f8638ba4…/AQ-e4baa598…仍为RUNNING、无终态错误或完成时间，最后心跳10:22:55.352；queue仍LEASED g17至11:12:40.107。原SAVE键只读保存0、独立READ0，Overall/ACK未见；worker此前已退出，当前是已过期仍待对账，不是已完成或自动超时。原期限未延长，原请求未重跑。 此前阶段的协调观察：主控报告Host共享预检仅处于隔离本地实现中；Native新作者已收到纠偏，源码接收与修订均未证实。上述为协调状态，不代表部署、发布、修复成功或真实业务验收。 Host共享预检后继已在隔离本地提交：私有e2b2e7b9…←e6a896f2…，公开a8635594…←bbb929dc…，同树6107ec43…、各9文件；精确提交、父提交、同树与文件清单已本地核对。尚未推送、发布或对接Native，不改变既有线上Host版本。 本地Jest 40/40和server typecheck通过；隔离PostgreSQL 14.17的15个子测试及父测试共16/16通过，含等待attempt锁时grant过期而无写入的回归。第二轮PG曾因Date参数编码在断言前失败，第三轮只修测试夹具时间参数后重跑该PG套件通过；旧失败及日志保留。前后端build:prod退出0，其他本地工作树有22项tsconfig提示、当前工作树0项；完整平台npm run build未执行，不将本机构建称为平台发布。 主控报告Astra发现的grant锁等待期间授权过期问题已修复并复审，来源接入admission无持久写入为源码核对结论；这些均不替代已发布版本或真实业务验收。 历史协调观察：主控报告Native作者已收到阶段一原文及一次用户授权澄清；11:22:57之后的协调观察无可见交付回执，不推断作者未工作。原请求、claim、SAVE键及UNKNOWN保持，Native源码接收、审查和实际对接仍待证据。 Native阶段一作者后继502235ab…、唯一父f730c1f9…、tree90f33047…；11:43:17接收回执核对作者ZIP共254项、253项清单校验、补丁双重哈希和隔离重建tree一致。 主控转述独立Astra静态审查无P0–P2；作者包内另有独立内部静态审阅无阻断。两项均只覆盖静态范围，不等于安装、现场验证或候选包批准。 11:46:45本机独立离线合成回归四组分别70/70、27/27、8/8、28/28通过；环境为macOS arm64 / Node 24.14.1，网络与子进程守卫计数为零。Linux / Node22目标、安装及现场收尾未验证；作者先前基线复现与测试断言修正历史保留。 截至2026-10-27T11:50:03+08:00的本地资料核对，502准确候选包仅离线准备，含249个源码文件，状态PENDING_ACCEPTANCE，未批准、未上传、未安装；Host e2/a863虽已本地通过检查，不能单独上线到f730组合。 2026-10-27 12:12:20+08 Host生产只读快照：原a060仍RUNNING，队列LEASED g17，SAVE 0、完成与投影未见；这是该时点快照，不代表实时状态或已收尾。原请求、SAVE失败、claim和UNKNOWN保持。 主控转述唯一现场操作员的核验：17gr实际f730的249文件与原清单核同，运行环境Linux/Node 22.22.1，原claim仍保留；本次图更新未进入现场，原核验时间未在转述中给出。 截至2026-10-27 12:56的历史记录：主控报告502阶段一验收包已私有上传并核SHA；首次目标验收在网络guard预检返回NETWORK_ROUTE_FORBIDDEN，测试尚未开始，原因待查。该结果不等于目标测试通过，502尚未安装。 截至2026-10-27 12:56的历史记录：原a060的Host g17精确收尾候选已在隔离本地实现；截至本轮协调转述尚无测试或发布回执，不能据此标记原任务已收尾。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 用户要求新运行不人为设置预算、处理数量或模型调用次数上限；现有产品中的相关限制已定位，仍待修订，不能标为全部完成。17gr现有GLM-5.3配置maxTokens为64000；原a060的Host封存请求为131072，两者是配置／请求事实，均不证明厂家当前服务支持的最大输出。 2026-10-27 12:59:47+08，502235ab在17gr Linux / Node 22.22.1隔离合成验收通过，四组分别70、27、8、28项，失败0；这些是测试项计数，不是业务完成率。首次驱动预检因IPv4路由文件为空而误判，测试尚未启动；保留原失败并仅修测试驱动后单次验收。网络命名空间仅loopback，网络/子进程守卫计数0；原claim、配置和f730安装清单前后SHA不变。502未安装，现场仍是f730。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 Host原a060的g17精确收尾候选未发布。隔离PostgreSQL 14.17身份行锁探针，普通SELECT=1而FOR SHARE=0，FOR KEY SHARE亦为0，具体阻断行锁方案；撤权并发阶段未开始。无DDL表SHARE锁备选仍在验证，不能称通过或代表线上可用。原a060的12:12:20 Host快照是历史观察，不能据此推断当前终态。 补充2026-10-27 13:12+08证据：无DDL表SHARE锁备选在隔离临时PostgreSQL 14.17的既有fixture ACL下2项测试均通过；2是测试项计数，不是业务完成率。该锁持有期间会短暂阻塞跨租户身份INSERT/UPDATE/DELETE，生产ACL尚未证实，Host g17草稿未部署，不能将本地探针称为生产可用。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 截至2026-10-27 13:17的历史记录：作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。 Native 1921777cb6afd541043fd876a5f090fd36bf5094←eff7125f…已准确接收：ZIP、8文件清单、补丁双哈希、唯一父提交及隔离重建tree一致；接收不代表安装或整包批准。 独立Astra经主控转述确认192修复listBrief临时规范化和新INITIAL缺语义版本fail-closed，仅覆盖这两项；192早于同claim阶段绑定P1反馈，不能作为该问题已修的最终候选。 本机以真实Host e2的materializeJobAidWork接入192真实session/runner离线合成联验6/6通过，原故障bodyQuote诊断追加2/2通过：错误引句返回对应REPAIR_REQUIRED及准确字段路径，修正后VALID。环境macOS arm64/Node 24.14.1；agent、READ、SAVE、Host传输及ledger/final/receipt均为合成，不证明真实Host服务、线上权限/RLS、网关、目标Linux/Node22或真实业务闭环。测试项数不是业务完成率。 截至2026-10-27 13:31的历史观察：主控转述：Host原a060 g17精确收尾本地草稿已冻结，产品代码PG/Jest/typecheck正在隔离执行，生产ACL只读查询在途、结果尚未知；已有表SHARE锁备选仅在fixture ACL下2/2通过，全表锁会跨租户阻塞身份写入。Host未发布，原g17未触碰不表示已收尾。 Host g17本地草稿首轮隔离验证：Jest三套97/97通过；首轮记录器在取进程状态时EPERM，原子进程退出码未知，按授权各重跑一次取得Jest退出0和类型检查退出1，原记录保留。 server typecheck失败：automatic-work-item-dispatch.service.ts第574行的SELECT/Pick类型未包含requestId，产生TS2339；这是该次本地草稿真实失败，尚不能称修复或就绪。 新增精确收尾隔离PostgreSQL测试22/31通过、9项失败，均涉及测试库dm_document_parse_run.lease_owner缺列；截至2026-10-27 13:40的主控转述：作者后续诊断为fixture未加载项目既有0044，当时修订和复验进行中，不能据此推断生产缺列。 旧路径隔离PostgreSQL测试14/15通过，唯一失败在准确父e2重现；截至2026-10-27 13:40的主控转述：独立Astra定位原用例将时间推进超过任务deadline，当时正准备拆分有效／过期场景，尚未修复或复验。 2026-10-27 13:29:37.827162+08原Host生产只读系统目录查询：指定预期service角色存在，非superuser、无BYPASSRLS且非表owner；目标identity mapping表SELECT/UPDATE/DELETE/TRUNCATE权限均为true。实际应用运行时角色未独立确认，未在生产取锁；RLS可见性、跨租户影响及持锁时间未证。 RC1原作者三份资料已原样接回私有目录，压缩包20/20项CHECKSUMS及三份SHA本地核验通过；这是材料接收计数，不是业务完成率。当前本地e2/1c90仅有既有语义预检与CLI反馈；RC1的checklistBinding、checklistResults、methodUsage及方法用途规则尚未接线或业务验收。 主控转述：唯一Host owner已从e2开始隔离实现RC1统一预检，唯一Native作者后继将按实际Host合同接入；尚无该新接线交付、发布或业务验收。新优先级来自另一会话转述，原用户消息尚未直接核验，不能视作新增授权。直接用户此前要求不人为设置预算、处理数量及模型调用次数上限仍有效。 Native 1c90bd28…←1921777…的准确包、唯一父提交及隔离重建tree已核；主控转述独立Astra对同claim阶段同步绑定P1的静态审查通过，crash窗口仍有P2测试缺口。目标Linux/Node22及真实握手待验，不代表安装、线上通过或完整业务闭环；作者测试报告未由本轮复跑。 2026-10-27 14:08:38.906644+08原Host只读快照：a060为RUNNING、队列LEASED g17，原attempt租约、队列租约和deadline均已过期；这是时点快照，不是终态。14:05的CODEX scope只读核对仍绑定原WI/request，在该准确范围内未见后续attempt；新对象及其授权未获证，也未证明a060是唯一阻塞。原请求、claim、SAVE键和UNKNOWN保留。主控转述a060专用BLOCK/跨租户锁草稿暂停，仅在确有主线阻塞时重评，不能标为已解决。",
+          "consumer": "正常程序评估入口→准确mode/model任务→完整材料与文件快照→现有SAVE/独立READ→合法初评确定性Overall→正常阅读/准确workRef下钻；进度与各终态分列",
+          "authority": null,
+          "gaps": [
+            {
+              "id": "program.initial-live",
+              "kind": "runtime",
+              "reason": "RC1 checklistBinding、checklistResults、methodUsage和方法用途规则仍未接线/业务验收；Host从e2隔离实现，Native由唯一作者按实际Host合同后继接入，均不代表线上通过。1c90的P1同步绑定静态审查通过但crash窗口P2测试缺口、Linux/Node22及真实握手仍待验证。14:08的a060 RUNNING/LEASED g17为期限已过的历史快照；原WI/request、claim、SAVE键和UNKNOWN保留，新对象及其授权未获证，专用BLOCK/跨租户锁草稿暂停且未解决。新优先级来自另一会话转述，原用户消息尚未直接核验，不作为新增授权；直接用户不限额度要求仍有效。真实业务SAVE、独立READ及整体闭环仍待证据。",
+              "nextAction": "唯一Host owner继续隔离完成RC1统一预检并按实际合同交付，唯一Native作者据合同接线；补验1c90的crash窗口P2、目标Linux/Node22和真实握手。保护a060原证据与UNKNOWN；仅当主线阻塞得到证实再评估专用收尾草稿，任何现场动作继续遵守既有授权。"
+            },
+            {
+              "id": "program.semantic-feedback",
+              "kind": "source_review",
+              "reason": "只读核明：既有准确语义提示已接入，新真实评估可产生合法候选，不因缺反馈判定必然失败。现场f730的validate_candidate/validateFinal未复用Host materialize语义校验；真实SAVE的semantic拒绝只精确READ同请求，无revision即停止/UNKNOWN，不回同轮模型纠正。方法讨论/采用及方法覆盖/对象事实未区分，非METHOD依据只证明类型/来源；已保存页面明确“候选评价/来源报告”，不把枚举自动认定实际实施或正式采用。29合成例仅来源会话汇总、逐例原件未持有且未独立复测。本轮不加通用语义开发前置、不做AD特判/任意补引/模糊匹配/关键词或NLI引擎；新评估须单独核内容与SAVE/独立READ尾链，Host语义拒绝先查询原请求并停止，不盲重跑。 截至2026-10-27 12:56的历史记录：Native阶段二eb4058e…←502235ab…已准确接收，补丁和隔离树核验通过；独立审查发现租约元数据、listBrief规范化及新initial任务缺语义版本的三项接线问题，尚无修复与复核回执。作者仍是唯一写者；最近一次两项审查反馈已发送，正式读回送达仍未知，未重发。 Native阶段二eff7125f…←eb4058e…的准确包、父提交和隔离重建树已接收核同；作者称移除常规队列数量/时间片限制并修Host SDK metadata，独立源码审查尚在进行，不能称已验证或已部署。listBrief和缺语义版本的反馈晚于eff7125f提交，作者未声称该提交修复这两项；不推断修复。用户不要求人为预算、处理数量或模型调用限制。 补充独立Astra审查的主控转述：eff7125f阶段切换绑定竞态仍为P1未修，相关源码位置为consume-hosted-work-item.mjs第654和808行；当前没有单独落盘的审查报告。 截至2026-10-27 13:17的历史记录：作者报告的1921777候选早于上述P1反馈；作者称修复先前listBrief和缺语义版本问题，真实Host合同尚未验证，不能据此认定P1已修。P1反馈已由正式reader唯一读回，2026-10-27 13:15:02.235+08送达；作者仍在处理，尚未观察到该P1的修复交付。 独立Astra经主控转述确认192修复listBrief临时规范化和新INITIAL缺语义版本fail-closed，仅覆盖这两项；192早于同claim阶段绑定P1反馈，不能作为该问题已修的最终候选。 本机以真实Host e2的materializeJobAidWork接入192真实session/runner离线合成联验6/6通过，原故障bodyQuote诊断追加2/2通过：错误引句返回对应REPAIR_REQUIRED及准确字段路径，修正后VALID。环境macOS arm64/Node 24.14.1；agent、READ、SAVE、Host传输及ledger/final/receipt均为合成，不证明真实Host服务、线上权限/RLS、网关、目标Linux/Node22或真实业务闭环。测试项数不是业务完成率。",
+              "nextAction": "继续取得Host隔离测试和生产ACL只读结果，审查并验证同claim阶段绑定P1的准确后继；保护原请求、claim、SAVE键及UNKNOWN，后续实际状态按既有授权独立读回，不以历史快照或合成测试推断终态。"
+            }
+          ],
+          "sourceRevisions": {
+            "host": "e6a896f2da554e309a2b975d3294d1aa5efe0af9",
+            "native": "f730c1f94f61945e39de9c21a4cceb66a0fc924f",
+            "public": "bbb929dcdd430d3727d3fed96382efca780bf573",
+            "publicHostCandidate": "a863559484add66e9afeef310802308375221dc7",
+            "privateHostCandidate": "e2b2e7b9e266a2b817fd42f3f8da13f606c41460",
+            "nativeCandidate": "502235abd2aa8371a7fcc9637a1ac8f6ccc8d518",
+            "nativeStageTwoCandidate": "1c90bd2855668afcd295d856f32b3475e84cec9f"
+          }
+        }
+      ],
+      "producer": "Host 现有任务 builder 封存准确来源、版本及 RC1 checklistBinding；正常页面读取 projectForBrowser 投影。",
+      "executionOwner": "现有 Host 授权入口及合法受理后的单一 Native consumer；本轮安装未启动 consumer。",
+      "recoveryOwner": "原请求、原 key 与 fence 的 Host／Native 恢复链；UNKNOWN 先核原结果。",
+      "decisionEntry": "canonical-host-initial-analysis-status.service.ts#projectForBrowser；InitialAnalysisContinueButton 显式新请求。",
+      "projectionEntry": "canonical-jobaid-problem.service.ts 的可信 task 封存；Native 安全模型 view。",
+      "readEntry": "DocumentAssessmentWorkspace 正常只读刷新；原任务和准确保存 revision 的现有读取。",
+      "authority": {
+        "requestRecord": "原 WI、intake、DVI、revision、主体授权及 task envelope。",
+        "artifactRecord": "原 SAVE key、workRef、revision 及同版 Overall。",
+        "consumedInputField": "封存 definitionVersion、原 definitionContentHash、definition、selection、acceptance；模型 view 排除 full 控制身份。",
+        "ready": "workingRead.enabled、continuationOperations 含 EVALUATE_JOBAID 且 JobAid 非忙碌。",
+        "saved": "Host 原 SAVE／CAS 与独立 exact READ 分别记录。",
+        "current": "同一任务与保存 revision 的原状态和实际读取，不能从旧失败或新图推造。"
+      }
     }
   ]
 }

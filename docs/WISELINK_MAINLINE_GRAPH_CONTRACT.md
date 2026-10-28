@@ -1,6 +1,6 @@
 # WiseLink 主线流程图契约
 
-版本：1.9 首测输入留存与现场准备 · 日期：2026-10-25 · 业务时区：Asia/Shanghai
+版本：1.9.1 RC1主线接线局部更新 · 日期：2026-10-28 · 业务时区：Asia/Shanghai
 
 ## 设计结论
 
@@ -8,7 +8,9 @@
 
 本契约保留当前 13 个能力节点及既有业务对象，收敛共同规则和实际接线。Host 管理业务真值；每类请求使用一套明确的执行与恢复协议，同一请求在任一时刻只有一个有效执行者；任务图从这些记录生成。验证阶段可直接调整不合理的串行和重复执行机制，以一条可保存、可读回、可接续的真实链路证明设计。节点、关系和场景数量是当前目录，不是禁止合理增删的业务约束。
 
-v1.6 已修正证据匹配、接入范围、实施顺序与资源含义；v1.7 补入程序控制评估、准确材料阅读和保存后独立阅读。v1.8 已约束持久任务、消费者宿主和 Codex 进程的责任及恢复接线；本版补齐启动前输入留存的实际接入与首测现场证据，明确本地实现、部署配置和业务闭环的区别。配套交付物是 M2 离线验证阅读器和 M3 业务页面诊断投影；这里 M2/M3 是交付阶段编号，不是产品运行模型。各消费者的本地实现、发布与真实运行按准确证据分别登记，不代表全系统运行监控已经完成。固定提交 b37 的源码核对保留为历史；后续实际接线及 2026-10-23 对话分工见附录 E，当前实施和业务状态以集成记录及 M2 为准。
+v1.6 已修正证据匹配、接入范围、实施顺序与资源含义；v1.7 补入程序控制评估、准确材料阅读和保存后独立阅读。v1.8 已约束持久任务、消费者宿主和 Codex 进程的责任及恢复接线；v1.9 补齐启动前输入留存；v1.9.1 原阶段作为文档后继更新 Linux/Codex 入口、两个拟定根及首测和长期恢复边界，产品当时冻结0b48366e/542edca3；本次最新技术与业务分层见§6.6。配套交付物是 M2 离线验证阅读器和 M3 业务页面诊断投影；这里 M2/M3 是交付阶段编号，不是产品运行模型。各消费者的本地实现、发布与真实运行按准确证据分别登记，不代表全系统运行监控已经完成。固定提交 b37 的源码核对保留为历史；后续实际接线及 2026-10-23 对话分工见附录 E，当前实施和业务状态以集成记录及 M2 为准。
+
+后文既有实施记录、版本和待办均保留原观察时点；发生冲突时，当前五处接线及实际发布／业务状态以§6.6和同源进度记录为准。
 
 ### 阅读顺序
 
@@ -109,6 +111,10 @@ flowchart TD
 | Codex 子进程与模型 | 在程序交付的准确输入和已固定执行模型下完成候选；回传准确 run、transport 闭合及完整响应定位 | 子进程不能自定业务 requestId、租约、来源范围、正式采用或结束队列 |
 
 每次业务尝试只有一个有效执行/恢复 owner。Host 新旧入口按固定活动执行器互斥，CODEX 使用独立运行 app、principal 和精确路径授权；新服务名称本身不授予权限。协议中仍合法的 `OPENCLAW` 类型或工具版本键，与实际运行端身份分别解释，不全局改名也不借旧凭据放行。
+
+**首测现场与恢复边界（2026-10-25 历史观察）。** 当时新执行端通过用户指定入口读到Ubuntu22.04.5、Node22.22.1、Python3.10.12和Codex0.164.0；拟定的 `STATE/checkpoints` 与 `STATE/runs` 当时尚未创建或验证。原首次目标是当前实例内一个新事项及一个显式启动并值守的worker，不配置自动重启或cron；长期无人值守、闲置回收和实例替换恢复另列未验。该历史准备状态不替代§6.6的后继安装与业务事实，准确私有路径仅保留在原回执映射。
+
+本地完整响应落盘并fsync后报完成的源码顺序已经存在，12项Linux专项仍未在目标机验证。若上游已生成而尚未可靠留存，或仅存overlay且尚未Host SAVE时实例丢失，当前没有已证实的原标识完整响应重取能力；值守不能消除此窗口。按原请求/原SAVE key查询，未知不重派，不把本地空目录当从未运行。官方可重新激活闲置项目不构成具体目录保留保证；平台凭据仅按method/path限制，WI/intake的对象边界由Host授权与事务守卫实现。
 
 三种 requestId 分别是：外层 **intake requestId** 绑定原获权事项及本次受理；**stage/action requestId** 绑定封存动作 task 与 attempt；**SAVE requestId** 固定一次准确正文/CAS 命令的幂等身份。三者不得混用，attemptId 也不是 requestId。两层 lease 分别是外层事项授权领取的 owner/token/generation/期限，以及内层 ActionAttempt 的 token/generation/期限；按实际操作校验有效绑定，模型不得写入或覆盖它们。
 
@@ -419,6 +425,20 @@ Markdown 维护规则正文和稳定 ID。轻量规范索引读取节点/边/场
 P0按SQL、身份和实际交付行推进；P6按§4.4精确行核失败对账及正常收尾；P2按存量质量/SEM行核真实内容。Host70/c238切换及原明确准备失败占用收尾已实测；ATT4第14轮Gateway结果不完整，原UNKNOWN保留且Host已按deadline正常收尾；PAGE准确b7/b8已技术交付；原ATT5已按期限TIMED_OUT，Host外层gen9 BLOCKED/清租约，SAVE0且无Overall当前指针。该Host收尾不证明Native进程/检查点/调度或UNKNOWN已清，不再等待原ATT5继续产出，真实保存业务链未闭合。这些阶段与获准真实最小链路分别登记。13/47/54/10目录与12bindings不扩张；本次正反回归和线上具体断点分别按实际回执登记，既有V不自动覆盖所有UNKNOWN变体。
 
 用户后续方向已调整：停止继续扩写自制业务agent loop、续接/恢复框架及相关新补丁发布准备；先核当前Hosted OpenClaw原生agent run、客户端工具协议与Host受控工具的真实注册/能力/权限边界。原生Gateway执行、官方形状客户端tools/tool_calls及应用意图/换段可以并存，不能仅凭URL或客户端64轮上限认定绕过原生或必缺插件。当前ATT5只观察原请求状态和已存副作用并保留，不强停、清档、另起/重试或切执行器；既有Host身份、来源、版本、读取journal、双fence、SAVE幂等/CAS、准确workRef/Overall及正式采用边界保持。后续编排取舍须待原生可行性判断，不保证替换或缩减loop能治愈M3 UNKNOWN；原b7/b8已交付事实不撤销。
+
+### 6.6 RC1 主线五处接线与检查单
+
+本节在已接受的本地 v1.9.1 上，选择性吸收可读 v1.10 的 RC1／独立 READ 边界及原图作者增量11的统一含义；不声称已接收更晚完整 Library 图稿。保留 Host 业务权威、INITIAL／Review／CHAT-UPDATE 和普通／isolated 分支；活跃任务内由 Codex 处理工具反馈，final 后不暗起修补模型。源码接线、技术发布、真实运行与工程结论分别核实。
+
+1. **`request.action` → `program.initial-assessment`。** 资料库 `DocumentAssessmentWorkspace` 的刷新为只读；`JobAidProblemWorkspace` 消费 Host 的 `continuationOperations`，`InitialAnalysisContinueButton` 由用户显式提交新 EVALUATE。Host 继续核准确事项／原 intake／文档版本及当前授权。新 SB 两项存储绑定已唯一匹配，但页面的 fresh 准入、按钮和模型选择尚未证实，stage／model／consumer 均为 0。`CANONICAL_CODEX_REQUEST_SCOPE_MISMATCH` 可能由本次 `readOriginalAdmission` 重算，不一概解释为旧错误。恢复正式浏览器后在同一对象正常刷新并读允许操作；不直接 NEXT 或重放旧请求。
+2. **`original.research` → `program.initial-assessment`。** Host 在可信任务中封存完整 RC1 definition、selection 与 acceptance；11f2 在原 full 与控制字段边界内派生模型可见 view、候选 shape 和反馈，固定版本／原内容摘要准入不变。设计来源或目录可见不等于实际获权原文 READ。11f2 的 97 项离线通过和 272 条目准确安装不代表真实 GLM 已消费同源定义。
+3. **`research.overall`。** 原工作 SAVE 后按原 key、准确 workRef 与 revision 独立 READ，再由原 Overall 消费该修订；INITIAL、Review 和 CHAT-UPDATE 的合法分支保持。b993 至 58b 已接受 Review 共享无写诊断、运输、保存／READ 与后继 Overall 接线，不再把接口缺失写成当前源码缺项；新 SB 的真实 SAVE、READ 与同版 Overall 仍未取得。
+4. **`save.finish` 是既有 binding，不是新 edge。** SAVE、独立 exact READ、同版 Overall、原外层 ACK 和可读成果分别有各自证据。COMMITTING／UNKNOWN 先查原结果，READ 不确定不重 SAVE；已保存成果可先读，不等待 Overall 或 ACK。g17 原字节归档及指针释放是历史维护，不是业务 ACK 或工程成功。
+5. **`document.assessment-reading` 绑定 `artifact.reading`。** UI v3 的 25 文件已集成入 eed／58b：内置定义只读，selected task 使用封存定义，Review 回合与 current／exact 历史工作显示逐项结果、正文位置、依据及原 runtime 进度。13 套 148 唯一测试为分层覆盖，PG1 为沿用的 v2 实测；这不是用户真实阅读。新成果形成后由正常用户页读取同一工作修订与 Overall，浏览器缺席时保留未验证。
+
+检查单的 `definitionVersion`、原 `definitionContentHash`、selection 和 acceptance 随任务封存、随工作保存并按准确修订读取；不能把 full／租户／lease 等控制字段放入模型或页面，也不能用当前内置版回填旧任务。未保存、NOT_BOUND、INVALID、UNSUPPORTED 和 NOT_MACHINE_ASSESSED 不表示通过。当前管理入口仅供内置定义只读；在线编辑、完整不可变新版保存与启用仍是 `CHECKLIST_ONLINE_MANAGEMENT_PREPARATION`，及匹配的 Host／Native 新版本准入后置，不作为当前首条业务前置。原 RC1 内容摘要为 `sha256:c5fc3dacfb8195ff16f29180332805a64263849a45c28203e67c1ea19f92d479`，不是删字段投影重算值。
+
+本地 g17、旧 UNKNOWN、原请求与已存成果保持。官方 release 已 finished／准确 58b，但实际双端运行指纹和页面尚未读回；最近一次实际双端指纹为旧 eed 的历史观察。现有人类 P0 是新 SB 的正常同源真实链，人类 P1 先完成同源进度／结果的真实阅读与验证，再推进在线检查单管理；它们与下方原 P0—P7 工作包 ID 是两套不同含义，不重命名包或按证据数量算完成率。
 
 ## 7. 实施顺序、首验收与性能
 
@@ -1266,8 +1286,10 @@ Review首次本地集成检查3项失败来自合成Host只有150毫秒lease，�
 
 实际prompt、发送上游的完整body bytes及父checkpoint→预定child run，在本次必要客户端组合中接入；父关联持久回调完成后才spawn，bridge把同一body bytes持久写入后才发送。恢复继续核原绑定、原请求及完整回执；不是只留摘要，也不把已有旧目录自动迁为新恢复协议。独立源码审查无阻塞；本机定向Node87通过/9项Linux跳过、Python10通过/3项Linux跳过，实际Host服务边界8通过。首次失败的Linux平台限制和旧fixture已分类，未放宽生产守卫，原失败日志保留。最终组合构建另据准确交付回执登记；不以合成Host证明生产认证或业务完成。
 
-正式平台只读metadata确认Host当前发布仍为准确a65、finished；dev/online各38个变量名均无所需10个Codex设置，现有路径权限未覆盖5个Codex POST入口，完整dev→online schema差异为空。新应用正式会话inactive、平台cron为空；Chrome已登录但预览仍在唤醒，未取得实际终端。以上不说明原生调度不存在，也不能证明Codex已安装、目录已持久或模型可用。launch页面不是API origin，查询元数据未提供后者。
+正式平台只读metadata确认Host当前发布仍为准确a65、finished；dev/online各38个变量名均无所需10个Codex设置，现有路径权限未覆盖5个Codex POST入口，完整dev→online schema差异为空。后续用户给出新应用准确main入口，官方终端已恢复，实际Linux、二进制、模型引用和监管元数据已读到；不能继续将旧“终端未取得”作为当前状态。实际API基址已核为 `https://hv5zjf4j8yb.feishuapp.com/app/app_17bzc551rsg`；有限无认证HEAD可达，不等于新CODEX接口已部署或握手。当前新端现有安装仍为1155c386/fc132291合成Host版本，冻结0b尚未安装。
 
-[首次真实运行准备](coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md)分别列出已有事实、待补现场证据和需准确批准的动作。Host app与新runtime app分开；先确认现成宿主、准确入口与两个私有root，再固定一个新事项、一个worker、GLM-5.3的完整链。首次可用受控单次唤起，不前置新调度平台、2/4 workers、P1翻译或旧请求恢复。停止旧领取与拒绝旧/迟到写分别核验，原UNKNOWN不重放。
+[首次真实运行准备](coordination/WISELINK_CODEX_FIRST_LIVE_READINESS_20261025.md)分别列出已有事实、两个准确拟定根和三类独立批准。公开0b48366e与同树Host542edca3的完整构建已通过；文档后继不替换该产品组合。新WI/intake/stage是获准正常创建后的返回值，不为了填审批表提前创建。A技术安装与目标Linux合成验证、B身份与旧入口切换、C单新事项GLM实测分别明确，A通过不代表B/C获准。首次不前置新调度平台、2/4 workers、P1翻译或旧请求恢复。
+
+旧17c技能位于workspace/skills，业务检查点却在 旧受控检查点目录（准确路径见私有映射）；既有升级回执证明安装核验、检查点与UNKNOWN保留，未证明实例替换恢复。新端继续采用准确交付、原请求查询与未知不重派，不借旧凭据或默认旧检查点目录。停止旧领取、Host全局拒旧路径和事务拒迟到写分别核验；C136只停止新领取，原ATT5/UNKNOWN/在途原记录保留。
 
 本轮未推送、发布、安装、改配置/凭据/调度、DDL、执行模型或SAVE，未清理业务数据。图按同一契约与进度生成，保持原样式；本地输入留存完善不把部署/真实SAVE→独立READ→Overall→结束→同版阅读状态升级为通过。

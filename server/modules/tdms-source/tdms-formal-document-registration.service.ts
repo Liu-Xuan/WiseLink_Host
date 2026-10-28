@@ -22,6 +22,7 @@ import {
 } from './tdms-receiver.service';
 import { currentDocumentSourceReadContext, mintDocumentSourceReadContext } from '../document-management/src/hosted/nest/document-source-read.port';
 import { receiverSelectionPackage } from './tdms-receiver-selection.validation';
+import { isCompleteOwnedObservedEdge } from './tdms-complete-owned-source.validation';
 import { canonical, object, strict } from './tdms-source.validation';
 import {
   tdmsError,
@@ -55,7 +56,7 @@ export class TdmsFormalDocumentRegistrationService implements TdmsFormalRegistra
     if (
       pkg.records.length !== 1 ||
       pkg.artifactBindings.length !== 1 ||
-      pkg.edges.length ||
+      pkg.edges.some((edge) => !isCompleteOwnedObservedEdge(edge, owner)) ||
       !Object.hasOwn(pkg.query, 'originalAcquisition') ||
       owner.kind !== 'MANUFACTURER_FILE' ||
       !['primary', 'PRIMARY'].includes(observation.role) ||

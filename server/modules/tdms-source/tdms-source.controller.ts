@@ -63,6 +63,29 @@ export class TdmsSourceController {
       },
     ), false);
   }
+  @Get('document-versions/:id/observed-links')
+  @Header('Cache-Control', 'private, no-cache, must-revalidate')
+  @Header('Vary', 'Cookie, Authorization')
+  documentObservedLinks(
+    @Req() req: Request,
+    @Param('id') id: string,
+    @Query() query: Record<string, unknown>,
+  ) {
+    const q = object(query);
+    strict(q, ['root', 'parent', 'after', 'limit']);
+    const path = q.parent === undefined ? [] : typeof q.parent === 'string' ? [q.parent] : q.parent;
+    if (!Array.isArray(path)) throw tdmsError('TDMS_OBSERVED_PATH_INVALID');
+    const limit: number | undefined = q.limit === undefined ? undefined
+      : typeof q.limit === 'string' && /^[1-9][0-9]*$/u.test(q.limit) ? Number(q.limit) : Number.NaN;
+    return this.withRequest(req, () => this.service.readDocumentObservedLinks(
+      miaodaHostedFinalUserActor(req.userContext), {
+        documentVersionId: identifier(id), rootRevisionRef: identifier(q.root),
+        parentPath: path.map(identifier),
+        ...(q.after === undefined ? {} : { after: identifier(q.after) }),
+        ...(limit === undefined ? {} : { limit }),
+      },
+    ), false);
+  }
   @Get('records')
   @Header('Cache-Control', 'private, no-cache, must-revalidate')
   @Header('Vary', 'Cookie, Authorization')

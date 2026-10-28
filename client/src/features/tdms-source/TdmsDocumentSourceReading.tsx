@@ -5,6 +5,7 @@ import {
 } from '@client/src/api/canonical-host';
 import { Button } from '@client/src/components/ui/button';
 import { TdmsDocumentSourceRecord } from './TdmsDocumentSourceRecord';
+import { TdmsDocumentObservedLinks } from './TdmsDocumentObservedLinks';
 import { useTdmsReadResource } from './useTdmsReadResource';
 import { useTdmsBrowserSession } from './useTdmsBrowserSession';
 
@@ -49,10 +50,16 @@ export function TdmsDocumentSourceReading({ documentVersionId, enabled = true, o
             {page.value.records.length ? <p className="tdms-source-notice">
               本页 {page.value.records.length} 条记录
             </p> : null}
-            {page.value.records.map(read => <TdmsDocumentSourceRecord
-              key={read.record.sourceRevisionRef} read={read} context={context}
-              sessionGeneration={sessionGeneration} enabled={active} onAccessRejected={onDenied}
-              monitorScopeKey={scope} onRefresh={reload} openDocument={openDocument} />)}
+            {page.value.records.map(read => <div key={read.record.sourceRevisionRef}>
+              <TdmsDocumentSourceRecord read={read} context={context}
+                sessionGeneration={sessionGeneration} enabled={active} onAccessRejected={onDenied}
+                monitorScopeKey={scope} onRefresh={reload} openDocument={openDocument} />
+              {read.record.recordKind === 'MANUFACTURER_FILE' ? <TdmsDocumentObservedLinks
+                documentVersionId={documentVersionId} rootRevisionRef={read.record.sourceRevisionRef}
+                parentPath={[]} sessionGeneration={sessionGeneration} enabled={active}
+                onAccessRejected={onDenied} monitorScopeKey={scope} onRefresh={reload}
+                openDocument={openDocument} /> : null}
+            </div>)}
             <div className="tdms-source-pagination">
               {cursors.length > 1 ? <Button type="button" variant="outline" size="sm"
                 onClick={() => setPagination({ scope, cursors: cursors.slice(0, -1) })}>上一页意见</Button> : null}

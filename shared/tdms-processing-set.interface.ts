@@ -1,6 +1,6 @@
 import type { TdmsExactEndpoint } from './tdms-source.interface';
 
-/** Additive, inactive Host seam. This is not a collector or runtime capability. */
+/** Retained Host observations. Producing an unresolved set establishes no Source cohort or currentness. */
 export const TDMS_PROCESSING_SET_SCHEMA =
   'wiselink.tdms-processing-set.v1' as const;
 export interface TdmsProcessingSetScope {
@@ -80,4 +80,54 @@ export interface TdmsProcessingSetSaveReceipt {
   /** Disclosed only with an authorized selectedSetRevisionRef. */
   generation: number | null;
   disposition: 'SELECTED' | 'HISTORY_ONLY' | 'UNRESOLVED' | 'REPLAY';
+}
+
+/** Exact saved references only. Neither a submitted set nor a Source proof/admission. */
+export interface TdmsProcessingSetFromRetainedRequest {
+  scope: TdmsProcessingSetScope;
+  /** Reuses setRevisionRef's existing immutable replay/unique-key semantics. */
+  operationRef: string;
+  captures: Array<{ packageId: string; captureRef: string }>;
+  processingObservationRef: string | null;
+  rootObservationRefs: string[];
+  assessmentObservationRefs: string[];
+  expectedGeneration: number | null;
+}
+export interface TdmsProcessingSetProducerDiagnostic {
+  code:
+    | 'OBSERVED_PROCESSING_SET_UNRESOLVED'
+    | 'PROCESSING_OBSERVATION_NOT_ACQUIRED';
+  sourceFamilyConfirmed: false;
+  cohortConfirmed: false;
+  sourceCurrentness: 'UNKNOWN';
+  gaps: string[];
+}
+export type TdmsProcessingSetFromRetainedResponse =
+  | {
+      status: 'RETAINED_UNRESOLVED';
+      receipt: TdmsProcessingSetSaveReceipt;
+      diagnostic: TdmsProcessingSetProducerDiagnostic;
+    }
+  | {
+      status: 'NOT_RETAINED';
+      receipt: null;
+      diagnostic: TdmsProcessingSetProducerDiagnostic;
+    };
+export interface TdmsProcessingSetFrozenReadRequest {
+  scope: TdmsProcessingSetScope;
+  setRevisionRef: string;
+}
+export interface TdmsProcessingSetSelectedReadRequest {
+  scope: TdmsProcessingSetScope;
+  /** Host observation grouping; does not establish a Source processing family. */
+  processingFamilyRef: string;
+}
+export interface TdmsProcessingSetFrozenReadResponse {
+  set: TdmsProcessingRevisionSet;
+}
+export interface TdmsProcessingSetSelectedReadResponse {
+  selection: {
+    head: TdmsProcessingSetHead;
+    set: TdmsProcessingRevisionSet;
+  } | null;
 }

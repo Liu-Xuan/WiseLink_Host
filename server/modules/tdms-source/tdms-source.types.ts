@@ -23,6 +23,8 @@ import type {
   TdmsDailyNativeRetention,
   TdmsDailySourceAdapterCapture,
 } from './tdms-daily-source-adapter';
+import type { TdmsProcessingCaptureIndex } from './tdms-processing-set.types';
+import type { TdmsSourceVersion } from '@shared/tdms-source.interface';
 
 export const TDMS_REPOSITORY = Symbol('TDMS_REPOSITORY');
 export const TDMS_SOURCE_AUTHORIZATION = Symbol('TDMS_SOURCE_AUTHORIZATION');
@@ -196,6 +198,24 @@ export interface TdmsDocumentCataloguePage extends TdmsCataloguePage {
   documentVersionId: string;
   sourceRevisionRefs?: string[];
 }
+/** Parent identity is derived from an already authorized retained capture. */
+export interface TdmsObservedParentIdentity {
+  applicationScopeId: string;
+  /** Absent only for bounded discovery under an exact original; the child proof
+   * supplies the metadata package identity, which is then independently checked. */
+  originalPackageId?: string;
+  packageHash?: string;
+  snapshotId: string;
+  sourceRecordId: string;
+  sourceVersion: TdmsSourceVersion;
+}
+export interface TdmsObservedChildrenPage {
+  parent: TdmsObservedParentIdentity;
+  permittedRecords: TdmsImportMemberClaims['records'];
+  after?: string;
+  childRevisionRef?: string;
+  limit: number;
+}
 export interface TdmsTransaction {
   capture(
     scope: TdmsSourceScope,
@@ -220,6 +240,19 @@ export interface TdmsTransaction {
     scope: TdmsSourceScope,
     page: TdmsDocumentCataloguePage,
   ): Promise<TdmsStoredRevision[]>;
+  /** Finite metadata only; capture bodies remain behind exact current member admission. */
+  observedCaptureIndex?(
+    scope: TdmsSourceScope,
+    packageId: string,
+  ): Promise<TdmsProcessingCaptureIndex | null>;
+  observedChildren?(
+    scope: TdmsSourceScope,
+    page: TdmsObservedChildrenPage,
+  ): Promise<TdmsProcessingCaptureIndex[]>;
+  observedAssertion?(
+    scope: TdmsSourceScope,
+    assertionRef: string,
+  ): Promise<TdmsStoredAssertion | null>;
   history(
     scope: TdmsSourceScope,
     recordRef: string,

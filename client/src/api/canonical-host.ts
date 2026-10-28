@@ -2,6 +2,7 @@ import type { ContinueDocumentTranslationRequest, ContinueDocumentTranslationRes
   DocumentTranslationContinuationPreparation } from '@shared/document-translation-browser.interface';
 import type { TdmsCatalogueResponse, TdmsHistoryResponse, TdmsReadContext, TdmsRelationReadResponse } from '@shared/tdms-source.interface';
 import type { TdmsDocumentSourceReadRequest, TdmsDocumentSourceReadResponse } from '@shared/tdms-source-reading.interface';
+import type { TdmsDocumentObservedLinksRequest, TdmsDocumentObservedLinksResponse } from '@shared/tdms-source-reading.interface';
 import type { LcmSnapshotBrowseRequest, LcmSnapshotCatalogueResponse } from '@shared/lcm-source-reading.interface';
 import type { LcmExcelImportRequest, LcmExcelImportResponse, LcmPersonalLibraryResponse,
   LcmUploadResolveRequest, LcmUploadResolveResponse } from '@shared/lcm-personal-import.interface';
@@ -693,6 +694,53 @@ export async function readTdmsDocumentSource(
   }
   return { documentVersionId: result.documentVersionId, sourceStatus: result.sourceStatus,
     records: result.records.map(tdmsSourceReadForPreview), hasMore: result.hasMore, nextAfter: result.nextAfter };
+}
+
+/** Each observed path is revalidated by the Host from the exact document root. */
+export async function readTdmsDocumentObservedLinks(
+  input: TdmsDocumentObservedLinksRequest,
+  signal?: AbortSignal,
+): Promise<TdmsDocumentObservedLinksResponse> {
+  const generation = clientSessionGeneration;
+  tdmsContextQuery({ documentVersionId: input.documentVersionId });
+  const path = input.parentPath ?? [];
+  const refs = [input.rootRevisionRef, ...path];
+  if (path.length > 4 || new Set(refs).size !== refs.length || refs.some(ref =>
+    typeof ref !== 'string' || !ref || ref !== ref.trim() || /[\u0000-\u001f\u007f]/u.test(ref)))
+    throw new Error('TDMS_OBSERVED_PATH_INVALID');
+  const query = new URLSearchParams({ root: input.rootRevisionRef });
+  for (const ref of path) query.append('parent', ref);
+  if (input.after) query.set('after', input.after);
+  if (input.limit !== undefined) query.set('limit', String(input.limit));
+  const result = await readCanonicalLibrary<TdmsDocumentObservedLinksResponse>({
+    url: `/api/tdms-source/document-versions/${encodeURIComponent(input.documentVersionId)}/observed-links?${query}`,
+    signal,
+  });
+  if (signal?.aborted || generation !== clientSessionGeneration)
+    throw new Error('TDMS_SOURCE_READ_OBSOLETE');
+  const parent = path[path.length - 1] ?? input.rootRevisionRef;
+  if (result.documentVersionId !== input.documentVersionId ||
+      result.rootRevisionRef !== input.rootRevisionRef ||
+      result.parentRevisionRef !== parent ||
+      JSON.stringify(result.parentPath) !== JSON.stringify(path) ||
+      !Array.isArray(result.links) ||
+      !Array.isArray(result.gaps) || result.gaps.some(gap => gap !== 'PARENT_METADATA_CAPTURE_NOT_RETAINED') ||
+      !['AVAILABLE', 'NO_OBSERVED_LINKS', 'PARENT_BODY_WITHHELD'].includes(result.diagnostic) ||
+      (result.diagnostic !== 'AVAILABLE' && (result.links.length || result.hasMore)) ||
+      (result.hasMore && !result.nextAfter) || result.links.some(link =>
+        link.evidence?.kind !== 'SOURCE_OBSERVED_ASSOCIATION' ||
+        link.evidence.rootRevisionRef !== input.rootRevisionRef ||
+        link.evidence.parentRevisionRef !== parent ||
+        typeof link.evidence.sourceParentRevisionRef !== 'string' ||
+        typeof link.evidence.rootOriginalCaptureRef !== 'string' ||
+        link.evidence.childRevisionRef !== link.child?.record?.sourceRevisionRef ||
+        link.child.receipt?.sourceRevisionRef !== link.child.record.sourceRevisionRef ||
+        link.child.receipt.readPerformed !== true || link.child.receipt.purpose !== 'WIKI_NATIVE_RECORD' ||
+        (canReadTdmsSourceBody(link.child) && link.child.selectedFields !== null)))
+    throw new Error('TDMS_OBSERVED_ASSOCIATION_BINDING_MISMATCH');
+  return { ...result, links: result.links.map(link => ({
+    ...link, child: tdmsSourceReadForPreview(link.child),
+  })) };
 }
 
 export async function readTdmsSourceHistory(

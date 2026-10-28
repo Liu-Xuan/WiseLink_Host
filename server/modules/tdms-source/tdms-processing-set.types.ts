@@ -13,6 +13,8 @@ import type {
   TdmsTransaction,
 } from './tdms-source.types';
 import { tdmsError } from './tdms-source.types';
+import type { TdmsDailyNativeRetention } from './tdms-daily-source-adapter';
+import type { TdmsSourceVersion } from '@shared/tdms-source.interface';
 
 /** Finite SQL projection: neither opinion content nor opaque raw/capture payloads. */
 export const TDMS_PROCESSING_METADATA_FIELDS = [
@@ -87,10 +89,62 @@ export interface TdmsProcessingSetRepository {
     operation: (tx: TdmsProcessingSetTransaction) => Promise<T>,
   ): Promise<T>;
 }
+
+/** Finite retained index: no field values, opinions, whole capture or artifact bytes. */
+export interface TdmsProcessingCaptureIndex {
+  scope: TdmsSourceScope;
+  packageId: string;
+  packageHash: string;
+  captureRef: string;
+  applicationScopeId: string;
+  records: TdmsDailyNativeRetention['records'];
+  relations: TdmsDailyNativeRetention['relations'];
+  artifacts: TdmsDailyNativeRetention['artifacts'];
+  recordRevisionRefs: string[];
+  assertionRefs: string[];
+}
+export interface TdmsProcessingOwnProof {
+  sourceRevisionRef: string;
+  scopeId: string;
+  owners: Array<{
+    sourceRecordId: string;
+    number: string;
+    nativeTypeId: string | null;
+    sourceVersion: TdmsSourceVersion;
+    businessVersion: TdmsSourceVersion | null;
+    stateRaw: string;
+    sourceModifiedRaw: string;
+    observedAt: string;
+  }>;
+  /** Full stored content/raw proof equality is evaluated inside SQL; it never leaves storage. */
+  consistent: boolean;
+}
+export interface TdmsProcessingCaptureProof {
+  captureRef: string;
+  consistent: boolean;
+  own: TdmsProcessingOwnProof[];
+  candidates: Array<{
+    assertionRef: string;
+    sourceRelationId: string;
+    fromSourceRecordId: string;
+    toSourceRecordId: string;
+  }>;
+}
+export interface TdmsProcessingProducerTransaction extends TdmsProcessingSetTransaction {
+  processingCaptureIndex(
+    scope: TdmsSourceScope,
+    captureRef: string,
+    packageId?: string,
+  ): Promise<TdmsProcessingCaptureIndex | null>;
+  processingCaptureProof(
+    scope: TdmsSourceScope,
+    captureRef: string,
+  ): Promise<TdmsProcessingCaptureProof | null>;
+}
 /** Host provider checks current application membership, source/member/relationship
  * retention or read authority AND selected-object/DM ACL. Capture actor is not an ACL.
  * These methods must verify proof refs against authority, not trust submitted strings.
- * No adapter is configured by this first slice. */
+ * The producer adapter verifies only retained unresolved facts; runtime keeps its independent read-only adapter. */
 export interface TdmsProcessingSetAuthority<Actor = TdmsPublicActor> {
   readonly available: boolean;
   assertScopeAccess(input: {
