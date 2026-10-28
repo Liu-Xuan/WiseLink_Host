@@ -39,6 +39,7 @@ import type {
   CanonicalInitialAnalysisReadModel,
   CanonicalInitialAnalysisContinuationRequest,
   CanonicalInitialAnalysisContinuationReceipt,
+  CanonicalInitialAttemptReconcileRequest,
   CanonicalModelSettingsReadModel,
   CanonicalTaskModelOptions,
   UpdateCanonicalModelSettingsRequest,
@@ -1299,6 +1300,25 @@ export function readJobAidAssessmentWork(
   });
 }
 
+export function readInitialAttemptControl(workItemId: string,
+  target: Omit<import('@shared/api.interface').CanonicalInitialAttemptReadRequest, 'view'>,
+  signal?: AbortSignal): Promise<import('@shared/api.interface').CanonicalInitialAttemptRead> {
+  const params = new URLSearchParams({view:'attempt-control',attemptId:target.attemptId,attemptRef:target.attemptRef});
+  return reviewConversationRequest({
+    url:`/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/assessment-work?${params}`,
+    method:'GET',operation:'核对本次执行记录',signal,
+  });
+}
+
+export function reconcileExpiredInitialAttempt(workItemId: string,
+  input: import('@shared/api.interface').CanonicalInitialAttemptReconcileRequest):
+  Promise<import('@shared/api.interface').CanonicalInitialAttemptReconcileReceipt> {
+  return reviewConversationRequest({
+    url:`/api/canonical-host/work-items/${encodeURIComponent(workItemId)}/initial-analysis/continue`,
+    method:'POST',data:input,operation:'结束已过期且未保存的执行',
+  });
+}
+
 export async function readChecklistDefinition(signal?: AbortSignal): Promise<import('@shared/jobaid-checklist.interface').JobAidChecklistDefinitionRead> {
   const value = await reviewConversationRequest<import('@shared/jobaid-checklist.interface').JobAidChecklistDefinitionRead>({
     url: '/api/canonical-host/checklist-definition', method: 'GET', operation: '读取检查单定义', signal,
@@ -2000,6 +2020,7 @@ async function reviewConversationRequest<T>(input: {
     | { reviewScope: ReviewScopeSelection }
     | AppendReviewTextTurnRequest
     | EngineeringIssueReferenceRequest
+    | CanonicalInitialAttemptReconcileRequest
     | ConfirmReviewActionDraftRequest;
   operation: string;
   signal?: AbortSignal;

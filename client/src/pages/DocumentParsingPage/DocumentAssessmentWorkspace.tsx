@@ -127,7 +127,7 @@ export default function DocumentAssessmentWorkspace({ association, documentVersi
             onLocateDocument={onLocateDocument} onOpenReader={onOpenReader} onOpenRelatedWork={onOpenRelatedWork} />
         </RetainedWorkbenchPanel>
         <RetainedWorkbenchPanel active={active && tab === 'process'}>
-          <AssessmentProcessDetails data={page} working={workingRead.data} />
+          <AssessmentProcessDetails data={page} working={workingRead.data} onChanged={workingRead.refresh} />
           <WorkItemRuntimeDiagnostic read={workingRead} workItemId={workItemId} sessionGeneration={sessionGeneration}
             onOpenWorkRevision={workRef => navigate(`/knowledge?${new URLSearchParams({
               kind: 'works', subjectKind: 'WORK_ITEM', subjectId: workItemId, workRef,

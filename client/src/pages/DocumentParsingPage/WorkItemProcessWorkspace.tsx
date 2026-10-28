@@ -13,6 +13,7 @@ import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.i
 import { EngineeringReasoningTrail } from './EngineeringReasoningTrail';
 import JobAidExecutionActivity from './JobAidExecutionActivity';
 import ProgramAssessmentMaterials from './ProgramAssessmentMaterials';
+import InitialAttemptControl from './InitialAttemptControl';
 import type { JobAidWorkingReadState } from './useJobAidWorkingRead';
 import './work-item-process-workspace.css';
 
@@ -109,9 +110,11 @@ function latestProcessProgress(
 export function AssessmentProcessDetails({
   data,
   working,
+  onChanged,
 }: {
   data: CanonicalDocumentParsingPageResponse;
   working: JobAidWorkingReadModel | null;
+  onChanged?: () => void;
 }) {
   const current = working?.current ?? null;
   const latest = working?.latestAttempt ?? null;
@@ -297,6 +300,11 @@ export function AssessmentProcessDetails({
         />
       ) : null}
       <JobAidExecutionActivity activity={working?.activity} />
+      {selected?.actionType === 'OPENCLAW_DYNAMIC_EVALUATION' && selected.attemptRef ? (
+        <InitialAttemptControl key={`${data.workItem.workItemId}:${selected.attemptId}:${selected.attemptRef}`}
+          workItemId={data.workItem.workItemId} attemptId={selected.attemptId} attemptRef={selected.attemptRef}
+          onChanged={onChanged} />
+      ) : null}
     </section>
   );
 }
@@ -358,7 +366,7 @@ export default function WorkItemProcessWorkspace({
             </div>
           ) : null}
           {working ? (
-            <AssessmentProcessDetails data={data} working={working} />
+            <AssessmentProcessDetails data={data} working={working} onChanged={refresh} />
           ) : !error ? (
             <p role="status">正在读取评估过程…</p>
           ) : null}

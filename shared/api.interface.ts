@@ -3009,6 +3009,57 @@ export interface CanonicalInitialAnalysisContinuationReceipt {
   candidateOnly: true;
 }
 
+/** Exact, authorized INITIAL control facts. No lease secret or result body. */
+export interface CanonicalInitialAttemptReadRequest {
+  view: 'attempt-control';
+  attemptId: string;
+  attemptRef: string;
+}
+
+export interface CanonicalInitialAttemptRead {
+  schemaVersion: 'wiselink.initial-attempt-control.v1';
+  observedAt: string;
+  workItemId: string;
+  workItemRevision: number;
+  documentVersionId: string;
+  attemptId: string;
+  attemptRef: string;
+  stageRequestId: string;
+  intakeRequestId: string;
+  inputRevision: number;
+  baseRevision: number;
+  deadline: string;
+  leaseGeneration: number;
+  status: string;
+  commitStartedAt: string | null;
+  completedAt: string | null;
+  terminalReason: string | null;
+  hasPersistedResult: boolean;
+  projectionApplied: boolean;
+  /** Complete exact-attempt metadata under the existing owner SELECT policy. */
+  savedWorks: Array<{workRevisionRef: string; workRevision: number; saveRequestId: string}>;
+  /** A consumer observation stays UNKNOWN even if Host later records a timeout. */
+  consumerOutcome: 'UNKNOWN' | null;
+  reconciliation: 'ELIGIBLE' | 'ALREADY_TIMED_OUT' | 'PROTECTED';
+  protectionCode: string | null;
+}
+
+/** Explicit control of an existing attempt, never a continuation/new request. */
+export interface CanonicalInitialAttemptReconcileRequest {
+  operation: 'RECONCILE_EXPIRED';
+  attemptId: string;
+  attemptRef: string;
+  stageRequestId: string;
+  expectedRevision: number;
+  expectedLeaseGeneration: number;
+}
+
+export interface CanonicalInitialAttemptReconcileReceipt {
+  operation: 'RECONCILE_EXPIRED';
+  changed: boolean;
+  attempt: CanonicalInitialAttemptRead;
+}
+
 export interface AilyWorkItemStatusResponse {
   entry: CanonicalEntryFacadeResponse;
   packageSummary: AilyParsedPackageSummary | null;

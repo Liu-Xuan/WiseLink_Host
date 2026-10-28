@@ -1000,6 +1000,25 @@ export async function startCoreP1HostFixture({
       sql,
       db,
       hosted,
+      // Existing real wiring for exact browser-control tests; no alternate grants.
+      sqlContext, actors, objectAccess, registrar, sourceAuthorization,
+      async openParallelBrowserContext() {
+        // The owned factory uses max:1 per client. A second physical client is
+        // required for actual row-lock competition, with the SAME existing
+        // non-superuser login, middleware and policies. The fixture's finally
+        // calls cluster.stop(), which closes every connection registered here.
+        const peerDb = drizzle(await cluster.connect(login));
+        const peerItems = new MiaodaWorkItemRepository(peerDb);
+        return {
+          db: peerDb,
+          objectAccess: new MiaodaHostedCanonicalObjectAccessAdapter(peerItems),
+          registrar: new MiaodaCanonicalWorkItemRegistrarAdapter(peerItems),
+          actors: new EngineeringMatterWorkingRepository(peerDb, sqlContext,
+            {roleSchema:'wiselink_jobaid_test'}, new EngineeringSearchProjectionWriter(peerDb)),
+          sourceAuthorization: new MiaodaAutomaticWorkItemSourceAuthorizationAdapter(
+            new OrdinaryDocumentManagementAuthorizer(peerItems, undefined)),
+        };
+      },
       work,
       workItems,
       attempts,

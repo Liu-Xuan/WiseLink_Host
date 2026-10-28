@@ -37,6 +37,8 @@ import { CanonicalLibraryService } from './canonical-library.service';
 import type { CanonicalHostActor } from './canonical-host.types';
 import { hostActor } from './canonical-host-request-actor';
 import { SessionResolver } from '../identity/session-resolver.service';
+import { CanonicalInitialAttemptControlService } from './canonical-initial-attempt-control.service';
+import { z } from 'zod/v4';
 
 const ENGINEER_DECISIONS = new Set<CanonicalEngineerReviewDecision>([
   'confirmed_pass',
@@ -61,6 +63,7 @@ export class CanonicalHostController {
     private readonly libraryDocuments?: CanonicalLibraryService,
     @Optional() private readonly jobAid?: CanonicalJobAidProblemService,
     @Optional() private readonly sessions?: SessionResolver,
+    @Optional() private readonly initialAttemptControl?: CanonicalInitialAttemptControlService,
   ) {}
 
   @Get('identity-context')
@@ -251,7 +254,18 @@ export class CanonicalHostController {
   assessmentWork(
     @Param('workItemId') workItemId: string,
     @Req() request: Request,
+    @Query() query?: Record<string, unknown>,
   ) {
+    if (query && Object.keys(query).length) {
+      if (!this.initialAttemptControl || !this.sessions) throw new Error('INITIAL_ATTEMPT_CONTROL_UNAVAILABLE');
+      return this.sessions.withNativeBrowserIdentity(request, () => this.sessions!.withVerifiedNativeBrowserSql(async () => {
+        try { return await this.initialAttemptControl!.read(workItemId,query,hostActor(request)); }
+        catch (error) {
+          if (error instanceof z.ZodError) throw new BadRequestException('INITIAL_ATTEMPT_READ_INVALID');
+          throw error;
+        }
+      }));
+    }
     if (!this.jobAid) throw new Error('JOBAID_RUNTIME_UNAVAILABLE');
     return this.jobAid.readBrowser(workItemId, hostActor(request));
   }

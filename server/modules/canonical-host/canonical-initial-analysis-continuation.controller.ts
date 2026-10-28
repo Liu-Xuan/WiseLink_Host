@@ -7,6 +7,7 @@ import {
   Param,
   Req,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
 import { NeedLogin } from '@lark-apaas/fullstack-nestjs-core';
 import { z } from 'zod/v4';
@@ -15,6 +16,7 @@ import type { Request } from 'express';
 import { ProductionMiaodaBrowserObjectIngressGuard } from '../work-item/production-miaoda-browser-ingress';
 import { hostActor } from './canonical-host-request-actor';
 import { CanonicalInitialAnalysisContinuationService } from './canonical-initial-analysis-continuation.service';
+import { CanonicalInitialAttemptControlService } from './canonical-initial-attempt-control.service';
 
 @NeedLogin()
 @UseGuards(ProductionMiaodaBrowserObjectIngressGuard)
@@ -23,6 +25,7 @@ export class CanonicalInitialAnalysisContinuationController {
   constructor(
     private readonly service: CanonicalInitialAnalysisContinuationService,
     private readonly sessions: SessionResolver,
+    @Optional() private readonly initialAttemptControl?: CanonicalInitialAttemptControlService,
   ) {}
 
   @Post('continue')
@@ -33,15 +36,20 @@ export class CanonicalInitialAnalysisContinuationController {
   ) {
     try {
       return await this.sessions.withNativeBrowserIdentity(request, (identity) =>
-        this.sessions.withVerifiedNativeBrowserSql(() =>
-          this.service.request(
+        this.sessions.withVerifiedNativeBrowserSql(async () => {
+          if (body && typeof body === 'object' && !Array.isArray(body) &&
+              'operation' in body && body.operation === 'RECONCILE_EXPIRED') {
+            if (!this.initialAttemptControl) throw new Error('INITIAL_ATTEMPT_CONTROL_UNAVAILABLE');
+            return this.initialAttemptControl.reconcile(workItemId,body,hostActor(request));
+          }
+          return this.service.request(
             workItemId,
             body,
             hostActor(request),
             identity.oauthSession,
             request,
-          ),
-        ),
+          );
+        }),
       );
     } catch (error) {
       if (error instanceof z.ZodError)
@@ -56,6 +64,7 @@ export class CanonicalInitialAnalysisContinuationController {
       if (
         error instanceof Error &&
         (error.message.startsWith('INITIAL_CONTINUATION_') ||
+          error.message.startsWith('INITIAL_EXPIRED_') ||
           error.message.startsWith('ACTION_ATTEMPT_') ||
           error.message.startsWith('TRANSLATION_') ||
           error.message.startsWith('JOBAID_') ||

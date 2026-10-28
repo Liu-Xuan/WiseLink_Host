@@ -55,6 +55,7 @@ import { CanonicalTranslationRevisionService } from './canonical-translation-rev
 import { CanonicalTranslationRevisionController } from './canonical-translation-revision.controller';
 import { CanonicalInitialAnalysisContinuationController } from './canonical-initial-analysis-continuation.controller';
 import { CanonicalInitialAnalysisContinuationService } from './canonical-initial-analysis-continuation.service';
+import { CanonicalInitialAttemptControlService } from './canonical-initial-attempt-control.service';
 import { CanonicalTranslationKnowledgeController } from './canonical-translation-knowledge.controller';
 import { CanonicalTranslationKnowledgeProductService } from './canonical-translation-knowledge-product.service';
 import { MiaodaTranslationKnowledgeProductStore } from './miaoda-translation-knowledge-product.store';
@@ -288,6 +289,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalTranslationV2Service,
     CanonicalTranslationRevisionService,
     CanonicalInitialAnalysisContinuationService,
+    CanonicalInitialAttemptControlService,
     CanonicalTranslationKnowledgeProductService,
     MiaodaTranslationKnowledgeProductStore,
     CanonicalHostOpenClawApplicabilityService,
@@ -594,6 +596,7 @@ export class CanonicalHostModule {
         CanonicalTranslationV2PluginService,
         CanonicalTranslationRevisionService,
         CanonicalInitialAnalysisContinuationService,
+        CanonicalInitialAttemptControlService,
         CanonicalTranslationKnowledgeProductService,
         MiaodaTranslationKnowledgeProductStore,
         CanonicalHostOpenClawApplicabilityService,
