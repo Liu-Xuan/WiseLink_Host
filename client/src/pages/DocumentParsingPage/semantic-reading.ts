@@ -82,7 +82,7 @@ export function semanticReadingCoverage(
           ? '完整译文候选 · 有待复核项'
           : '完整译文候选',
     delivery: reading.finalCandidate
-      ? '完整候选产物已保存'
+      ? '候选产物已保存'
       : '尚未形成完整交付产物',
     missing: reading.blocks.filter(
       (block) => block.readingStatus !== 'READABLE',

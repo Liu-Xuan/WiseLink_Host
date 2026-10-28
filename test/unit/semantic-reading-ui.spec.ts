@@ -67,7 +67,7 @@ describe('semantic document reading', () => {
     ).toHaveLength(2);
     expect(html).toContain('连续中文阅读');
     expect(html).toContain('10% 的原文已有可读中文');
-    expect(html).toContain('已保存中文覆盖 800 / 1,000 个原文字符');
+    expect(html).toContain('已保存候选覆盖 800 / 1,000 个原文字符（含待检查或暂不可读部分）');
     expect(html).toContain('译文已保存，检查完成后在此接续');
     expect(html).toContain('本段中文尚未生成，可继续阅读对应原文');
     expect(

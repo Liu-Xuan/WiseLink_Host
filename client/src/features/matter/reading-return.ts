@@ -779,6 +779,29 @@ export function readingReturnTarget(
   currentWorkRef?: string,
   currentPathname?: string,
 ): { route: string; label: string } | null {
+  if (params.has('returnKnowledgeOriginDocumentVersionId')) {
+    const origins: string[] = params.getAll('returnKnowledgeOriginDocumentVersionId');
+    const bindings: string[] = params.getAll('returnDocumentVersionId');
+    const allowed: string[] = [
+      'returnKnowledgeQuery', 'returnKnowledgeOriginDocumentVersionId', 'returnDocumentVersionId',
+    ];
+    if (origins.length !== 1 || bindings.length !== 1 ||
+      [...params.keys()].some(key => key.startsWith('return') && !allowed.includes(key))) return null;
+    const origin: string = identifier(origins[0]);
+    const binding: string = identifier(bindings[0]);
+    const documentPath: string = currentPathname ?? '';
+    if (!origin || origin !== origins[0] || !binding || binding !== bindings[0] ||
+      !documentVersionId || binding !== documentVersionId ||
+      !/^\/document-versions\/[^/]+$/u.test(documentPath) ||
+      documentReadingIdentity(documentPath, params) !== binding) return null;
+    const route: string | null = knowledgeReadingReturnRoute(params);
+    if (!route) return null;
+    const state: URLSearchParams = new URLSearchParams(params.get('returnKnowledgeQuery')!);
+    if (state.get('kind') !== 'sources' || knowledgeReadingIdentity(state).state !== 'absent' ||
+      state.getAll('documentVersionId').length !== 1 || state.get('documentVersionId') !== origin)
+      return null;
+    return { route, label: '返回工程知识' };
+  }
   if (params.has('returnWikiGuideQuery')) {
     const returns = [...params.keys()].filter(key => key.startsWith('return'));
     const values = params.getAll('returnWikiGuideQuery');

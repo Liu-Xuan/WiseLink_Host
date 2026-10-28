@@ -16,6 +16,7 @@ const mockStatusGet = jest.fn(), mockActivityGet = jest.fn();
 let mockGeneration = 7;
 const mockNativeGet = jest.fn(), mockNativeReaderImport = jest.fn(), mockGraphLoader = jest.fn();
 const mockKnowledge = jest.fn(), mockKnowledgeCatalogue = jest.fn();
+const mockDocumentSources = jest.fn();
 jest.mock('@client/src/features/tdms-source/TdmsSourceReading', () => { mockNativeReaderImport(); return { __esModule: true, default: () => null }; });
 jest.mock('@client/src/features/tdms-source/tdms-relation-graph-loader', () => ({ loadTdmsSourceRelationGraph: (...args: unknown[]) => mockGraphLoader(...args) }));
 jest.mock('@client/src/api/engineering-matter', () => ({
@@ -27,10 +28,12 @@ jest.mock('@client/src/api/canonical-host', () => ({
   readTdmsSourceCatalogue: (...args: unknown[]) => mockNativeGet(...args),
   readTdmsSourceRecord: (...args: unknown[]) => mockNativeGet(...args),
   readTdmsSourceRelations: (...args: unknown[]) => mockNativeGet(...args),
+  readTdmsDocumentSource: (...args: unknown[]) => mockDocumentSources(...args),
   readEngineeringKnowledgeCatalogue: (...args: unknown[]) => mockKnowledgeCatalogue(...args),
   readEngineeringKnowledgeWork: (...args: unknown[]) => mockKnowledge(...args),
   getCanonicalLibraryDocuments: async () => libraryDocuments(['FAM-1']),
   getCanonicalHostClientSessionGeneration: () => mockGeneration,
+  isCanonicalHostClientSessionAuthenticationRequired: () => false,
   getCanonicalHostIdentityContext: async () => ({ userId: 'actor-test', tenantId: 'tenant-test' }),
   subscribeCanonicalHostClientSession: () => () => undefined,
   getCurrentReviewConversation: (...args: unknown[]) => mockReviewGet(...args),
@@ -57,6 +60,7 @@ jest.mock('@client/src/features/matter/MatterMaterials', () => ({ __esModule: tr
 jest.mock('@client/src/features/matter/MatterWorkingDetails', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/features/matter/EngineeringIssueSearch', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/features/matter/MatterDocumentSourceDialog', () => ({ __esModule: true, default: () => null }));
+jest.mock('@client/src/pages/KnowledgeLookupPage/KnowledgeAtaDirectory', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/features/review/ContinuousReviewPanel', () => ({ __esModule: true, default: () => null }));
 jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
 jest.mock('@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css', () => ({}));
@@ -66,6 +70,7 @@ jest.mock('@client/src/features/trinity/document-activity-timeline.css', () => (
 
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
+jest.mock('@client/src/features/tdms-source/tdms-source-reading.css', () => ({}));
 
 function workspace() {
   const value = libraryMatterFixture();
@@ -96,6 +101,8 @@ describe('real Wiki page + read hook + frozen recent changes mount', () => {
     root = createRoot(container);
     mockGeneration = 7;
     jest.resetAllMocks();
+    mockDocumentSources.mockResolvedValue({ documentVersionId: 'DV-FAM-1-2',
+      sourceStatus: 'NO_BOUND_RECORDS', records: [], hasMore: false, nextAfter: null });
     mockWorkspaceGet.mockResolvedValue(workspace());
     mockReviewGet.mockResolvedValue({ conversation: null });
     mockStatusGet.mockReturnValue(new Promise(() => undefined));
@@ -154,8 +161,10 @@ describe('real Wiki page + read hook + frozen recent changes mount', () => {
     expect(mockKnowledge).toHaveBeenCalledTimes(1); expect(mockKnowledge.mock.calls[0][0]).toEqual({subjectKind:'WORK_ITEM',subjectId:'WI-1',workRef:'JAWR-1'});
     expect(container.textContent).toContain('当时的工程认识'); closed();
   });
-  it('real document Knowledge consumer reads ordinary catalogue and leaves native source entry unmounted', async () => {
+  it('real document Knowledge consumer reads only selected-version sources with the legacy entry unmounted', async () => {
     await mountKnowledge('kind=sources&tdms=true'); expect(container.textContent).toContain('工程文档与确切版本');
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 5)); });
+    expect(mockDocumentSources.mock.calls[0][0]).toEqual({ documentVersionId: 'DV-FAM-1-2', limit: 12 });
     closed(); expect(mockKnowledge).not.toHaveBeenCalled();
   });
   it('real Matter consumer session generation switch masks a late old workspace and keeps native reads closed', async () => {

@@ -1,5 +1,6 @@
 import { SavedChecklist } from '@client/src/features/checklist/ChecklistPanel';
 import TdmsSourceEntry from '@client/src/features/tdms-source/TdmsSourceEntry';
+import { TdmsDocumentSourceReading } from '@client/src/features/tdms-source/TdmsDocumentSourceReading';
 import { TDMS_SOURCE_UI_ENABLED } from '@client/src/features/tdms-source/tdms-source-enabled';
 import { savedTdmsSourceRefs } from '@client/src/features/tdms-source/saved-tdms-source-refs';
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
@@ -33,6 +34,7 @@ import { SavedWorkIssueDirectory, savedWorkIssueRows } from './SavedWorkIssueDir
 import SavedDocumentReadingArticle from './SavedDocumentReadingArticle';
 import KnowledgeAtaDirectory from './KnowledgeAtaDirectory';
 import { libraryDocumentRequestFilters, type LibraryCatalogFilters } from '../WorkspaceHomePage/library-classification';
+import '@client/src/features/tdms-source/tdms-source-reading.css';
 import './knowledge-lookup.css';
 import './knowledge-suite.css';
 
@@ -318,6 +320,22 @@ function KnowledgeCatalogue({ sourceIdentityReady, sourceIdentityError, retrySou
     state.set('articleY', String(Math.round(articleRef.current?.scrollTop ?? 0)));
     next.set('returnKnowledgeQuery', state.toString()); next.set('returnDocumentVersionId', documentVersionId);
     navigate(`${path}?${next}`);
+  }
+  function openTdmsDocument(documentVersionId: string) {
+    if (kind !== 'sources' || !selectedVersion) return;
+    clearPendingScroll();
+    const state: URLSearchParams = knowledgeReadingParams(currentParams.current);
+    // The Wiki selection and the opened document have separate navigation pins, not authority.
+    state.set('kind', 'sources');
+    state.set('documentVersionId', selectedVersion.documentVersionId);
+    state.set('listY', String(Math.round(listRef.current?.scrollTop ?? 0)));
+    state.set('articleY', String(Math.round(articleRef.current?.scrollTop ?? 0)));
+    const next: URLSearchParams = new URLSearchParams({
+      returnKnowledgeQuery: state.toString(),
+      returnKnowledgeOriginDocumentVersionId: selectedVersion.documentVersionId,
+      returnDocumentVersionId: documentVersionId,
+    });
+    navigate(`/document-versions/${encodeURIComponent(documentVersionId)}?${next}`);
   }
   function locate(evidence: DocumentAssessmentEvidence) {
     const exact = exactDocumentSourceRoute(evidence);
@@ -613,9 +631,9 @@ function KnowledgeCatalogue({ sourceIdentityReady, sourceIdentityError, retrySou
           version.documentVersionId === selectedVersion.documentVersionId))?.documentCode ?? '文档版本'}</h1>
         <SavedDocumentReadingArticle key={`${selectedVersion.documentVersionId}:${selectedVersion.documentReading?.reading?.readingRunRef ?? ''}`}
           version={selectedVersion} onOpenSource={route => openDocument(route, selectedVersion.documentVersionId)} />
-        {TDMS_SOURCE_UI_ENABLED ? <TdmsSourceEntry key={selectedVersion.documentVersionId}
-          context={{ documentVersionId: selectedVersion.documentVersionId }} enabled={TDMS_SOURCE_UI_ENABLED}
-          openDocument={documentVersionId => openDocument(`/document-versions/${encodeURIComponent(documentVersionId)}`, documentVersionId)} /> : null}
+        <TdmsDocumentSourceReading key={selectedVersion.documentVersionId}
+          documentVersionId={selectedVersion.documentVersionId}
+          openDocument={openTdmsDocument} />
         <section className="knowledge-prose"><h2>关联工程事项</h2>
           {visibleRelatedLoading ? <p role="status">正在核对已登记关联…</p>
             : visibleRelatedError ? <p role="alert">{visibleRelatedError} <button onClick={retryRead}>重试</button></p>

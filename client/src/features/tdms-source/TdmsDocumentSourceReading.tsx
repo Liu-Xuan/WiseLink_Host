@@ -9,9 +9,10 @@ import { useTdmsReadResource } from './useTdmsReadResource';
 import { useTdmsBrowserSession } from './useTdmsBrowserSession';
 
 /** Exact-version browser reading is explicitly authorized by the Host on each GET. */
-export function TdmsDocumentSourceReading({ documentVersionId, enabled = true }: {
+export function TdmsDocumentSourceReading({ documentVersionId, enabled = true, openDocument }: {
   documentVersionId: string;
   enabled?: boolean;
+  openDocument?: (documentVersionId: string) => void;
 }) {
   const { authenticationRequired, sessionGeneration } = useTdmsBrowserSession();
   const [refresh, setRefresh] = useState<number>(0);
@@ -51,7 +52,7 @@ export function TdmsDocumentSourceReading({ documentVersionId, enabled = true }:
             {page.value.records.map(read => <TdmsDocumentSourceRecord
               key={read.record.sourceRevisionRef} read={read} context={context}
               sessionGeneration={sessionGeneration} enabled={active} onAccessRejected={onDenied}
-              monitorScopeKey={scope} onRefresh={reload} />)}
+              monitorScopeKey={scope} onRefresh={reload} openDocument={openDocument} />)}
             <div className="tdms-source-pagination">
               {cursors.length > 1 ? <Button type="button" variant="outline" size="sm"
                 onClick={() => setPagination({ scope, cursors: cursors.slice(0, -1) })}>上一页意见</Button> : null}

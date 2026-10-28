@@ -28,6 +28,7 @@ jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn
 jest.mock('@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css', () => ({}));
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
 jest.mock('../../client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
+jest.mock('@client/src/features/tdms-source/tdms-source-reading.css', () => ({}));
 jest.mock('@client/src/pages/WorkspaceHomePage/library-hierarchy.css', () => ({}));
 
 test('knowledge defaults to the document Wiki without process cards or write actions', () => {

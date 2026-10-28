@@ -468,3 +468,124 @@ test('a non-grid extracted table remains a text translation scope', () => {
   assert.deepEqual(view.restoreOutput({ markdown: '<!-- WL-SECTION:1 -->\n阀门 10 保持打开。' }).blocks[0].elements,
     [{ kind: 'paragraph', translatedText: '阀门 10 保持打开。', anchorIds: ['source-anchor-long-id'] }]);
 });
+
+function gridProjectionBatch(payload) {
+  const anchors = [];
+  const add = (path, text) => {
+    if (typeof text !== 'string' || !text.trim()) return;
+    anchors.push({ anchorId: `grid-anchor-${anchors.length + 1}`,
+      sourceUnitId: 'synthetic-grid-unit', payloadPath: path, sourceText: text });
+  };
+  (payload.columns ?? []).forEach((column, index) => add(`/payload/columns/${index}/name`, column.name));
+  payload.rowGroups.forEach((group, groupIndex) => group.rows.forEach((row, rowIndex) =>
+    row.cells.forEach((cell, cellIndex) => (cell.inlineContent ?? []).forEach((inline, index) =>
+      add(`/payload/rowGroups/${groupIndex}/rows/${rowIndex}/cells/${cellIndex}/inlineContent/${index}/text`, inline.text)))));
+  return { schemaVersion: 'wiselink.3_1.translation_semantic_batch.v2',
+    purpose: 'GENERATE', sourceLocale: 'en', targetLocale: 'zh-CN',
+    sourcePlanAnchorCount: anchors.length, sourcePlanBlockCount: 1,
+    blocks: [{ blockId: 'synthetic-grid-block', order: 0, kind: 'table',
+      anchorIds: anchors.map((anchor) => anchor.anchorId),
+      sourceStructure: [{ sourceUnitId: 'synthetic-grid-unit', kind: 'table', payload }] }],
+    anchors, documentContext: { blocks: [], anchors: [], scopedConditions: [] },
+    terminology: { terms: [], noTranslate: [] }, previousCandidate: null, correctionIssues: [] };
+}
+
+function gridCell(columnIndex, text, spans = {}) {
+  return { columnIndex, rowSpan: 1, colSpan: 1, ...spans, inlineContent: [{ text }] };
+}
+
+function renderedGrid(batch) {
+  const view = buildTranslationModelView(batch);
+  return (batch.purpose === 'GENERATE' ? view.input.document : checkDocument(view.input))
+    .replace(/⟦WL-ANCHOR:A\d+⟧ /gu, '');
+}
+
+test('sparse table columns keep their positions in GENERATE, CHECK and exact restoration', () => {
+  const batch = gridProjectionBatch({ layout: 'grid', columnCount: 3,
+    columns: ['Item', 'Revision', 'Date'].map((name) => ({ name })),
+    rowGroups: [{ kind: 'body', rows: [{ cells: [
+      gridCell(0, 'DEMO-01'), gridCell(2, '2026-10-24'),
+    ] }] }] });
+  const original = structuredClone(batch);
+  const table = '<table><thead><tr><th>Item</th><th>Revision</th><th>Date</th></tr></thead>' +
+    '<tbody><tr><td>DEMO-01</td><td></td><td>2026-10-24</td></tr></tbody></table>';
+  for (const purpose of ['GENERATE', 'CHECK']) {
+    assert.ok(renderedGrid({ ...batch, purpose }).includes(table));
+  }
+  const aliases = structuredClone(batch);
+  for (const cell of aliases.blocks[0].sourceStructure[0].payload.rowGroups[0].rows[0].cells) {
+    cell.columnStart = cell.columnIndex; delete cell.columnIndex;
+  }
+  assert.ok(renderedGrid(aliases).includes(table));
+  const view = buildTranslationModelView(batch);
+  const restore = (html) => view.restoreOutput({ markdown: `<!-- WL-SECTION:1 -->\n${html}` });
+  const restored = restore(table);
+  validateTranslationBlockOutput(batch, restored);
+  assert.deepEqual(restored.blocks[0].elements.map((element) => element.anchorIds),
+    batch.anchors.map((anchor) => [anchor.anchorId]));
+  assert.equal(restored.blocks[0].elements.at(-1).anchorIds[0], batch.anchors[4].anchorId);
+  assert.throws(() => restore(table.replace('<td></td>', '')), /TABLE_TOPOLOGY_CHANGED/u);
+  assert.throws(() => restore(table.replace('<td></td>', '<td>Invented revision</td>')),
+    /TABLE_ALIGNMENT_UNSUPPORTED/u);
+  assert.deepEqual(batch, original);
+});
+
+test('empty header positions and declared trailing columns stay empty without fabricated anchors', () => {
+  const batch = gridProjectionBatch({ layout: 'grid', columnCount: 3,
+    columns: [{ name: 'Item' }, { name: '' }, { name: 'Date' }],
+    rowGroups: [{ kind: 'body', rows: [{ cells: [gridCell(0, 'DEMO-01')] }] }] });
+  const table = '<table><thead><tr><th>Item</th><th></th><th>Date</th></tr></thead>' +
+    '<tbody><tr><td>DEMO-01</td><td></td><td></td></tr></tbody></table>';
+  for (const purpose of ['GENERATE', 'CHECK']) assert.ok(renderedGrid({ ...batch, purpose }).includes(table));
+  const view = buildTranslationModelView(batch);
+  const restore = (html) => view.restoreOutput({ markdown: `<!-- WL-SECTION:1 -->\n${html}` });
+  const restored = restore(table);
+  assert.equal(restored.blocks[0].elements.length, 3);
+  assert.deepEqual(restored.blocks[0].elements.flatMap((element) => element.anchorIds), batch.blocks[0].anchorIds);
+  assert.throws(() => restore(table.replace('<th></th>', '')), /TABLE_TOPOLOGY_CHANGED/u);
+  assert.throws(() => restore(table.replace('<th></th>', '<th>Invented header</th>')),
+    /TABLE_ALIGNMENT_UNSUPPORTED/u);
+  assert.throws(() => restore(table.replace('<td></td><td></td>', '<td></td>')), /TABLE_TOPOLOGY_CHANGED/u);
+});
+
+test('rowSpan occupancy and colSpan share the source grid while keeping original cell paths', () => {
+  const batch = gridProjectionBatch({ layout: 'grid', columnCount: 4,
+    rowGroups: [{ kind: 'body', rows: [
+      { cells: [gridCell(3, 'LIMIT-20'), gridCell(0, 'ITEM-10', { rowSpan: 2, colSpan: 2 })] },
+      { cells: [gridCell(2, 'VALUE-30', { colSpan: 2 })] },
+    ] }] });
+  const table = '<table><tbody><tr><td rowspan="2" colspan="2">ITEM-10</td><td></td><td>LIMIT-20</td></tr>' +
+    '<tr><td colspan="2">VALUE-30</td></tr></tbody></table>';
+  for (const purpose of ['GENERATE', 'CHECK']) assert.ok(renderedGrid({ ...batch, purpose }).includes(table));
+  const view = buildTranslationModelView(batch);
+  const restore = (html) => view.restoreOutput({ markdown: `<!-- WL-SECTION:1 -->\n${html}` });
+  const restored = restore(table);
+  assert.deepEqual(restored.blocks[0].elements.map((element) => element.anchorIds),
+    [[batch.anchors[1].anchorId], [batch.anchors[0].anchorId], [batch.anchors[2].anchorId]]);
+  assert.equal(batch.anchors[1].payloadPath, '/payload/rowGroups/0/rows/0/cells/1/inlineContent/0/text');
+  assert.throws(() => restore(table.replace('<tr><td colspan="2">VALUE-30',
+    '<tr><td></td><td colspan="2">VALUE-30')), /TABLE_TOPOLOGY_CHANGED/u);
+  assert.throws(() => restore(table.replace('rowspan="2"', 'rowspan="1"')), /TABLE_TOPOLOGY_CHANGED/u);
+  assert.throws(() => restore(table.replace('colspan="2">VALUE-30', 'colspan="1">VALUE-30')),
+    /TABLE_TOPOLOGY_CHANGED/u);
+});
+
+test('conflicting source positions, out-of-bounds cells and overlapping spans remain rejected', () => {
+  const payload = { layout: 'grid', columnCount: 3,
+    rowGroups: [{ kind: 'body', rows: [
+      { cells: [gridCell(0, 'ITEM-10', { rowSpan: 2 }), gridCell(2, 'LIMIT-20')] },
+      { cells: [gridCell(1, 'VALUE-30')] },
+    ] }] };
+  const variants = [
+    (table) => { table.rowGroups[0].rows[0].cells[0].columnStart = 1; },
+    (table) => { table.rowGroups[0].rows[0].cells[0].columnIndex = null; },
+    (table) => { table.rowGroups[0].rows[0].cells[1].colSpan = 2; },
+    (table) => { table.rowGroups[0].rows[0].cells[1].columnIndex = 0; },
+    (table) => { table.rowGroups[0].rows[1].cells[0].columnIndex = 0; },
+  ];
+  for (const change of variants) {
+    const source = structuredClone(payload); change(source);
+    assert.throws(() => buildTranslationModelView(gridProjectionBatch(source)),
+      /TABLE_ALIGNMENT_UNSUPPORTED/u);
+  }
+});

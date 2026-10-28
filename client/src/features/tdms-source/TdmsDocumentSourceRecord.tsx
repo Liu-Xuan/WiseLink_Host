@@ -9,7 +9,8 @@ import { TdmsRecordDetails, TdmsSourceRelations } from './TdmsRecordDetails';
 import { tdmsRawCodeLabel, tdmsRecordKindLabel, tdmsSourceVersionLabel } from './tdms-source-presentation';
 import { useTdmsReadResource } from './useTdmsReadResource';
 
-export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, enabled, onAccessRejected, monitorScopeKey, onRefresh }: {
+export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, enabled, onAccessRejected,
+  monitorScopeKey, onRefresh, openDocument }: {
   read: TdmsFileServiceRecordReadResponse;
   context: TdmsSourceBrowserReadContext;
   sessionGeneration: number;
@@ -17,6 +18,7 @@ export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, ena
   onAccessRejected: () => void;
   monitorScopeKey?: string;
   onRefresh?: () => void;
+  openDocument?: (documentVersionId: string) => void;
 }) {
   const [historyOpen, setHistoryOpen] = useState<boolean>(false);
   const [relationsOpen, setRelationsOpen] = useState<boolean>(false);
@@ -50,7 +52,8 @@ export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, ena
   const reloadRecord = (): void => setRetry((value: number) => value + 1);
 
   return <section className="tdms-document-record" aria-label={`${tdmsRecordKindLabel(read.record.recordKind)} ${read.record.title}`}>
-    <TdmsRecordDetails read={read} monitorScopeKey={monitorScopeKey ?? scope} onRefresh={onRefresh} />
+    <TdmsRecordDetails read={read} monitorScopeKey={monitorScopeKey ?? scope} onRefresh={onRefresh}
+      openDocument={openDocument} />
     <details onToggle={event => setHistoryOpen(event.currentTarget.open)}>
       <summary>该来源记录的修订历史</summary>
       {history.loading ? <p role="status">正在读取源修订历史…</p> : null}
@@ -77,14 +80,16 @@ export function TdmsDocumentSourceRecord({ read, context, sessionGeneration, ena
       <summary>处理单、专业评估单与附件的来源关系</summary>
       {relations.loading ? <p role="status">正在读取准确来源关系…</p> : null}
       {relations.error ? <p role="alert">{relations.error}</p> : null}
-      {relations.value ? <TdmsSourceRelations read={relations.value} onOpen={setSelectedRevision} /> : null}
+      {relations.value ? <TdmsSourceRelations read={relations.value} onOpen={setSelectedRevision}
+        openDocument={openDocument} /> : null}
     </details>
     {selectedRevision ? <section className="tdms-source-expanded" aria-label="所选来源修订">
       <header><h4>所选准确来源修订</h4><Button type="button" variant="ghost" size="sm"
         onClick={() => setSelectedRevision('')}>收起修订</Button></header>
       {historical.loading ? <p role="status">正在读取准确来源修订…</p> : null}
       {historical.error ? <p role="alert">{historical.error}</p> : null}
-      {historical.value ? <TdmsRecordDetails read={historical.value} monitorScopeKey={monitorScopeKey ?? scope} onRefresh={reloadRecord} /> : null}
+      {historical.value ? <TdmsRecordDetails read={historical.value} monitorScopeKey={monitorScopeKey ?? scope}
+        onRefresh={reloadRecord} openDocument={openDocument} /> : null}
     </section> : null}
     {history.error || historical.error || relations.error ? <Button type="button" variant="outline" size="sm"
       onClick={reloadRecord}>重试此记录</Button> : null}

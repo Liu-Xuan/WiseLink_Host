@@ -59,12 +59,74 @@ function rowGroupTag(kind) {
   return 'tbody';
 }
 
+/** Keep source-array indices for anchors; HTML slots follow the actual grid. */
+function tableGrid(payload) {
+  const invalid = () => { throw new Error('TRANSLATION_TABLE_ALIGNMENT_UNSUPPORTED'); };
+  const declaredWidth = payload.columnCount;
+  const columns = payload.columns ?? [];
+  if (declaredWidth !== undefined && (!Number.isSafeInteger(declaredWidth) ||
+      declaredWidth < 1 || columns.length > declaredWidth)) invalid();
+  let columnCount = declaredWidth ?? columns.length;
+  const groups = payload.rowGroups.map((group) => {
+    const occupied = new Map();
+    const rows = group.rows.map((row) => {
+      const blocked = new Set(occupied.keys());
+      let cursor = 0;
+      const cells = row.cells.map((cell, cellIndex) => {
+        if (cell.columnStart !== undefined && cell.columnIndex !== undefined &&
+            cell.columnStart !== cell.columnIndex) invalid();
+        while (occupied.has(cursor)) cursor += 1;
+        const column = cell.columnStart !== undefined ? cell.columnStart
+          : cell.columnIndex !== undefined ? cell.columnIndex : cursor;
+        const rowSpan = cell.rowSpan ?? 1;
+        const colSpan = cell.colSpan ?? 1;
+        if (!Number.isSafeInteger(column) || column < 0 ||
+            !Number.isSafeInteger(rowSpan) || rowSpan < 1 ||
+            !Number.isSafeInteger(colSpan) || colSpan < 1 ||
+            !Number.isSafeInteger(column + colSpan) ||
+            (declaredWidth !== undefined && column + colSpan > declaredWidth)) invalid();
+        for (let col = column; col < column + colSpan; col++) {
+          if (occupied.has(col)) invalid();
+          occupied.set(col, rowSpan);
+        }
+        cursor = Math.max(cursor, column + colSpan);
+        columnCount = Math.max(columnCount, cursor);
+        return { cell, cellIndex, column, rowSpan, colSpan };
+      }).sort((a, b) => a.column - b.column);
+      for (const [col, remaining] of occupied) {
+        if (remaining === 1) occupied.delete(col);
+        else occupied.set(col, remaining - 1);
+      }
+      return { cells, blocked };
+    });
+    return { kind: group.kind, rows };
+  });
+  return {
+    columns: columns.length ? Array.from({ length: columnCount }, (_, index) =>
+      ({ column: columns[index], index })) : [],
+    groups: groups.map((group) => ({ kind: group.kind, rows: group.rows.map((row) => {
+      const starts = new Map(row.cells.map((cell) => [cell.column, cell]));
+      const slots = [];
+      for (let col = 0; col < columnCount;) {
+        const source = starts.get(col);
+        if (source) { slots.push(source); col += source.colSpan; }
+        else {
+          if (!row.blocked.has(col)) slots.push({ cell: null, column: col, rowSpan: 1, colSpan: 1 });
+          col += 1;
+        }
+      }
+      return slots;
+    }) })),
+  };
+}
+
 function tableSource(block, anchors, markAnchor) {
   const tables = (block.sourceStructure ?? []).filter((unit) => unit.kind === 'table');
   if (!tables.length || tables.some((unit) => unit.payload.layout !== 'grid'))
     return block.anchorIds.map((id) => `${markAnchor?.(id) ?? ''}${anchors.get(id).sourceText}`).join('\n');
   return tables.map((unit) => {
     const payload = unit.payload;
+    const grid = tableGrid(payload);
     const source = (path, value) => {
       if (!markAnchor || typeof value !== 'string' || !value.trim()) return escapeHtml(value ?? '');
       const matching = block.anchorIds.filter((id) => {
@@ -77,19 +139,18 @@ function tableSource(block, anchors, markAnchor) {
     };
     const caption = typeof payload.caption === 'string' && payload.caption.trim()
       ? `<caption>${source('/payload/caption', payload.caption)}</caption>` : '';
-    const columns = (payload.columns ?? []).filter((column) =>
-      typeof column.name === 'string' && column.name.trim());
-    const columnHead = (markAnchor ? (payload.columns ?? []).length : columns.length)
-      ? `<thead><tr>${(payload.columns ?? []).map((column, index) =>
-        typeof column.name === 'string' && column.name.trim()
+    const columnHead = grid.columns.length
+      ? `<thead><tr>${grid.columns.map(({ column, index }) =>
+        typeof column?.name === 'string' && column.name.trim()
           ? `<th>${source(`/payload/columns/${index}/name`, column.name)}</th>`
-          : markAnchor ? '<th></th>' : '').join('')}</tr></thead>` : '';
-    const groups = payload.rowGroups.map((group, groupIndex) => {
+          : '<th></th>').join('')}</tr></thead>` : '';
+    const groups = grid.groups.map((group, groupIndex) => {
       const tag = rowGroupTag(group.kind);
       const rows = group.rows.map((row, rowIndex) => {
-        const cells = row.cells.map((cell, cellIndex) => {
+        const cells = row.map(({ cell, cellIndex, rowSpan, colSpan }) => {
+          if (!cell) return '<td></td>';
           const cellTag = cell.isHeader ? 'th' : 'td';
-          const spans = `${cell.rowSpan > 1 ? ` rowspan="${cell.rowSpan}"` : ''}${cell.colSpan > 1 ? ` colspan="${cell.colSpan}"` : ''}`;
+          const spans = `${rowSpan > 1 ? ` rowspan="${rowSpan}"` : ''}${colSpan > 1 ? ` colspan="${colSpan}"` : ''}`;
           const content = (cell.inlineContent ?? []).map((item, inlineIndex) =>
             typeof item.text === 'string'
               ? source(`/payload/rowGroups/${groupIndex}/rows/${rowIndex}/cells/${cellIndex}/inlineContent/${inlineIndex}/text`, item.text)
@@ -253,6 +314,7 @@ function tableElements(block, anchors, markdown) {
   for (let tableIndex = 0; tableIndex < expected.length; tableIndex++) {
     const unit = expected[tableIndex];
     const source = unit.payload;
+    const grid = tableGrid(source);
     const target = tables[tableIndex];
     const caption = child(target, 'caption');
     const sourceCaption = typeof source.caption === 'string' && source.caption.trim();
@@ -266,8 +328,7 @@ function tableElements(block, anchors, markdown) {
       elements.push({ kind: 'caption', translatedText: textContent(caption[0]).trim(), anchorIds: ids });
     }
     const groups = significant(target.childNodes).filter((node) => node.tagName !== 'caption');
-    const columns = (source.columns ?? []).map((column, index) => ({ column, index }))
-      .filter(({ column }) => typeof column.name === 'string' && column.name.trim());
+    const columns = grid.columns;
     if (columns.length) {
       const header = groups.shift();
       const headerRows = header?.tagName === 'thead' ? significant(header.childNodes) : [];
@@ -276,9 +337,16 @@ function tableElements(block, anchors, markdown) {
       if (headerCells.length !== columns.length || headerCells.some((cell) => cell.tagName !== 'th'))
         throw new Error('TRANSLATION_TABLE_TOPOLOGY_CHANGED');
       for (let index = 0; index < columns.length; index++) {
+        const translatedText = textContent(headerCells[index]).trim();
+        const name = columns[index].column?.name;
+        if (typeof name !== 'string' || !name.trim()) {
+          if (translatedText || span(headerCells[index], 'rowspan') !== 1 ||
+              span(headerCells[index], 'colspan') !== 1)
+            throw new Error('TRANSLATION_TABLE_ALIGNMENT_UNSUPPORTED');
+          continue;
+        }
         const ids = block.anchorIds.filter((id) => anchors.get(id).sourceUnitId === unit.sourceUnitId &&
           anchors.get(id).payloadPath === `/payload/columns/${columns[index].index}/name`);
-        const translatedText = textContent(headerCells[index]).trim();
         if (ids.length !== 1 || !translatedText ||
             span(headerCells[index], 'rowspan') !== 1 ||
             span(headerCells[index], 'colspan') !== 1)
@@ -286,9 +354,9 @@ function tableElements(block, anchors, markdown) {
         elements.push({ kind: 'label', translatedText, anchorIds: ids });
       }
     }
-    if (groups.length !== source.rowGroups.length) throw new Error('TRANSLATION_TABLE_TOPOLOGY_CHANGED');
+    if (groups.length !== grid.groups.length) throw new Error('TRANSLATION_TABLE_TOPOLOGY_CHANGED');
     for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
-      const sourceGroup = source.rowGroups[groupIndex];
+      const sourceGroup = grid.groups[groupIndex];
       const targetGroup = groups[groupIndex];
       if (targetGroup.tagName !== rowGroupTag(sourceGroup.kind))
         throw new Error('TRANSLATION_TABLE_TOPOLOGY_CHANGED');
@@ -296,17 +364,22 @@ function tableElements(block, anchors, markdown) {
       if (rows.length !== sourceGroup.rows.length || rows.some((row) => row.tagName !== 'tr'))
         throw new Error('TRANSLATION_TABLE_TOPOLOGY_CHANGED');
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-        const sourceCells = sourceGroup.rows[rowIndex].cells;
+        const sourceCells = sourceGroup.rows[rowIndex];
         const targetCells = significant(rows[rowIndex].childNodes);
         if (targetCells.length !== sourceCells.length) throw new Error('TRANSLATION_TABLE_TOPOLOGY_CHANGED');
         for (let cellIndex = 0; cellIndex < targetCells.length; cellIndex++) {
-          const sourceCell = sourceCells[cellIndex];
+          const slot = sourceCells[cellIndex];
+          const sourceCell = slot.cell;
           const targetCell = targetCells[cellIndex];
-          if (targetCell.tagName !== (sourceCell.isHeader ? 'th' : 'td') ||
-              span(targetCell, 'rowspan') !== (sourceCell.rowSpan ?? 1) ||
-              span(targetCell, 'colspan') !== (sourceCell.colSpan ?? 1))
+          if (targetCell.tagName !== (sourceCell?.isHeader ? 'th' : 'td') ||
+              span(targetCell, 'rowspan') !== slot.rowSpan ||
+              span(targetCell, 'colspan') !== slot.colSpan)
             throw new Error('TRANSLATION_TABLE_TOPOLOGY_CHANGED');
-          const prefix = `/payload/rowGroups/${groupIndex}/rows/${rowIndex}/cells/${cellIndex}/inlineContent/`;
+          if (!sourceCell) {
+            if (textContent(targetCell).trim()) throw new Error('TRANSLATION_TABLE_ALIGNMENT_UNSUPPORTED');
+            continue;
+          }
+          const prefix = `/payload/rowGroups/${groupIndex}/rows/${rowIndex}/cells/${slot.cellIndex}/inlineContent/`;
           const ids = block.anchorIds.filter((id) => anchors.get(id).sourceUnitId === unit.sourceUnitId &&
             anchors.get(id).payloadPath.startsWith(prefix));
           const translatedText = textContent(targetCell).trim();

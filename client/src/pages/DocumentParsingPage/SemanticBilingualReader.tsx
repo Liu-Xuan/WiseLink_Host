@@ -183,12 +183,12 @@ function SemanticWorkspaceReader({
             />
           ) : null}
           <p>
-            已保存中文覆盖{' '}
+            已保存候选覆盖{' '}
             {reading.coverage.savedSourceCharacters.toLocaleString('zh-CN')} /{' '}
             {reading.coverage.registeredSourceCharacters.toLocaleString(
               'zh-CN',
             )}{' '}
-            个原文字符
+            个原文字符（含待检查或暂不可读部分）
           </p>
         </div>
         <div className="wl-bilingual-actions">

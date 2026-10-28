@@ -133,6 +133,11 @@ jest.mock('@client/src/api/canonical-host', () => ({
   isCanonicalObjectNotFound: () => false,
   subscribeCanonicalHostClientSession: () => () => undefined,
   getCanonicalHostClientSessionGeneration: () => sessionGeneration,
+  isCanonicalHostClientSessionAuthenticationRequired: () => false,
+  readTdmsDocumentSource: async (input: { documentVersionId: string }) => ({
+    documentVersionId: input.documentVersionId, sourceStatus: 'NO_BOUND_RECORDS',
+    records: [], hasMore: false, nextAfter: null,
+  }),
   getCanonicalHostIdentityContext: (...args: unknown[]) => mockIdentity(...args),
   requestOverallRegeneration: (...args: unknown[]) => mockWrite(...args),
   requestInitialAnalysisContinuation: (...args: unknown[]) => mockWrite(...args),
@@ -141,6 +146,7 @@ jest.mock('@client/src/api/canonical-host', () => ({
 jest.mock('@client/src/components/ui/button', () => ({ Button: 'button' }));
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-lookup.css', () => ({}));
 jest.mock('@client/src/pages/KnowledgeLookupPage/knowledge-suite.css', () => ({}));
+jest.mock('@client/src/features/tdms-source/tdms-source-reading.css', () => ({}));
 jest.mock('@client/src/pages/WorkspaceHomePage/library-hierarchy.css', () => ({}));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({
   useCurrentUserSession: () => ({ sessionGeneration, authenticationRequired: false, currentUser: { user_id: currentActor } }),
