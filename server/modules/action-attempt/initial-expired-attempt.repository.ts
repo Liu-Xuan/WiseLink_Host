@@ -226,7 +226,8 @@ export function initialAttemptLeaseProtection(
   bound: ReturnType<typeof automaticWorkItemTaskLease>,
   grant: Pick<Grant, 'status' | 'grantKind' | 'requestId' | 'leaseGeneration' | 'leaseOwner' | 'actorUserId' |
     'documentId' | 'documentVersionId' | 'sourceArtifactId' | 'sourceFileSha256' | 'sourceByteLength' |
-    'leaseExpiresAt' | 'completedAt' | 'blockedAt'> | null,
+    'leaseExpiresAt' | 'completedAt' | 'blockedAt' | 'blockedCode' | 'blockedLeaseGeneration' |
+    'blockedLeaseTokenHash'> | null,
   now: Date,
 ): {attempt: CanonicalInitialAttemptProtectionDetails; automatic: CanonicalInitialAttemptProtectionDetails | null} {
   const attemptReasons: CanonicalInitialAttemptProtectionReason[] = [];
@@ -257,7 +258,17 @@ export function initialAttemptLeaseProtection(
     if (!grant.leaseExpiresAt) reasons.push('GRANT_LEASE_EXPIRY_MISSING');
     else if (!(grant.leaseExpiresAt <= now)) reasons.push('GRANT_LEASE_ACTIVE');
     if (grant.completedAt) reasons.push('GRANT_COMPLETED');
-    if (grant.blockedAt) reasons.push('GRANT_BLOCKED');
+    const blockReceiptPresent = grant.blockedAt !== null || grant.blockedCode !== null ||
+      grant.blockedLeaseGeneration !== null || grant.blockedLeaseTokenHash !== null;
+    // Normal claim clears blockedCode, increments the generation and deliberately
+    // retains the earlier receipt. It is history only after every existing lease
+    // and binding predicate passes; partial/current/future receipts stay protected.
+    const earlierBlockReceipt = reasons.length === 0 && attemptReasons.length === 0 &&
+      grant.blockedCode === null && !!grant.blockedAt && grant.blockedAt <= now &&
+      grant.blockedLeaseGeneration !== null && Number.isSafeInteger(grant.blockedLeaseGeneration) &&
+      grant.blockedLeaseGeneration > 0 && grant.blockedLeaseGeneration < grant.leaseGeneration &&
+      !!grant.blockedLeaseTokenHash?.trim();
+    if (blockReceiptPresent && !earlierBlockReceipt) reasons.push('GRANT_BLOCKED');
   }
   return {attempt, automatic: {reasons, grantLeaseExpiresAt: grant?.leaseExpiresAt?.toISOString() ?? null,
     sealedGrantLeaseGeneration: bound.leaseGeneration, currentGrantLeaseGeneration: grant?.leaseGeneration ?? null,

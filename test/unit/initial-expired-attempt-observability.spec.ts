@@ -17,9 +17,9 @@ const grant: GrantFacts = {status: 'LEASED', grantKind: 'MIAODA_CANONICAL_PARSE_
   leaseGeneration: 17, leaseOwner: lease.leaseOwner, actorUserId: owner.requestedByUserId,
   documentId: owner.documentId, documentVersionId: owner.documentVersionId, sourceArtifactId: owner.sourceArtifactId,
   sourceFileSha256: owner.sourceFileSha256, sourceByteLength: owner.sourceByteLength, leaseExpiresAt: due,
-  completedAt: null, blockedAt: null};
+  completedAt: null, blockedAt: null, blockedCode: null, blockedLeaseGeneration: null, blockedLeaseTokenHash: null};
 
-// Frozen ff108440 predicate: the new diagnostics must leave every comparison and bypass equivalent.
+// Frozen ff108440 predicate for unchanged comparisons; the historical block exception is tested separately.
 function originalGrantMatches(row: LeaseInputs[0], primary: LeaseInputs[1], sealed: LeaseInputs[2], current: LeaseInputs[3]) {
   return !sealed || !!current && current.status === 'LEASED' && current.grantKind === 'MIAODA_CANONICAL_PARSE_REQUEST' &&
     current.requestId === sealed.requestId && current.requestId === primary.requestId && current.leaseGeneration === sealed.leaseGeneration &&
@@ -208,4 +208,69 @@ it('returns no diagnostics after original target, authorization or coverage deni
   await expect(freshDenied.read()).rejects.toThrow('ORIGINAL_FRESH_PERMISSION_DENIED');
   await expect(readHarness({}, grant, {covered: false, saved: [], otherActive: false}).read())
     .rejects.toThrow('INITIAL_EXPIRED_SAVE_COVERAGE_UNKNOWN');
+});
+
+it('does not confuse a complete earlier-generation block receipt with a block of the current claimed lease', async () => {
+  const historicalGrant: GrantFacts = {...grant, blockedAt: due, blockedCode: null,
+    blockedLeaseGeneration: bound.leaseGeneration - 1, blockedLeaseTokenHash: 'c'.repeat(64)};
+  const h = readHarness({}, historicalGrant);
+  const before: string = JSON.stringify(historicalGrant);
+  const result: CanonicalInitialAttemptRead = await h.read();
+  expect(result.reconciliation).toBe('ELIGIBLE');
+  expect(result.protectionCode).toBeNull();
+  expect(result.protectionDetails).toBeUndefined();
+  expect(JSON.stringify(historicalGrant)).toBe(before);
+  for (const write of [h.database.insert, h.database.update, h.database.delete, h.database.transaction])
+    expect(write).not.toHaveBeenCalled();
+});
+
+interface BlockReceiptCase {name: string; change: Partial<GrantFacts>}
+const blockReceiptCases: BlockReceiptCase[] = [
+  {name: 'current generation', change: {blockedLeaseGeneration: bound.leaseGeneration}},
+  {name: 'future generation', change: {blockedLeaseGeneration: bound.leaseGeneration + 1}},
+  {name: 'missing generation', change: {blockedLeaseGeneration: null}},
+  {name: 'zero generation', change: {blockedLeaseGeneration: 0}},
+  {name: 'nonintegral generation', change: {blockedLeaseGeneration: 1.5}},
+  {name: 'missing token receipt', change: {blockedLeaseTokenHash: null}},
+  {name: 'empty token receipt', change: {blockedLeaseTokenHash: ''}},
+  {name: 'blank token receipt', change: {blockedLeaseTokenHash: ' '}},
+  {name: 'missing timestamp', change: {blockedAt: null}},
+  {name: 'future timestamp', change: {blockedAt: future}},
+  {name: 'uncleared code', change: {blockedCode: 'SYNTHETIC_CURRENT_BLOCK'}},
+  {name: 'empty uncleared code', change: {blockedCode: ''}},
+  {name: 'code without receipt', change: {blockedAt: null, blockedLeaseGeneration: null,
+    blockedLeaseTokenHash: null, blockedCode: 'SYNTHETIC_CURRENT_BLOCK'}},
+];
+it.each(blockReceiptCases)('still protects a $name block receipt without exposing its token hash', async ({change}: BlockReceiptCase) => {
+  const current: GrantFacts = {...grant, blockedAt: due, blockedCode: null,
+    blockedLeaseGeneration: bound.leaseGeneration - 1, blockedLeaseTokenHash: 'c'.repeat(64), ...change};
+  const h = readHarness({}, current);
+  const before: string = JSON.stringify(current);
+  const result: CanonicalInitialAttemptRead = await h.read();
+  expect(result.reconciliation).toBe('PROTECTED');
+  expect(result.protectionCode).toBe('GRANT_CHANGED_OR_ACTIVE');
+  expect(result.protectionDetails?.reasons).toEqual(['GRANT_BLOCKED']);
+  expect(JSON.stringify(result)).not.toContain('blockedLeaseTokenHash');
+  expect(JSON.stringify(result)).not.toContain('c'.repeat(64));
+  expect(JSON.stringify(current)).toBe(before);
+});
+
+it.each(grantCases.filter((value: GrantCase) => value.name !== 'blocked'))(
+  'retains the original $name protection even when a complete older receipt is present', ({change, reasons}: GrantCase) => {
+    const current: GrantFacts = {...grant, blockedAt: due, blockedCode: null,
+      blockedLeaseGeneration: bound.leaseGeneration - 1, blockedLeaseTokenHash: 'c'.repeat(64), ...change};
+    const details: ReturnType<typeof initialAttemptLeaseProtection> = initialAttemptLeaseProtection(lease, owner, bound, current, now);
+    expect(details.automatic?.reasons).toEqual([...reasons, 'GRANT_BLOCKED']);
+  });
+
+it('never treats historical block metadata as authority to bypass the ATT lease predicates', async () => {
+  const current: GrantFacts = {...grant, blockedAt: due, blockedCode: null,
+    blockedLeaseGeneration: bound.leaseGeneration - 1, blockedLeaseTokenHash: 'c'.repeat(64)};
+  const row: LeaseInputs[0] = {...lease, leaseToken: null};
+  const details: ReturnType<typeof initialAttemptLeaseProtection> = initialAttemptLeaseProtection(row, owner, bound, current, now);
+  expect(details.attempt.reasons).toEqual(['ATTEMPT_LEASE_TOKEN_MISSING']);
+  expect(details.automatic?.reasons).toEqual(['GRANT_BLOCKED']);
+  const result: CanonicalInitialAttemptRead = await readHarness({leaseToken: null}, current).read();
+  expect(result.protectionCode).toBe('LEASE_NOT_EXPIRED');
+  expect(result.reconciliation).toBe('PROTECTED');
 });

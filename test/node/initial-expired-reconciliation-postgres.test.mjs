@@ -60,6 +60,9 @@ test('owned PG exact browser INITIAL timeout, authoritative absence, replay and 
     for(const current of [saveConnection,controlConnection]) {
       assert.equal(current.rolsuper,false);assert.equal(current.rolbypassrls,false);
     }
+    t.diagnostic(JSON.stringify({kind:'OWNED_PHYSICAL_CONNECTIONS',savePid:Number(saveConnection.pid),
+      controlPid:Number(controlConnection.pid),sameSessionUser:saveConnection.login===controlConnection.login,
+      nonSuperuser:true,nonBypassRls:true}));
     const service=new CanonicalInitialAttemptControlService(peer.db,new OrdinaryCanonicalAuthorizationAdapter(peer.objectAccess),
       new OrdinaryCanonicalPermissionSnapshotAdapter(peer.objectAccess),peer.registrar,peer.sourceAuthorization,sessions,peer.actors);
     const ordinary={request:()=>{throw new Error('must not create a continuation');}};
@@ -70,7 +73,7 @@ test('owned PG exact browser INITIAL timeout, authoritative absence, replay and 
       new OrdinaryCanonicalPermissionSnapshotAdapter(f.objectAccess),f.registrar,f.attempts,normalInitial,
       {enqueueContinuation:()=>{throw new Error('must not translate');}},f.problem,sessions,undefined,f.sourceAuthorization);
     const normalWriter=new CanonicalInitialAnalysisContinuationController(continuation,sessions,service);
-    async function opened(name) {
+    async function opened(name,beforeBegin) {
       const wi=`WI-expired-${name}`;const seeded=await f.seed(wi);
       // The shared legacy seed omitted the two persisted package columns checked
       // by matchesInitialContinuationOwner. Match the actual seed projection,
@@ -78,6 +81,7 @@ test('owned PG exact browser INITIAL timeout, authoritative absence, replay and 
       await f.sql`UPDATE work_item SET package_artifact_ref=${seeded.package.artifact.ref},
         package_artifact_sha256=${seeded.package.artifact.sha256} WHERE work_item_id=${wi}`;
       const q=await f.nextWorkItem({resumeWorkItemId:wi});assert.equal(q.status,'CLAIMED');
+      if(beforeBegin)await beforeBegin({wi,seeded,q});
       const c=await f.callTool('begin_dynamic_evaluation',{workItemId:wi,requestId:`synthetic-${name}`});
       const query={view:'attempt-control',attemptId:c.task.actionAttemptId,attemptRef:c.attemptRef};
       const read=()=>reader.assessmentWork(wi,request,query);
@@ -99,6 +103,78 @@ test('owned PG exact browser INITIAL timeout, authoritative absence, replay and 
       await assert.rejects(()=>reader.assessmentWork(h.wi,{...request,userContext:{...request.userContext,userId:'another-owner'}},h.query),/NOT_FOUND/u);
       await assert.rejects(h.close,/DEADLINE_NOT_EXPIRED/u);
       assert.deepEqual(await f.snapshot(),before);
+    });
+    await t.test('normal reclaim preserves an earlier block receipt without blocking exact unsaved expiry',async()=>{
+      let history;
+      const h=await opened('historical-block',async({wi,seeded})=>{
+        const active=(await f.snapshot()).grants.find(row=>row.work_item_id===wi);
+        // Real block persistence while there is no active INITIAL attempt. The
+        // following WAITING precondition models the existing browser continuation,
+        // which deliberately retains this receipt; it is fixture setup only.
+        const blocked=await f.hosted(()=>f.workItems.blockAutoProcessingLease({
+          tenantId:f.tenantId,workItemId:wi,requestId:active.request_id,actorUserId:active.actor_user_id,
+          documentId:active.document_id,documentVersionId:active.document_version_id,
+          sourceArtifactId:active.source_artifact_id,sourceFileSha256:active.source_file_sha256,
+          sourceByteLength:Number(active.source_byte_length),expectedWorkItemRevision:seeded.revision,
+          leaseOwner:active.lease_owner,leaseToken:active.lease_token,leaseGeneration:active.lease_generation,
+          blockedCode:'SYNTHETIC_PREVIOUS_STAGE_FAILED',now:new Date()}));
+        assert.equal(blocked?.replayed,false);
+        history=(await f.snapshot()).grants.find(row=>row.work_item_id===wi);
+        assert.ok(history.blocked_at);assert.match(history.blocked_lease_token_hash,/^[a-f0-9]{64}$/u);
+        assert.equal(history.blocked_lease_generation,active.lease_generation);
+        await f.sql`UPDATE auto_work_item_authorization SET status='WAITING' WHERE work_item_id=${wi}`;
+        const next=await f.nextWorkItem({resumeWorkItemId:wi});assert.equal(next.status,'CLAIMED');
+        const claimed=(await f.snapshot()).grants.find(row=>row.work_item_id===wi);
+        assert.equal(claimed.status,'LEASED');assert.equal(claimed.blocked_code,null);
+        assert.equal(claimed.lease_generation,history.blocked_lease_generation+1);
+        for(const key of ['blocked_at','blocked_lease_generation','blocked_lease_token_hash'])
+          assert.deepEqual(claimed[key],history[key],`normal claim retains ${key}`);
+        t.diagnostic(JSON.stringify({kind:'NORMAL_CLAIM_RETAINS_BLOCK_HISTORY',
+          blockedGeneration:history.blocked_lease_generation,claimedGeneration:claimed.lease_generation,blockedCodeCleared:true}));
+      });
+      const observation=[{kind:'ASSESSMENT_CONSUMER_STOPPED',upstreamOutcome:'UNKNOWN',
+        requestId:h.command.stageRequestId,documentVersionId:h.c.task.documentVersionId,
+        inputRevision:h.c.task.inputRevision,modelRound:1,errorCode:'SYNTHETIC_UNSAVED',observedAt:new Date().toISOString()}];
+      await f.sql`UPDATE action_attempt SET review_activity_json=${JSON.stringify(observation)} WHERE attempt_id=${h.command.attemptId}`;
+      await f.advance();const before=await f.snapshot();
+      const facts=await h.read();assert.equal(facts.reconciliation,'ELIGIBLE');assert.equal(facts.consumerOutcome,'UNKNOWN');
+      assert.deepEqual(await f.snapshot(),before,'the exact browser GET remains write-free');
+      const currentGrant=before.grants.find(row=>row.work_item_id===h.wi);
+      const protectedBlock=async()=>{
+        const protectedSnapshot=await f.snapshot();const protectedRead=await h.read();
+        assert.equal(protectedRead.reconciliation,'PROTECTED');
+        assert.deepEqual(protectedRead.protectionDetails.reasons,['GRANT_BLOCKED']);
+        assert.equal(JSON.stringify(protectedRead).includes('blockedLeaseTokenHash'),false);
+        assert.equal(JSON.stringify(protectedRead).includes(history.blocked_lease_token_hash),false);
+        await assert.rejects(h.close,/GRANT_CHANGED_OR_ACTIVE/u);
+        assert.deepEqual(await f.snapshot(),protectedSnapshot,'current or incomplete block protects the CAS without writing');
+      };
+      for(const generation of [currentGrant.lease_generation,currentGrant.lease_generation+1]) {
+        await f.sql`UPDATE auto_work_item_authorization SET blocked_lease_generation=${generation} WHERE work_item_id=${h.wi}`;
+        await protectedBlock();
+      }
+      await f.sql`UPDATE auto_work_item_authorization SET blocked_lease_generation=${history.blocked_lease_generation},
+        blocked_code='SYNTHETIC_CURRENT_BLOCK' WHERE work_item_id=${h.wi}`;
+      await protectedBlock();
+      // The real schema forbids partially populated receipt triples. This legal
+      // code-only row represents an incomplete current block and must also refuse.
+      await f.sql`UPDATE auto_work_item_authorization SET blocked_at=NULL,blocked_lease_generation=NULL,
+        blocked_lease_token_hash=NULL WHERE work_item_id=${h.wi}`;
+      await protectedBlock();
+      await f.sql`UPDATE auto_work_item_authorization SET blocked_at=${history.blocked_at},
+        blocked_lease_generation=${history.blocked_lease_generation},blocked_lease_token_hash=${history.blocked_lease_token_hash},
+        blocked_code=NULL WHERE work_item_id=${h.wi}`;
+      assert.deepEqual(await f.snapshot(),before,'fixture restores the exact historical receipt before expiry');
+      const closed=await h.close();assert.equal(closed.changed,true);assert.equal(closed.attempt.status,'TIMED_OUT');
+      assert.equal(closed.attempt.consumerOutcome,'UNKNOWN');assert.deepEqual(closed.attempt.savedWorks,[]);
+      const after=await f.snapshot();assert.deepEqual(after.grants,before.grants);
+      assert.deepEqual(after.work,before.work);assert.deepEqual(after.workItems,before.workItems);
+      const old=before.attempts.find(row=>row.attempt_id===h.command.attemptId);
+      const fresh=after.attempts.find(row=>row.attempt_id===h.command.attemptId);
+      const allowed=new Set(['status','terminal_reason','completed_at','updated_at','lease_owner','lease_token','lease_expires_at','lease_slot']);
+      for(const key of Object.keys(old))if(!allowed.has(key))assert.deepEqual(fresh[key],old[key],key);
+      assert.deepEqual(after.attempts.filter(row=>row!==fresh),before.attempts.filter(row=>row!==old));
+      assert.equal((await h.close()).changed,false);assert.deepEqual(await f.snapshot(),after);
     });
     await t.test('no S is required: original deadline times out only the exact unsaved attempt; UNKNOWN and replay remain',async()=>{
       const h=await opened('no-save');
@@ -230,7 +306,8 @@ test('owned PG exact browser INITIAL timeout, authoritative absence, replay and 
         await Promise.race([reached.promise,save.promise.then(result=>{throw result.error ?? new Error('SAVE finished before the held-lock checkpoint');})]);
         assert.equal(pid,Number(saveConnection.pid),'SAVE holds the original physical connection');
         await f.advance();closing=tracked(h.close());
-        const wait=await waiting(f,pid,closing);assert.ok(wait.blockers.map(Number).includes(pid));release.resolve();
+        const wait=await waiting(f,pid,closing);assert.ok(wait.blockers.map(Number).includes(pid));
+        t.diagnostic(JSON.stringify({kind:'SAVE_FIRST_WI_ROW_LOCK',holderPid:pid,waiterPid:Number(wait.pid)}));release.resolve();
         const result=await save.promise;assert.ok(result.value, result.error?.message);
         const closed=await closing.promise;assert.match(closed.error?.message ?? '',/SAVED_OR_COMMITTING/u);
         assert.equal((await h.read()).savedWorks[0].saveRequestId,'S-race-first');
@@ -252,7 +329,9 @@ test('owned PG exact browser INITIAL timeout, authoritative absence, replay and 
         await f.advance(-7200000);
         assert.ok(new Date(h.c.task.deadline)>new Date());
         save=tracked(f.callTool('save_assessment_work',saveArgs(f,h.c,'S-race-late')));
-        await waiting(f,pid,save);release.resolve();const closed=await closing.promise;assert.equal(closed.value?.changed,true,closed.error?.message);
+        const wait=await waiting(f,pid,save);
+        t.diagnostic(JSON.stringify({kind:'EXPIRY_FIRST_WI_ROW_LOCK',holderPid:pid,waiterPid:Number(wait.pid)}));
+        release.resolve();const closed=await closing.promise;assert.equal(closed.value?.changed,true,closed.error?.message);
         const result=await save.promise;assert.ok(result.error);assert.match(result.error.message,/ATTEMPT|LEASE|FENCE/u);
         const facts=await h.read();assert.equal(facts.status,'TIMED_OUT');assert.deepEqual(facts.savedWorks,[]);
       } finally {release.resolve();InitialExpiredAttemptRepository.prototype.reconcile=original;await closing.promise;await save?.promise;}
