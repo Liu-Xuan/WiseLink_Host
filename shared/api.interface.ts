@@ -3016,6 +3016,40 @@ export interface CanonicalInitialAttemptReadRequest {
   attemptRef: string;
 }
 
+export type CanonicalInitialAttemptProtectionReason =
+  | 'ATTEMPT_LEASE_EXPIRY_MISSING'
+  | 'ATTEMPT_LEASE_ACTIVE'
+  | 'ATTEMPT_LEASE_TOKEN_MISSING'
+  | 'ATTEMPT_LEASE_OWNER_MISSING'
+  | 'GRANT_UNAVAILABLE'
+  | 'GRANT_STATUS_CHANGED'
+  | 'GRANT_KIND_CHANGED'
+  | 'GRANT_SEALED_REQUEST_CHANGED'
+  | 'GRANT_INTAKE_REQUEST_CHANGED'
+  | 'GRANT_GENERATION_CHANGED'
+  | 'GRANT_LEASE_OWNER_MISSING'
+  | 'GRANT_LEASE_OWNER_CHANGED'
+  | 'GRANT_ACTOR_CHANGED'
+  | 'GRANT_DOCUMENT_CHANGED'
+  | 'GRANT_DOCUMENT_VERSION_CHANGED'
+  | 'GRANT_SOURCE_ARTIFACT_CHANGED'
+  | 'GRANT_SOURCE_HASH_CHANGED'
+  | 'GRANT_SOURCE_SIZE_CHANGED'
+  | 'GRANT_LEASE_EXPIRY_MISSING'
+  | 'GRANT_LEASE_ACTIVE'
+  | 'GRANT_COMPLETED'
+  | 'GRANT_BLOCKED';
+
+/** Failed existing predicates only; never lease secrets or other actors' values. */
+export interface CanonicalInitialAttemptProtectionDetails {
+  reasons: CanonicalInitialAttemptProtectionReason[];
+  attemptLeaseExpiresAt?: string | null;
+  grantLeaseExpiresAt?: string | null;
+  sealedGrantLeaseGeneration?: number;
+  currentGrantLeaseGeneration?: number | null;
+  grantStatus?: string | null;
+}
+
 export interface CanonicalInitialAttemptRead {
   schemaVersion: 'wiselink.initial-attempt-control.v1';
   observedAt: string;
@@ -3042,6 +3076,8 @@ export interface CanonicalInitialAttemptRead {
   consumerOutcome: 'UNKNOWN' | null;
   reconciliation: 'ELIGIBLE' | 'ALREADY_TIMED_OUT' | 'PROTECTED';
   protectionCode: string | null;
+  /** Additive read diagnostics from the same authorized facts and predicates. */
+  protectionDetails?: CanonicalInitialAttemptProtectionDetails;
 }
 
 /** Explicit control of an existing attempt, never a continuation/new request. */

@@ -1,6 +1,7 @@
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import { and, eq, getTableColumns, isNull, lte, sql } from 'drizzle-orm';
-import type { CanonicalInitialAttemptRead, CanonicalInitialAttemptReconcileRequest } from '@shared/api.interface';
+import type { CanonicalInitialAttemptProtectionDetails, CanonicalInitialAttemptProtectionReason,
+  CanonicalInitialAttemptRead, CanonicalInitialAttemptReconcileRequest } from '@shared/api.interface';
 import { actionAttempt, assessmentWorkRevision, workItem } from '../../database/schema';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import { canonicalJson, parseTaskEnvelope } from './action-attempt-envelope';
@@ -193,20 +194,16 @@ export class InitialExpiredAttemptRepository {
       row.projectionApplied || projectionReferencesAttempt || activity.some(item => item?.kind === 'ASSESSMENT_WORK_READ');
     const alreadyTimedOut = row.status === 'TIMED_OUT' && row.terminalReason === TIMEOUT && !!row.completedAt &&
       !!row.deadlineAt && row.deadlineAt <= row.completedAt && !savedOrCommitting;
-    const bound = binding.automatic;
-    const grantMatches = !bound || !!grant && grant.status === 'LEASED' && grant.grantKind === 'MIAODA_CANONICAL_PARSE_REQUEST' &&
-      grant.requestId === bound.requestId && grant.requestId === primary.requestId && grant.leaseGeneration === bound.leaseGeneration &&
-      grant.leaseOwner === row.leaseOwner && grant.actorUserId === primary.requestedByUserId &&
-      grant.documentId === primary.documentId && grant.documentVersionId === primary.documentVersionId &&
-      grant.sourceArtifactId === primary.sourceArtifactId && grant.sourceFileSha256 === primary.sourceFileSha256 &&
-      Number(grant.sourceByteLength) === Number(primary.sourceByteLength) && !!grant.leaseExpiresAt && grant.leaseExpiresAt <= now &&
-      !grant.completedAt && !grant.blockedAt;
+    const leaseProtection = initialAttemptLeaseProtection(row, primary, binding.automatic, grant, now);
+    const grantMatches = !leaseProtection.automatic?.reasons.length;
     const protectionCode = savedOrCommitting ? 'SAVED_OR_COMMITTING' : activityUnknown ? 'ACTIVITY_UNKNOWN' : row.status !== 'RUNNING' ? 'NOT_RUNNING' :
       !row.deadlineAt || row.deadlineAt > now ? 'DEADLINE_NOT_EXPIRED' :
-      !row.leaseExpiresAt || row.leaseExpiresAt > now || !row.leaseToken || !row.leaseOwner ? 'LEASE_NOT_EXPIRED' :
+      leaseProtection.attempt.reasons.length ? 'LEASE_NOT_EXPIRED' :
       row.completedAt || row.cancelRequestedAt || row.cancelReason ? 'STATE_UNKNOWN' :
       row.baseRevision !== primary.revision || row.inputRevision !== primary.revision ? 'WORK_ITEM_CHANGED' :
       !grantMatches ? 'GRANT_CHANGED_OR_ACTIVE' : coverage.otherActive ? 'SUCCESSOR_PRESENT' : null;
+    const protectionDetails = protectionCode === 'LEASE_NOT_EXPIRED' ? leaseProtection.attempt :
+      protectionCode === 'GRANT_CHANGED_OR_ACTIVE' ? leaseProtection.automatic : null;
     return {schemaVersion:'wiselink.initial-attempt-control.v1',observedAt:now.toISOString(),workItemId:primary.workItemId,
       workItemRevision:primary.revision,documentVersionId:primary.documentVersionId,attemptId:row.attemptId,
       attemptRef:row.operationRef!,stageRequestId:binding.requestId,intakeRequestId:primary.requestId,
@@ -216,8 +213,55 @@ export class InitialExpiredAttemptRepository {
       hasPersistedResult:row.hasPersistedResult,projectionApplied:row.projectionApplied,savedWorks:coverage.saved,
       consumerOutcome:activity.some(item => item?.kind==='ASSESSMENT_CONSUMER_STOPPED' && item.upstreamOutcome==='UNKNOWN') ? 'UNKNOWN' : null,
       reconciliation:alreadyTimedOut?'ALREADY_TIMED_OUT':protectionCode?'PROTECTED':'ELIGIBLE',
-      protectionCode:alreadyTimedOut?null:protectionCode};
+      protectionCode:alreadyTimedOut?null:protectionCode,
+      ...(!alreadyTimedOut && protectionDetails ? {protectionDetails} : {})};
   }
+}
+
+/** Classify the existing predicates once. This neither reads nor changes authorization. */
+export function initialAttemptLeaseProtection(
+  row: Pick<Attempt, 'leaseExpiresAt' | 'leaseToken' | 'leaseOwner'>,
+  primary: Pick<Owner, 'requestId' | 'requestedByUserId' | 'documentId' | 'documentVersionId' |
+    'sourceArtifactId' | 'sourceFileSha256' | 'sourceByteLength'>,
+  bound: ReturnType<typeof automaticWorkItemTaskLease>,
+  grant: Pick<Grant, 'status' | 'grantKind' | 'requestId' | 'leaseGeneration' | 'leaseOwner' | 'actorUserId' |
+    'documentId' | 'documentVersionId' | 'sourceArtifactId' | 'sourceFileSha256' | 'sourceByteLength' |
+    'leaseExpiresAt' | 'completedAt' | 'blockedAt'> | null,
+  now: Date,
+): {attempt: CanonicalInitialAttemptProtectionDetails; automatic: CanonicalInitialAttemptProtectionDetails | null} {
+  const attemptReasons: CanonicalInitialAttemptProtectionReason[] = [];
+  if (!row.leaseExpiresAt) attemptReasons.push('ATTEMPT_LEASE_EXPIRY_MISSING');
+  else if (row.leaseExpiresAt > now) attemptReasons.push('ATTEMPT_LEASE_ACTIVE');
+  if (!row.leaseToken) attemptReasons.push('ATTEMPT_LEASE_TOKEN_MISSING');
+  if (!row.leaseOwner) attemptReasons.push('ATTEMPT_LEASE_OWNER_MISSING');
+  const attempt: CanonicalInitialAttemptProtectionDetails = {reasons: attemptReasons,
+    attemptLeaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null};
+  if (!bound) return {attempt, automatic: null};
+
+  const reasons: CanonicalInitialAttemptProtectionReason[] = [];
+  if (!grant) reasons.push('GRANT_UNAVAILABLE');
+  else {
+    if (grant.status !== 'LEASED') reasons.push('GRANT_STATUS_CHANGED');
+    if (grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST') reasons.push('GRANT_KIND_CHANGED');
+    if (grant.requestId !== bound.requestId) reasons.push('GRANT_SEALED_REQUEST_CHANGED');
+    if (grant.requestId !== primary.requestId) reasons.push('GRANT_INTAKE_REQUEST_CHANGED');
+    if (grant.leaseGeneration !== bound.leaseGeneration) reasons.push('GRANT_GENERATION_CHANGED');
+    if (grant.leaseOwner !== row.leaseOwner)
+      reasons.push(grant.leaseOwner ? 'GRANT_LEASE_OWNER_CHANGED' : 'GRANT_LEASE_OWNER_MISSING');
+    if (grant.actorUserId !== primary.requestedByUserId) reasons.push('GRANT_ACTOR_CHANGED');
+    if (grant.documentId !== primary.documentId) reasons.push('GRANT_DOCUMENT_CHANGED');
+    if (grant.documentVersionId !== primary.documentVersionId) reasons.push('GRANT_DOCUMENT_VERSION_CHANGED');
+    if (grant.sourceArtifactId !== primary.sourceArtifactId) reasons.push('GRANT_SOURCE_ARTIFACT_CHANGED');
+    if (grant.sourceFileSha256 !== primary.sourceFileSha256) reasons.push('GRANT_SOURCE_HASH_CHANGED');
+    if (Number(grant.sourceByteLength) !== Number(primary.sourceByteLength)) reasons.push('GRANT_SOURCE_SIZE_CHANGED');
+    if (!grant.leaseExpiresAt) reasons.push('GRANT_LEASE_EXPIRY_MISSING');
+    else if (!(grant.leaseExpiresAt <= now)) reasons.push('GRANT_LEASE_ACTIVE');
+    if (grant.completedAt) reasons.push('GRANT_COMPLETED');
+    if (grant.blockedAt) reasons.push('GRANT_BLOCKED');
+  }
+  return {attempt, automatic: {reasons, grantLeaseExpiresAt: grant?.leaseExpiresAt?.toISOString() ?? null,
+    sealedGrantLeaseGeneration: bound.leaseGeneration, currentGrantLeaseGeneration: grant?.leaseGeneration ?? null,
+    grantStatus: grant?.status ?? null}};
 }
 
 export function initialAttemptConflict(suffix: string) {

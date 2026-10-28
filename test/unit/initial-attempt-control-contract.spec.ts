@@ -22,7 +22,8 @@ function harness(){
     reader:new CanonicalHostController({} as never,{} as never,{} as never,{} as never,{} as never,
       undefined,undefined,jobAid as never,sessions as never,control as never)};
 }
-it.each(['actor','tenantId','leaseToken','saveRequestId','deadline','requestId'])('rejects caller-injected %s and never requires a made-up S',key=>{
+it.each(['actor','tenantId','leaseToken','saveRequestId','deadline','requestId','protectionDetails',
+  'currentGrantLeaseGeneration','reasons'])('rejects caller-injected %s and never requires a made-up S',key=>{
   expect(initialAttemptReadSchema.safeParse({...read,[key]:'forged'}).success).toBe(false);
   expect(initialAttemptReconcileSchema.safeParse({...command,[key]:'forged'}).success).toBe(false);
   expect(initialAttemptReconcileSchema.parse(command)).toEqual(command);
