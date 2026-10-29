@@ -6,6 +6,7 @@ import { actionAttempt, assessmentWorkRevision, workItem } from '../../database/
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import { canonicalJson, parseTaskEnvelope } from './action-attempt-envelope';
 import { automaticWorkItemTaskLease } from './automatic-work-item-attempt-lease';
+import { parseAilyStageOverall } from '../canonical-host/program-controlled-assessment';
 
 type Owner = typeof workItem.$inferSelect;
 type Attempt = typeof actionAttempt.$inferSelect & { hasPersistedResult: boolean };
@@ -186,12 +187,15 @@ export class InitialExpiredAttemptRepository {
     if (!Array.isArray(activity)) throw initialAttemptConflict('ACTIVITY_UNKNOWN');
     const activityUnknown = activity.some(item => !item || typeof item !== 'object' || Array.isArray(item) ||
       !['ASSESSMENT_SOURCES_READ','ASSESSMENT_WORK_READ','ASSESSMENT_KNOWLEDGE_OBSERVED',
-        'ASSESSMENT_PROGRAM_PROGRESS','ASSESSMENT_CONSUMER_STOPPED'].includes(String(item.kind)));
+        'ASSESSMENT_PROGRAM_PROGRESS','ASSESSMENT_CONSUMER_STOPPED','AILY_STAGE_OVERALL'].includes(String(item.kind)) ||
+      (item.kind === 'AILY_STAGE_OVERALL' && (() => {try {
+        return parseAilyStageOverall(item.receipt).sourceAssessment.actionAttemptId !== row.attemptId;
+      } catch {return true;}})()));
     const projectionReferencesAttempt = projected?.baseRules?.actionAttemptId === row.attemptId ||
       projected?.overallSynthesis?.actionAttemptId === row.attemptId ||
       projected?.overallSynthesis?.sourceAssessment?.actionAttemptId === row.attemptId;
     const savedOrCommitting = coverage.saved.length > 0 || row.hasPersistedResult || row.commitStartedAt !== null ||
-      row.projectionApplied || projectionReferencesAttempt || activity.some(item => item?.kind === 'ASSESSMENT_WORK_READ');
+      row.projectionApplied || projectionReferencesAttempt || activity.some(item => item?.kind === 'ASSESSMENT_WORK_READ' || item?.kind === 'AILY_STAGE_OVERALL');
     const alreadyTimedOut = row.status === 'TIMED_OUT' && row.terminalReason === TIMEOUT && !!row.completedAt &&
       !!row.deadlineAt && row.deadlineAt <= row.completedAt && !savedOrCommitting;
     const leaseProtection = initialAttemptLeaseProtection(row, primary, binding.automatic, grant, now);

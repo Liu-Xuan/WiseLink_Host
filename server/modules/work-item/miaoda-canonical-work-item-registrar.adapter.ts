@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import type { SQL } from 'drizzle-orm';
 
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import type { CanonicalJobAidWorkRevisionGuard, CanonicalWorkItemRegistrarPort } from '../canonical-host/canonical-host.types';
@@ -26,6 +27,7 @@ export class MiaodaCanonicalWorkItemRegistrarAdapter implements CanonicalWorkIte
     applicabilityInputGuard?: { tenantId: string };
     jobAidWorkRevisionGuard?: CanonicalJobAidWorkRevisionGuard;
     nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
+    writePredicate?: SQL;
   }): Promise<CanonicalWorkItemProjection> {
     return this.repository.compareAndSet(input);
   }

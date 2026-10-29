@@ -26,6 +26,7 @@ export interface JobAidWorkingObservation {
   currentInputChanged: boolean;
   overallStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
   overallBasedOnWorkRevisionRef: string | null;
+  stageOverall?: JobAidWorkingReadModel['stageOverall'];
 }
 
 export interface ProjectionContext {
@@ -165,7 +166,8 @@ export function adaptJobAidWorkingRead(
       : read.overallStatus === 'STALE' ? {label:'Host 判定综合关系需核对',tone:'wait'} : '尚无可比关系',
     business:'本视图未读取正式业务状态',
     coverageScope:'仅工作修订与综合消费关系；不代表全部业务事实已纳入',
-    summary:differentWork ? '综合采用另一工作修订；下一步在评估入口核对差额及可用更新操作' : read.overallStatus === 'CURRENT' ? '综合与当前工作修订一致' : '综合关系按 Host 观察显示',
+    summary:[differentWork ? '综合采用另一工作修订；下一步在评估入口核对差额及可用更新操作' : read.overallStatus === 'CURRENT' ? '综合与当前工作修订一致' : '综合关系按 Host 观察显示',
+      read.stageOverall?.status === 'CURRENT' ? `工作 ${read.stageOverall.receipt.workRevision} 的阶段综合可读；不表示任务最终完成或自动处理已确认` : ''].filter(Boolean).join('。'),
     requestCoverage:overallExecution ? '本次读取返回的综合尝试，有限观察' : '本次读取未提供综合尝试',
     requestCompleteness:overallExecution ? 'partial' : 'not_provided',
     requests:overallExecution ? [{
@@ -174,7 +176,7 @@ export function adaptJobAidWorkingRead(
       next:'查看综合面板；该入口不定位单条尝试，也不自动重试',navigationLabel:'查看综合面板',
       createdAt:overallExecution.createdAt,startedAt:overallExecution.startedAt ?? undefined,
       completedAt:overallExecution.completedAt ?? undefined,
-    }] : [],outputs:[],inputRefs:basedOn ? [{label:'综合实际采用的工作',ref:basedOn}] : [],
+    }] : [],outputs:read.stageOverall ? [{label:`阶段综合 · 工作 ${read.stageOverall.receipt.workRevision}`,ref:read.stageOverall.receipt.artifact.ref}] : [],inputRefs:basedOn ? [{label:'综合实际采用的工作',ref:basedOn}] : [],
   };
   const companyRecords: RuntimeNode = {
     id: 'business.company_records', label: 'TDMS 公司记录', group: '公司与机队事实', kind: 'fact',

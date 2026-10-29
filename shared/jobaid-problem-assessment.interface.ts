@@ -7,7 +7,18 @@ import type {
 import type {
   CanonicalCommonAssessmentContext,
   UnifiedPackageArtifactDescriptor,
+  CanonicalOpenClawOverallProjection,
 } from './api.interface';
+
+/** A saved revision's independent projection; it does not finish its task. */
+export interface AilyStageOverallReceipt {
+  schemaVersion: 'wiselink.aily-stage-overall.v1';
+  workRevisionRef: string;
+  workRevision: number;
+  sourceAssessment: NonNullable<CanonicalOpenClawOverallProjection['sourceAssessment']>;
+  artifact: UnifiedPackageArtifactDescriptor;
+  observedAt: string;
+}
 
 export const JOBAID_PROBLEM_WORK_SCHEMA =
   'wiselink.jobaid-problem-work.v3' as const;
@@ -355,6 +366,8 @@ export interface JobAidWorkingReadModel {
   /** Optional for compatibility with Host versions before activity projection. */
   activity?: JobAidActivityRead | null;
   currentInputChanged: boolean;
+  /** Independently saved/read stage; it grants neither final nor queue ACK. */
+  stageOverall?: {status: 'CURRENT' | 'STALE'; receipt: AilyStageOverallReceipt; readingResult: AssessmentReadingResult} | null;
   overallStatus: 'NOT_AVAILABLE' | 'CURRENT' | 'STALE';
   overallBasedOnWorkRevisionRef: string | null;
 }

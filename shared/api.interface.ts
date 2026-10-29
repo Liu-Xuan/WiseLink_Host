@@ -2954,6 +2954,29 @@ export interface CanonicalInitialAnalysisReadModel {
   documentVersionId: string;
   /** Chosen on intake, including before the first model attempt starts. */
   analysisModel?: CanonicalExecutionModelSelection | null;
+  /** Present only for the trusted exact enterprise trial scope; GET is read-only. */
+  ailyTaskAdmission?: CanonicalAilyTaskAdmission;
+  /** Original enterprise request pointer; refresh never dispatches or claims. */
+  ailyRecoveryRequest?: {
+    requestId: string;
+    operation: 'EVALUATE_JOBAID';
+    executionMode: 'AILY_AGENT_V1';
+    modelRef: string;
+    modelName: string;
+  };
+  /** Background progress only; this identity is not a browser continuation command. */
+  ailyBackgroundRequest?: {
+    requestId: string;
+    attemptRef: string;
+    operation: 'EVALUATE_JOBAID';
+    executionMode: 'AILY_AGENT_V1';
+    modelRef: string;
+    modelName: string;
+    hostStatus: string;
+    postState: 'STARTED' | 'ACCEPTED' | 'UNKNOWN' | null;
+    remoteStatus?: string;
+    observationCheckedAt?: string;
+  };
   status: AilyInitialAnalysisStatus['status'];
   nextOperation: AilyInitialAnalysisOperation | null;
   continuationOperations?: CanonicalInitialAnalysisContinuationRequest['operation'][];
@@ -2980,7 +3003,29 @@ export interface CanonicalInitialAnalysisReadModel {
 
 export type CanonicalAssessmentExecutionMode =
   | 'PROGRAM_CONTROLLED_V1'
-  | 'PROGRAM_AGENT_V1';
+  | 'PROGRAM_AGENT_V1'
+  | 'AILY_AGENT_V1';
+
+export type CanonicalProgramAssessmentExecutionMode = Exclude<CanonicalAssessmentExecutionMode, 'AILY_AGENT_V1'>;
+
+/** Exact-work-item admission only; a model catalog never grants this route. */
+export interface CanonicalAilyTaskAdmission {
+  executionMode: 'AILY_AGENT_V1';
+  modelRef: string;
+  modelName: string;
+  available: boolean;
+  reason?: string;
+}
+
+/** Provider acceptance/observation, separate from Host work or task completion. */
+export interface CanonicalAilyTaskDispatchReceipt {
+  attemptRef: string;
+  dispatchStatus: 'ACCEPTED' | 'UNKNOWN';
+  chatId: string | null;
+  remoteSessionId: string | null;
+  remoteStatus?: string;
+  errorCode?: string;
+}
 
 /** Host-sealed policy for one new Agent attempt; null removes count hard caps. */
 export interface CanonicalProgramAgentPolicy {
@@ -3007,6 +3052,7 @@ export interface CanonicalInitialAnalysisContinuationReceipt {
   status: string;
   replayed: boolean;
   candidateOnly: true;
+  ailyDispatch?: CanonicalAilyTaskDispatchReceipt;
 }
 
 /** Exact, authorized INITIAL control facts. No lease secret or result body. */

@@ -9,6 +9,8 @@ import {
 import { JobAidWorkRepository } from '../../server/modules/canonical-host/jobaid-work.repository';
 import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { JOBAID_PROBLEM_WORK_SCHEMA, type JobAidProblemWorkContent } from '@shared/jobaid-problem-assessment.interface';
+import { sql,type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 const TOKEN_OLD = 'b1686364-7ee9-4ca1-a3aa-0b62794cb436';
 const TOKEN_CURRENT = 'a8e9a6e1-d1ab-4a58-9290-3634685d684c';
@@ -42,6 +44,56 @@ const content: JobAidProblemWorkContent = {
   historyReview: { required: false, priorAssessmentRefs: [], engineeringDocumentRefs: [],
     coverage: 'NOT_REQUIRED', limitation: null },
 };
+
+test('enterprise SAVE evaluates its current identity predicate in the actual INSERT after the earlier authorization read',async()=>{
+  const current=currentAttempt();const search={enqueuePending:jest.fn()};const statements:string[]=[];
+  const rows=(table:unknown):unknown[]=>table===identitySubjectMapping?[{id:'synthetic-mapping'}]:table===actionAttempt?[current]:
+    table===assessmentWorkRevision?[]:[{workItemId:current.workItemId,documentVersionId:current.documentVersionId,revision:3,
+      projectionJson:JSON.stringify({source:{sourceArtifactId:'ART-LEASE',sourceFileSha256:SOURCE_SHA}})}];
+  let authorizationRead=false;
+  const execute=jest.fn(async(statement:SQL)=>{
+    const query=new PgDialect().sqlToQuery(statement);statements.push(query.sql);
+    if(query.sql.includes('INSERT INTO')){
+      expect(authorizationRead).toBe(true);
+      expect(query.sql).toContain('WHERE (EXISTS');expect(query.sql).toContain('identity_subject_mapping');
+      expect(query.sql).toContain('clock_timestamp()');expect(query.params).toContain('synthetic-mapping');
+      // The isolated database evaluates this condition after the earlier read
+      // was revoked. Zero RETURNING rows means no save or search projection.
+      return [];
+    }
+    authorizationRead=true;return [{allowed:true}];
+  });
+  const database={execute,select:()=>({from:(table:unknown)=>({where:()=>({limit:async()=>rows(table),for:async()=>rows(table),
+    orderBy:()=>({limit:async()=>rows(table)})})})}),insert:jest.fn()} as unknown as PostgresJsDatabase;
+  const repository=new JobAidWorkRepository(database,{} as never,search as never);
+  await expect(repository.save({row:current,actorUserId:current.actorUserId,
+    fence:{principalId:current.leaseOwner!,leaseToken:current.leaseToken!,leaseGeneration:current.leaseGeneration},
+    sourceBindings:[{kind:'SOURCE_FILE',workItemId:current.workItemId,documentVersionId:current.documentVersionId!,artifactRef:'ART-LEASE',artifactSha256:SOURCE_SHA}],
+    requestId:'SAVE-enterprise',expectedWorkRevision:0,command:{expectedWorkRevision:0,work:{}},content,
+    writePredicate:sql`EXISTS (SELECT 1 FROM ${identitySubjectMapping} WHERE ${identitySubjectMapping.id}=${'synthetic-mapping'}
+      AND ${identitySubjectMapping.status}='ACTIVE') AND ${new Date('2099-01-01')}>clock_timestamp()`},database))
+    .rejects.toThrow('AILY_DOMAIN_AUTHORIZATION_CHANGED');
+  expect(statements.some(statement=>statement.includes('INSERT INTO'))).toBe(true);
+  expect(search.enqueuePending).not.toHaveBeenCalled();expect(database.insert).not.toHaveBeenCalled();
+});
+
+test('enterprise original-key lookup proves owner/RLS coverage and absence in one statement',async()=>{
+  const row=currentAttempt();let covered=false;
+  const limit=jest.fn(async()=>[{covered,saved:null}]);
+  const where=jest.fn((_condition:unknown)=>({limit}));
+  const leftJoin=jest.fn((_table:unknown,_condition:SQL)=>({where}));
+  const select=jest.fn((_columns:unknown)=>({from:()=>({leftJoin})}));
+  const database={select,execute:jest.fn()};
+  const repository=new JobAidWorkRepository(database as never,{withActorScope:async(_actor:string,operation:()=>Promise<unknown>)=>operation()} as never,{} as never);
+  const input={row,actorUserId:row.actorUserId,requestId:'SAVE-original',command:{},readPredicate:sql`synthetic_current_identity`};
+  await expect(repository.readAilySave(input)).rejects.toThrow('AILY_SAVE_COVERAGE_UNKNOWN');
+  expect(select).toHaveBeenCalledTimes(1);expect(database.execute).not.toHaveBeenCalled();
+  const projection=select.mock.calls[0][0] as unknown as {covered:SQL};
+  const proof=new PgDialect().sqlToQuery(projection.covered);
+  expect(proof.sql).toContain('engineering_matter_work_item_owned_by_actor');expect(proof.sql).toContain('synthetic_current_identity');
+  covered=true;expect(await repository.readAilySave(input)).toBeNull();
+  expect(new PgDialect().sqlToQuery(leftJoin.mock.calls[0][1]).params).toContain('SAVE-original');
+});
 
 test.each([
   ['old token', TOKEN_OLD, 2],

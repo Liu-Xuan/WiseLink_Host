@@ -2,12 +2,14 @@ import { taskModelSelection } from '../model-settings/canonical-model-catalog';
 import { randomUUID } from 'node:crypto';
 
 import { Injectable } from '@nestjs/common';
+import type { SQL } from 'drizzle-orm';
+import type { AilyFinalCommitGuard } from '../canonical-host/aily-executor-run';
 import type { ReviewRuntimeActivity } from '@shared/api.interface';
 import { isReviewRuntimeActivity } from './review-evidence-activity';
 
 import { actionAttempt } from '../../database/schema';
 import { CanonicalModelSettingsService } from '../model-settings/canonical-model-settings.service';
-import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
+import { parseExecutionModel, readStoredExecutionModel } from '../model-settings/canonical-execution-model';
 import {
   canonicalJson,
   parseResultEnvelope,
@@ -66,6 +68,10 @@ export class ActionAttemptLifecycleService {
     now: Date,
   ): Promise<ReserveActionAttemptResult> {
     assertReservationInput(input);
+    if (input.ailyExecution && (input.programControlled || input.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+        !['aily/glm-5.3', 'aily/deepseek-v4-pro'].includes(input.ailyExecution.model.modelRef) ||
+        !input.ailyExecution.intakeRequestId?.trim() || !/^service:[A-Za-z0-9:_-]{1,140}$/u.test(input.ailyExecution.principalId)))
+      throw conflict('ACTION_ATTEMPT_AILY_REQUEST_INVALID');
     if (input.programControlled && input.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION')
       throw conflict('ACTION_ATTEMPT_PROGRAM_REQUEST_INVALID');
     // Validate the requested route, but do not consult new settings before
@@ -97,7 +103,7 @@ export class ActionAttemptLifecycleService {
       };
     }
 
-    if (!input.cancelledInitialContinuation) await this.repository.terminalizeExpiredActiveForSuccessor({
+    if (!input.cancelledInitialContinuation && !input.ailyExecution) await this.repository.terminalizeExpiredActiveForSuccessor({
       workItemId: input.workItemId,
       actionType: input.taskType,
       tenantId: input.tenantId,
@@ -119,7 +125,9 @@ export class ActionAttemptLifecycleService {
       input.deadlineAt ??
       new Date(now.getTime() + ACTION_ATTEMPT_DEFAULT_DEADLINE_MS);
     const priority = input.priority ?? DEFAULT_PRIORITY;
-    const executionModel = input.programControlled
+    const executionModel = input.ailyExecution
+      ? parseExecutionModel({...input.ailyExecution.model, selectedAt: now.toISOString()})
+      : input.programControlled
       ? await this.modelSettings.captureForExplicitProgram(input.tenantId, input.programControlled.modelRef, now, input.programControlled.executionMode)
       : await this.modelSettings.captureForWorkItem(input.tenantId, input.workItemId, now);
     const modelInput = await input.buildModelInput(identity, executionModel);
@@ -176,6 +184,7 @@ export class ActionAttemptLifecycleService {
       } satisfies typeof actionAttempt.$inferInsert,
       input.initialKnowledgeSession,
       input.cancelledInitialContinuation,
+      input.ailyExecution,
     );
     assertReplay(reservation.row, input);
     return {
@@ -350,6 +359,7 @@ export class ActionAttemptLifecycleService {
       workItemId: string;
       principalId: string;
       reviewProgress?: Omit<ReviewRuntimeActivity, 'observedAt'>;
+      writePredicate?: SQL;
     },
   ): Promise<{ leaseExpiresAt: string }> {
     const row = await this.readControlScoped(input);
@@ -394,6 +404,7 @@ export class ActionAttemptLifecycleService {
       now,
       leaseMs: ACTION_ATTEMPT_LEASE_MS,
       ...(reviewActivity ? { reviewActivity } : {}),
+      ...(input.writePredicate ? {writePredicate: input.writePredicate} : {}),
     });
     if (!updated)
       throw leaseConflict('ACTION_ATTEMPT_HEARTBEAT_FENCE_REJECTED');
@@ -412,6 +423,8 @@ export class ActionAttemptLifecycleService {
       result: unknown;
       failClosedWithoutRejectionMutation?: boolean;
       expectedReviewActivityJson?: string | null;
+      writePredicate?: SQL;
+      ailyFinal?: AilyFinalCommitGuard;
     },
   ): Promise<PreparedActionAttemptCommit> {
     let row = await this.requiredScoped(input.attemptRef, input);
@@ -544,6 +557,8 @@ export class ActionAttemptLifecycleService {
     }
     const committing = await this.repository.markCommitting({
       attemptId: row.attemptId,
+      ...(input.writePredicate ? {writePredicate: input.writePredicate} : {}),
+      ...(input.ailyFinal ? {ailyFinal:input.ailyFinal} : {}),
       ...(input.expectedReviewActivityJson===undefined?{}:{expectedReviewActivityJson:input.expectedReviewActivityJson}),
       automaticLeaseRequired: input.automaticLeaseRequired,
       leaseToken: input.leaseToken,
@@ -815,6 +830,12 @@ export class ActionAttemptLifecycleService {
   ): Promise<OpenClawLeaseClaim> {
     let row = initial;
     assertReplay(row, input);
+    if (input.ailyExecution && (row.cancelRequestedAt || !row.deadlineAt || row.deadlineAt <= now ||
+        !['QUEUED', 'RUNNING'].includes(row.status) ||
+        (row.status === 'QUEUED' && (row.claimCount !== 0 || row.leaseGeneration !== 0)) ||
+        (row.status === 'RUNNING' && (row.leaseOwner !== input.leaseOwner || !row.leaseToken ||
+          !row.leaseExpiresAt || row.leaseExpiresAt <= now))))
+      throw conflict('ACTION_ATTEMPT_AILY_NOT_CLAIMABLE');
     const refreshExpiredUnclaimedDeadline = canRefreshExpiredUnclaimedDeadline(
       row,
       input,
@@ -968,6 +989,7 @@ export class ActionAttemptLifecycleService {
         leaseSlot,
         now,
         leaseMs: ACTION_ATTEMPT_LEASE_MS,
+        ...(input.ailyExecution ? {ailyExecution: true as const} : {}),
       });
       if (claimed) return leaseClaim(claimed);
     }
@@ -1097,8 +1119,9 @@ function assertReplay(
   input: ReserveActionAttemptInput,
 ): void {
   const task = validatedTask(row);
-  if (task.modelInput.executionMode !== (input.programControlled
+  if (task.modelInput.executionMode !== (input.ailyExecution ? 'AILY_AGENT_V1' : input.programControlled
     ? input.programControlled.executionMode ?? 'PROGRAM_CONTROLLED_V1' : undefined) ||
+      (input.ailyExecution && task.executionModel?.modelRef !== input.ailyExecution.model.modelRef) ||
       (input.programControlled && (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
         task.executionModel?.modelRef !== input.programControlled.modelRef)))
     throw conflict('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');

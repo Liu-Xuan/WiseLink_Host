@@ -138,7 +138,8 @@ describe('program candidate Host preview', () => {
     expect(result).toMatchObject({ status: 'VALID', violations: [], omittedViolationCount: 0,
       binding: { attemptRef: h.row.operationRef, workItemId: h.row.workItemId,
         expectedWorkRevision: 0, previousWorkRevisionRef: null } });
-    expect(h.authorizedAttempt).toHaveBeenNthCalledWith(1, h.row.operationRef, 'SAVE_ASSESSMENT_WORK', h.row.workItemId);
+    expect(h.authorizedAttempt).toHaveBeenNthCalledWith(1, h.row.operationRef, 'SAVE_ASSESSMENT_WORK', h.row.workItemId,undefined);
+    expect(h.authorizedAttempt).toHaveBeenNthCalledWith(2, h.row.operationRef, 'SAVE_ASSESSMENT_WORK', h.row.workItemId,undefined);
     expect(h.authorizedAttempt).toHaveBeenCalledTimes(2);
     expect(h.readValidationSnapshot).toHaveBeenCalledTimes(2);
     expect(h.assertSourcesAuthorized).toHaveBeenCalledTimes(2);

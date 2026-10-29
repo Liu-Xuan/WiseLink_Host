@@ -11,6 +11,8 @@ describe('FeishuDriveApplicationPageFetcher', () => {
     process.env.FEISHU_OAUTH_CLIENT_SECRET = 'secret';
   });
 
+  afterEach(() => { jest.restoreAllMocks(); });
+
   afterAll(() => {
     restore('FEISHU_OAUTH_CLIENT_ID', originalId);
     restore('FEISHU_OAUTH_CLIENT_SECRET', originalSecret);
@@ -108,6 +110,80 @@ describe('FeishuDriveApplicationPageFetcher', () => {
       'DRIVE_APPLICATION_IDENTITY_NOT_CONFIGURED',
     );
     expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it('keeps the 15 second HTTP protection for token and Drive requests', async () => {
+    const timeout: jest.SpyInstance<AbortSignal, [number]> = jest.spyOn(AbortSignal, 'timeout');
+    const fetchImpl: jest.MockedFunction<typeof globalThis.fetch> = jest.fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 0, tenant_access_token: 'tenant-token', expire: 7200 }))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { files: [], has_more: false } }));
+    globalThis.fetch = fetchImpl;
+    const fetcher: FeishuDriveApplicationPageFetcher = new FeishuDriveApplicationPageFetcher();
+
+    await fetcher.list('folder');
+
+    expect(timeout.mock.calls).toEqual([[15_000], [15_000]]);
+    expect(fetchImpl.mock.calls[0]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+    expect(fetchImpl.mock.calls[1]?.[1]?.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('uses new credentials after configuration changes instead of a cached token', async () => {
+    const fetchImpl: jest.MockedFunction<typeof globalThis.fetch> = jest.fn()
+      .mockResolvedValueOnce(jsonResponse({ code: 0, tenant_access_token: 'original-token', expire: 7200 }))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { files: [], has_more: false } }))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, tenant_access_token: 'rotated-token', expire: 7200 }))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { files: [], has_more: false } }))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, tenant_access_token: 'other-app-token', expire: 7200 }))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, data: { files: [], has_more: false } }));
+    globalThis.fetch = fetchImpl;
+    const fetcher: FeishuDriveApplicationPageFetcher = new FeishuDriveApplicationPageFetcher();
+
+    await fetcher.list('folder');
+    process.env.FEISHU_OAUTH_CLIENT_SECRET = 'rotated-secret';
+    await fetcher.list('folder');
+    process.env.FEISHU_OAUTH_CLIENT_ID = 'another-product';
+    await fetcher.list('folder');
+    delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
+    await expect(fetcher.list('folder')).rejects.toThrow('DRIVE_APPLICATION_IDENTITY_NOT_CONFIGURED');
+
+    expect(fetchImpl).toHaveBeenCalledTimes(6);
+    expect(JSON.parse(String(fetchImpl.mock.calls[2]?.[1]?.body))).toEqual({
+      app_id: 'cli_product', app_secret: 'rotated-secret',
+    });
+    expect(JSON.parse(String(fetchImpl.mock.calls[4]?.[1]?.body))).toEqual({
+      app_id: 'another-product', app_secret: 'rotated-secret',
+    });
+    expect(fetchImpl.mock.calls[3]?.[1]?.headers).toEqual({ Authorization: 'Bearer rotated-token' });
+    expect(fetchImpl.mock.calls[5]?.[1]?.headers).toEqual({ Authorization: 'Bearer other-app-token' });
+  });
+
+  it('retains token endpoint status and code without making a Drive request on failure', async () => {
+    const fetchImpl: jest.MockedFunction<typeof globalThis.fetch> = jest.fn().mockResolvedValueOnce(
+      jsonResponse({ code: 99991672, msg: 'permission_denied' }, 403),
+    );
+    globalThis.fetch = fetchImpl;
+    const fetcher: FeishuDriveApplicationPageFetcher = new FeishuDriveApplicationPageFetcher();
+
+    await expect(fetcher.list('folder')).rejects.toMatchObject({
+      status: 403, code: 99991672, message: 'FEISHU_DRIVE_REQUEST_FAILED',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains the Drive malformed-response and request-failure labels', async () => {
+    const fetchImpl: jest.MockedFunction<typeof globalThis.fetch> = jest.fn()
+      .mockResolvedValueOnce(jsonResponse([]))
+      .mockResolvedValueOnce(jsonResponse({ code: 0, expire: 7200 }));
+    globalThis.fetch = fetchImpl;
+    const fetcher: FeishuDriveApplicationPageFetcher = new FeishuDriveApplicationPageFetcher();
+
+    await expect(fetcher.list('folder')).rejects.toMatchObject({
+      status: 200, code: null, message: 'DRIVE_HTTP_RESPONSE_INVALID',
+    });
+    await expect(fetcher.list('folder')).rejects.toMatchObject({
+      status: 200, code: 0, message: 'FEISHU_DRIVE_REQUEST_FAILED',
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 });
 

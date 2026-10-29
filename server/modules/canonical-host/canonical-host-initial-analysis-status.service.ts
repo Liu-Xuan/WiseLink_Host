@@ -1,4 +1,8 @@
 import { isProgramAssessmentMode } from './program-agent-policy';
+import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
+import { preflightCanonicalHostOpenClawResult } from './canonical-host-openclaw-runtime-policy';
+import { AilyTaskAdmissionService } from './aily-task-admission';
+import { assertAilyRequestTaskBinding, parseAilyExecutorRun } from './aily-executor-run';
 import {
   matchesInitialContinuationOwner,
   readCancelledInitialContinuation,
@@ -10,7 +14,7 @@ import { parseJobAidProblemTask } from './jobaid-problem-task';
 import { jobAidReadingResult } from './jobaid-problem-work';
 import { canonicalJson, parseTaskEnvelope } from '../action-attempt/action-attempt-envelope';
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
-import { ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Inject, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 import { SessionResolver } from '../identity/session-resolver.service';
 import { JobAidWorkRepository } from './jobaid-work.repository';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
@@ -98,6 +102,7 @@ export class CanonicalHostInitialAnalysisStatusService {
     @Optional() private readonly originalReader?: UnifiedReaderService,
     @Optional() private readonly applicabilityInputs?: CanonicalHostApplicabilityInputProducer,
     @Optional() private readonly sessions?: SessionResolver,
+    @Optional() private readonly ailyAdmission?: AilyTaskAdmissionService,
   ) {}
 
   async project(input: {
@@ -192,6 +197,12 @@ export class CanonicalHostInitialAnalysisStatusService {
         if (!record || !record.taskEnvelopeJson || !this.originalWork) throw new Error('PROGRAM_RECORD_MISSING');
         const task = parseTaskEnvelope(record.taskEnvelopeJson);
         const prepared = parseJobAidProblemTask(task);
+        if (prepared.executionMode === 'AILY_AGENT_V1') {
+          const run = await new ActionAttemptRepository(this.db).readAilyExecutorRun(record);
+          if (!run || !record.resultEnvelopeJson || !record.resultContentHash) throw new Error('PROGRAM_RECORD_MISSING');
+          const validated = preflightCanonicalHostOpenClawResult({row:record,result:JSON.parse(record.resultEnvelopeJson) as unknown,ailyRun:run});
+          if (validated.result.contentHash !== record.resultContentHash) throw new Error('PROGRAM_RECORD_MISSING');
+        }
         const savedIdentity = {tenantId: input.tenantId, workItemId: input.workItem.workItemId,
           workRevisionRef: deterministicOverall.basedOnJobAidWorkRevisionRef!};
         // A later SAVE may make this projection stale; it does not invalidate
@@ -204,11 +215,11 @@ export class CanonicalHostInitialAnalysisStatusService {
           !['COMMITTING', 'SUCCEEDED'].includes(record.status) ||
           (record.status === 'SUCCEEDED' && !record.projectionApplied) ||
           record.documentVersionId !== input.workItem.source.documentVersionId ||
-          !isProgramAssessmentMode(prepared.executionMode) || task.actionAttemptId !== record.attemptId ||
+          (!isProgramAssessmentMode(prepared.executionMode) && prepared.executionMode !== 'AILY_AGENT_V1') || task.actionAttemptId !== record.attemptId ||
           task.inputHash !== record.taskInputHash || task.tenantId !== input.tenantId ||
           task.workItemId !== input.workItem.workItemId ||
           savedWork.workRevisionRef !== deterministicOverall.basedOnJobAidWorkRevisionRef ||
-          canonicalJson(exactProgramWorkRead(record, savedWork)) !== canonicalJson(deterministicOverall.sourceAssessment) ||
+          canonicalJson(exactProgramWorkRead(record, savedWork, deterministicOverall.sourceAssessment.readObservedAt)) !== canonicalJson(deterministicOverall.sourceAssessment) ||
           canonicalJson(jobAidReadingResult(savedWork)) !== canonicalJson(deterministicOverall.readingResult);
         invalidDeterministicOverall ||= invalidSourceAssessment;
         if (!invalidSourceAssessment) sourceAssessmentAttempt = {
@@ -529,6 +540,29 @@ export class CanonicalHostInitialAnalysisStatusService {
     actorUserId: string;
   }): Promise<CanonicalInitialAnalysisReadModel> {
     const status = await this.project({...input,browserActorUserId:input.actorUserId});
+    let ailyTaskAdmission = this.ailyAdmission?.project(input.tenantId, input.workItem);
+    let ailyRecoveryRequest: CanonicalInitialAnalysisReadModel['ailyRecoveryRequest'];
+    let ailyBackgroundRequest: CanonicalInitialAnalysisReadModel['ailyBackgroundRequest'];
+    if (this.ailyAdmission?.matches(input.tenantId, input.workItem)) {
+      let scopeReady = false;
+      try { this.ailyAdmission.requireScope(input.tenantId, input.workItem); scopeReady = true; }
+      catch (error) {
+        if (!(error instanceof ConflictException && error.message === 'INITIAL_CONTINUATION_AILY_NOT_CONFIGURED')) throw error;
+      }
+      if (scopeReady && await this.browserOwnsCurrentWorkItem(input) && await this.hasExactAutoProcessingGrant(input)) {
+        try {
+          const pointer = await this.sessions!.withVerifiedReviewServiceSql(
+            () => this.readAilyRecoveryRequest(input), input.actorUserId);
+          ailyRecoveryRequest = pointer?.ailyRecoveryRequest;
+          ailyBackgroundRequest = pointer?.ailyBackgroundRequest;
+        }
+        catch (error) {
+          if (!error || typeof error !== 'object' || !('code' in error) || error.code !== '42703') throw error;
+          ailyTaskAdmission = {executionMode: 'AILY_AGENT_V1', modelRef: '', modelName: '', available: false,
+            reason: 'INITIAL_CONTINUATION_AILY_STORAGE_UNAVAILABLE'};
+        }
+      }
+    }
     const codexScope = canonicalCodexWorkItemScope();
     const executorAllowsContinuation = !codexScope ||
       (codexScope.workItemId === input.workItem.workItemId && codexScope.requestId === input.workItem.requestId);
@@ -598,6 +632,8 @@ export class CanonicalHostInitialAnalysisStatusService {
         workItemId: input.workItem.workItemId,
       }) ||
         (await this.hasExactAutoProcessingGrant(input)));
+    const ailyAutomatic = !!ailyTaskAdmission?.available && !active && status.status !== 'NOT_READY' &&
+      await this.browserOwnsCurrentWorkItem(input) && await this.hasExactAutoProcessingGrant(input);
     const canTranslate =
       automatic && isParsedPackageReady(input.workItem) && process.env.WL_TRANSLATION_V2_ENABLED === '1';
     const continuationOperations: NonNullable<
@@ -612,14 +648,15 @@ export class CanonicalHostInitialAnalysisStatusService {
     )
       continuationOperations.push('TRANSLATE');
     if (
-      (automatic || !!cancelled) &&
+      (automatic || ailyAutomatic || !!cancelled) &&
       process.env.WL_JOBAID_PROBLEM_V2_ENABLED === '1' &&
       (input.workItem.classification.normalizedFamily !== 'SB' ||
         input.workItem.classification.status === 'CONFIRMED')
     ) {
       if (
+        (!ailyTaskAdmission || (ailyTaskAdmission.available && ailyAutomatic)) &&
         (['FAILED', 'CONFLICT'].includes(status.stages.jobAid.status) ||
-          (automatic && status.stages.jobAid.status === 'PENDING')) &&
+          ((automatic || ailyAutomatic) && status.stages.jobAid.status === 'PENDING')) &&
         canContinueInitialStage(
           status.stages,
           'EVALUATE_JOBAID',
@@ -682,6 +719,9 @@ export class CanonicalHostInitialAnalysisStatusService {
       documentVersionId: status.documentVersionId,
       status: status.status,
       analysisModel: readStoredExecutionModel(root?.model),
+      ...(ailyTaskAdmission ? {ailyTaskAdmission} : {}),
+      ...(ailyRecoveryRequest ? {ailyRecoveryRequest} : {}),
+      ...(ailyBackgroundRequest ? {ailyBackgroundRequest} : {}),
       nextOperation: status.nextOperation,
       continuationOperations,
       ...(queuedContinuationRequest ? {queuedContinuationRequest} : {}),
@@ -696,6 +736,63 @@ export class CanonicalHostInitialAnalysisStatusService {
       },
       candidateOnly: true,
     };
+  }
+
+  /** Internal selector already holds the verified service/owner SQL context. */
+  async readAilyBackgroundRequest(input: {tenantId: string; actorUserId: string;
+    workItem: CanonicalWorkItemProjection; expectedAttemptRef: string}) {
+    this.ailyAdmission!.requireScope(input.tenantId, input.workItem);
+    return (await this.readAilyRecoveryRequest(input))?.ailyBackgroundRequest;
+  }
+
+  private async readAilyRecoveryRequest(input: {tenantId: string; actorUserId: string;
+    workItem: CanonicalWorkItemProjection; expectedAttemptRef?: string}):
+    Promise<Pick<CanonicalInitialAnalysisReadModel, 'ailyRecoveryRequest' | 'ailyBackgroundRequest'> | undefined> {
+    const rows = await this.db.execute<{taskEnvelopeJson: string; taskInputHash: string; actorUserId: string;
+      actionType: string; idempotencyKey: string; operationRef: string; attemptId: string; leaseGeneration: number;
+      executionModelJson: string; status: string; run: unknown}>(sql`
+      SELECT task_envelope_json AS "taskEnvelopeJson",task_input_hash AS "taskInputHash",actor_user_id AS "actorUserId",
+        action_type AS "actionType",idempotency_key AS "idempotencyKey",operation_ref AS "operationRef",attempt_id AS "attemptId",
+        lease_generation AS "leaseGeneration",execution_model_json AS "executionModelJson",status,executor_run_json AS run
+      FROM action_attempt WHERE tenant_id=${input.tenantId} AND work_item_id=${input.workItem.workItemId}
+        AND actor_user_id=${input.actorUserId} AND document_version_id=${input.workItem.source.documentVersionId}
+        AND request_origin=${ACTION_ATTEMPT_REQUEST_ORIGIN} AND action_type='OPENCLAW_DYNAMIC_EVALUATION'
+        AND task_envelope_json::jsonb #>> '{modelInput,executionMode}'='AILY_AGENT_V1'
+        AND (executor_run_json IS NULL OR executor_run_json #>> '{scope,intakeRequestId}'=${input.workItem.requestId})
+        ${input.expectedAttemptRef ? sql`AND operation_ref=${input.expectedAttemptRef}` : sql``}
+      ORDER BY attempt_no DESC LIMIT 1`);
+    const row = rows[0];
+    if (!row) return undefined;
+    const task = parseTaskEnvelope(row.taskEnvelopeJson);
+    const model = readStoredExecutionModel(row.executionModelJson);
+    const requestId = continuationRequestId(row, input.workItem);
+    if (!requestId ||
+        !model || !['aily/glm-5.3', 'aily/deepseek-v4-pro'].includes(model.modelRef) ||
+        row.actorUserId !== input.actorUserId || task.modelInput.executionMode !== 'AILY_AGENT_V1' ||
+        task.actionAttemptId !== row.attemptId || task.operationRef !== row.operationRef || task.inputHash !== row.taskInputHash ||
+        task.tenantId !== input.tenantId || task.workItemId !== input.workItem.workItemId ||
+        task.documentVersionId !== input.workItem.source.documentVersionId || task.idempotencyKey !== row.idempotencyKey ||
+        canonicalJson(task.executionModel) !== canonicalJson(model) ||
+        !task.sourceRefs.some(source => source.ref === input.workItem.source.sourceArtifactId &&
+          source.sha256 === canonicalHostBareSha256(input.workItem.source.sourceFileSha256)))
+      throw new Error('INITIAL_CONTINUATION_AILY_RECOVERY_BINDING_CHANGED');
+    assertAilyRequestTaskBinding(requestId, task);
+    const run = parseAilyExecutorRun(row.run);
+    if (run) {
+      const config = this.ailyAdmission!.requireScope(input.tenantId, input.workItem);
+      if (run.requestId !== requestId || run.agentId !== config.agentId ||
+          run.scope.tenantId !== input.tenantId || run.scope.workItemId !== input.workItem.workItemId ||
+          run.scope.intakeRequestId !== input.workItem.requestId || run.scope.principalId !== config.principalId ||
+          run.modelEvidence.selectedModelRef !== model.modelRef || run.leaseGeneration !== row.leaseGeneration)
+        throw new Error('INITIAL_CONTINUATION_AILY_RECOVERY_BINDING_CHANGED');
+    }
+    if (run?.invocation?.purpose === 'BACKGROUND' || requestId.startsWith('original-')) return {ailyBackgroundRequest: {
+      requestId, attemptRef: row.operationRef, operation: 'EVALUATE_JOBAID', executionMode: 'AILY_AGENT_V1',
+      modelRef: model.modelRef, modelName: model.displayName, hostStatus: row.status, postState: run?.post.state ?? null,
+      ...(run?.observation ? {remoteStatus: run.observation.remoteStatus, observationCheckedAt: run.observation.checkedAt} : {}),
+    }};
+    return {ailyRecoveryRequest: {requestId, operation: 'EVALUATE_JOBAID', executionMode: 'AILY_AGENT_V1',
+      modelRef: model.modelRef, modelName: model.displayName}};
   }
 }
 

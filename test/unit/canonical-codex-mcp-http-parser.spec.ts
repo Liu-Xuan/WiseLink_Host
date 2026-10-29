@@ -9,6 +9,8 @@ import type { AddressInfo } from 'node:net';
 import { GlobalExceptionFilter } from '../../server/common/filters/exception.filter';
 import { CanonicalHostOpenClawMcpOpenApiController } from '../../server/modules/canonical-host/canonical-host-openclaw-mcp.openapi.controller';
 import { CanonicalHostOpenClawMcpService } from '../../server/modules/canonical-host/canonical-host-openclaw-mcp.service';
+import { CanonicalHostAilyMcpOpenApiController } from '../../server/modules/canonical-host/canonical-host-aily-mcp.openapi.controller';
+import { CanonicalHostAilyMcpService } from '../../server/modules/canonical-host/canonical-host-aily-mcp.service';
 import { AutomaticWorkItemDispatchService } from '../../server/modules/canonical-host/automatic-work-item-dispatch.service';
 import { CANONICAL_SERVICE_SCOPE_AUTHORIZATION } from '../../server/modules/canonical-host/canonical-service-scope.authorization';
 import { ConfiguredDevelopmentCanonicalServiceScopeAuthorization } from '../../server/modules/canonical-host/configured-development-service-scope.authorization';
@@ -132,10 +134,11 @@ describe('CODEX MCP JSON parser without a fixed application body cap', () => {
   async function start(basePath = '', scopedParser = true): Promise<NestExpressApplication> {
     process.env.CLIENT_BASE_PATH = basePath;
     const module = await Test.createTestingModule({
-      controllers: [CanonicalHostOpenClawMcpOpenApiController, OtherRoutes],
+      controllers: [CanonicalHostOpenClawMcpOpenApiController, CanonicalHostAilyMcpOpenApiController, OtherRoutes],
       providers: [
         { provide: AppLogger, useValue: { log() {}, error() {}, warn() {} } },
         { provide: CanonicalHostOpenClawMcpService, useValue: { handle } },
+        { provide: CanonicalHostAilyMcpService, useValue: { handle } },
         { provide: AutomaticWorkItemDispatchService, useValue: {} },
         { provide: CANONICAL_SERVICE_SCOPE_AUTHORIZATION,
           useValue: new ConfiguredDevelopmentCanonicalServiceScopeAuthorization() },
@@ -188,6 +191,14 @@ describe('CODEX MCP JSON parser without a fixed application body cap', () => {
     expect(result.status).toBe(500);
     expect(result.body).toMatchObject({ error: { stack: expect.stringContaining('PayloadTooLargeError') } });
     expect(handle).not.toHaveBeenCalled();
+  });
+
+  it.each([false,true])('preserves a full enterprise candidate above the SDK cap with chunked=%s',async chunked=>{
+    const workJson=JSON.stringify({overview:'完整候选起点'+ '工程正文保留。'.repeat(300000)+'完整候选终点'});
+    const body=JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'validate_assessment_work',arguments:{taskContextRef:'AQ-synthetic',workJson}}});
+    expect(Buffer.byteLength(body)).toBeGreaterThan(4*1024*1024);
+    expect((await send(app,'/openapi/wiselink/aily-mcp',body,{chunked})).status).toBe(200);
+    expect(handle.mock.calls[0][2]).toEqual(JSON.parse(body));
   });
 
   it.each([

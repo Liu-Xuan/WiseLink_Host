@@ -3,6 +3,8 @@ import type {
   CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import { UnauthorizedException } from '@nestjs/common';
+import { AilyTaskAdmissionService } from '../../server/modules/canonical-host/aily-task-admission';
+import type { AilyTaskExecutionService } from '../../server/modules/canonical-host/aily-task-execution.service';
 import {
   canonicalJson,
   sealTaskEnvelope,
@@ -34,6 +36,24 @@ const configuration = {
 };
 
 describe('owner-requested initial continuation', () => {
+  it('requires explicit enterprise mode within its exact scope and never falls back to the old Native consumer', async () => {
+    const admission = new AilyTaskAdmissionService({enabled: true, tenantId: actor.tenantId, workItemId: 'WI-continuation',
+      intakeRequestId: 'REQ-original', agentId: 'agent_synthetic', principalId: 'service:aily-synthetic',
+      authorizationFingerprint: 'synthetic-scope', publicationRef: 'synthetic-publication', configurationSource: 'synthetic-fixture',
+      apiAccessVerified: true, trustedToolsVerified: true, modelOptions: [{modelRef: 'aily/deepseek-v4-pro', platformBuiltIn: true}]});
+    const h = harness(admission);
+    await expect(h.send({...request, operation: 'EVALUATE_JOBAID', executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: 'miaoda/glm-5.3'}))
+      .rejects.toThrow('INITIAL_CONTINUATION_AILY_MODE_REQUIRED');
+    expect(h.jobAid.enqueueContinuation).not.toHaveBeenCalled();
+  });
+
+  it('rejects enterprise mode without its configured consumer rather than queueing an isolated intent', async () => {
+    const h = harness();
+    await expect(h.send({...request, operation: 'EVALUATE_JOBAID', executionMode: 'AILY_AGENT_V1', modelRef: 'aily/deepseek-v4-pro'}))
+      .rejects.toThrow('INITIAL_CONTINUATION_AILY_NOT_CONFIGURED');
+    expect(h.jobAid.enqueueContinuation).not.toHaveBeenCalled();
+  });
+
   it.each([
     new UnauthorizedException('OFFICIAL_OAUTH_SESSION_REQUIRED'),
     new Error('CANCELLED_BINDING_DATABASE_FAILURE'),
@@ -358,7 +378,7 @@ function savedAttempt(status: string, blockIds?: string[]) {
   };
 }
 
-function harness() {
+function harness(ailyAdmission?: AilyTaskAdmissionService, ailyExecution?: AilyTaskExecutionService) {
   const order: string[] = [];
   const workItem = {
     workItemId: 'WI-continuation',
@@ -446,6 +466,8 @@ function harness() {
     sessions as never,
     aily as never,
     sourceAuthorization as never,
+    ailyAdmission,
+    ailyExecution,
   );
   return {
     service,sourceAuthorization,

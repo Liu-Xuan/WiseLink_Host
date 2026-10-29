@@ -15,7 +15,7 @@ const requestSchema = z.strictObject({
   ]),
   requestId: z.union([z.string().uuid(), z.string().regex(/^original-[1-9][0-9]{0,15}$/), z.string().regex(/^[a-f0-9]{64}$/u)]),
   originalParseRunId: z.string().min(1).max(200).optional(),
-  executionMode: z.enum(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1']).optional(),
+  executionMode: z.enum(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1', 'AILY_AGENT_V1']).optional(),
   agentPolicy: programAgentPolicySchema.optional(),
   modelRef: z.string().min(1).max(160).optional(),
   /** Browser queues exact intent; genuine runtime admission resolves native metadata. */
@@ -42,11 +42,13 @@ export function buildInitialAnalysisRequestInput(
     schemaVersion: INITIAL_ANALYSIS_REQUEST_SCHEMA,
   });
   if ((request.executionMode !== undefined || request.modelRef !== undefined) &&
-      (!isProgramAssessmentMode(request.executionMode) || !request.modelRef ||
+      ((!isProgramAssessmentMode(request.executionMode) && request.executionMode !== 'AILY_AGENT_V1') || !request.modelRef ||
         request.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION'))
     throw new Error('ACTION_ATTEMPT_PROGRAM_REQUEST_INVALID');
   if (request.executionMode === 'PROGRAM_AGENT_V1' && request.modelRef !== 'miaoda/glm-5.3')
     throw new Error('PROGRAM_AGENT_MODEL_UNSUPPORTED');
+  if (request.executionMode === 'AILY_AGENT_V1' && !['aily/glm-5.3', 'aily/deepseek-v4-pro'].includes(request.modelRef ?? ''))
+    throw new Error('ACTION_ATTEMPT_AILY_MODEL_UNSUPPORTED');
   if ((request.executionMode === 'PROGRAM_AGENT_V1') !== (request.agentPolicy !== undefined))
     throw new Error('JOBAID_PROGRAM_AGENT_POLICY_BINDING_INVALID');
   if (request.nativeOverallAdmission &&

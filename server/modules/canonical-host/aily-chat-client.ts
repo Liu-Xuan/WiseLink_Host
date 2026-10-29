@@ -1,5 +1,6 @@
 import {
   consumeAilyChatStream,
+  isAilyChatId,
   type AilyStreamProgress,
 } from './aily-chat-stream';
 
@@ -19,8 +20,10 @@ function chatUrl(agentId: string) {
   return `https://open.feishu.cn/open-apis/aily/v1/agents/${agentId}/chats`;
 }
 
-function requestBody(request: AilyChatRequest, stream: boolean) {
-  if (!request.message.trim() || request.message.length > 60_000)
+function requestBody(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId'>, stream: boolean) {
+  // Keep the private streamed-chat boundary. A full enterprise task must never
+  // be truncated to that UI limit; provider rejection stays explicit.
+  if (!request.message.trim() || (stream && request.message.length > 60_000))
     throw new Error('AILY_MESSAGE_INVALID');
   if (
     request.remoteSessionId !== undefined &&
@@ -32,6 +35,46 @@ function requestBody(request: AilyChatRequest, stream: boolean) {
     stream,
     ...(request.remoteSessionId ? { session_id: request.remoteSessionId } : {}),
   });
+}
+
+export interface AilyChatReceipt {
+  chatId: string;
+  remoteSessionId?: string;
+}
+
+export function serializeAilyChatRequest(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId'>): string {
+  return requestBody(request, false);
+}
+
+/** One asynchronous acceptance request, with no retry or long-running stream. */
+export async function createAilyChat(request: AilyChatRequest & {expectedRequestBody?: string}): Promise<AilyChatReceipt> {
+  const body = serializeAilyChatRequest(request);
+  if (request.expectedRequestBody !== undefined && request.expectedRequestBody !== body)
+    throw new Error('AILY_DISPATCH_BODY_CHANGED');
+  const response = await fetch(chatUrl(request.agentId), {
+    method: 'POST',
+    headers: {authorization: `Bearer ${request.accessToken}`, 'content-type': 'application/json', accept: 'application/json'},
+    body,
+    signal: AbortSignal.timeout(30_000),
+    redirect: 'error',
+  });
+  if (!response.ok) throw new Error(`AILY_HTTP_${response.status}`);
+  const responseBody = await readResultBody(response);
+  if (!responseBody || typeof responseBody !== 'object' || Array.isArray(responseBody)) throw new Error('AILY_CHAT_RECEIPT_INVALID');
+  const envelope = responseBody as Record<string, unknown>;
+  if (typeof envelope.code === 'number' && Number.isSafeInteger(envelope.code) && envelope.code > 0)
+    throw new Error(`AILY_API_REJECTED_${envelope.code}`);
+  if (envelope.code !== 0 || !envelope.data || typeof envelope.data !== 'object' || Array.isArray(envelope.data))
+    throw new Error('AILY_CHAT_RECEIPT_INVALID');
+  const receipt = envelope.data as Record<string, unknown>;
+  if (!isAilyChatId(receipt.agent_chat_id)) throw new Error('AILY_CHAT_RECEIPT_INVALID');
+  if (receipt.session_id !== undefined &&
+      (typeof receipt.session_id !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/u.test(receipt.session_id)))
+    throw new Error('AILY_CHAT_RECEIPT_INVALID');
+  if (request.remoteSessionId && receipt.session_id !== undefined && receipt.session_id !== request.remoteSessionId)
+    throw new Error('AILY_RESULT_SESSION_MISMATCH');
+  return {chatId: receipt.agent_chat_id,
+    ...(typeof receipt.session_id === 'string' ? {remoteSessionId: receipt.session_id} : {})};
 }
 
 async function readResultBody(response: Response): Promise<unknown> {
@@ -108,8 +151,7 @@ export async function streamAilyChat(
       ) {
         const receipt = data as Record<string, unknown>;
         if (
-          typeof receipt.agent_chat_id === 'string' &&
-          /^\d{1,64}$/u.test(receipt.agent_chat_id) &&
+          isAilyChatId(receipt.agent_chat_id) &&
           (receipt.session_id === undefined ||
             (typeof receipt.session_id === 'string' &&
               /^[A-Za-z0-9_-]{1,96}$/u.test(receipt.session_id)))
@@ -137,12 +179,29 @@ export async function streamAilyChat(
  * verified read delegation. Raw status is intentionally not a guessed terminal enum.
  * content is a result snapshot, not an SSE delta to append to the saved answer.
  */
-export async function readAilyChatResult(input: {
+export interface AilyChatResultRequest {
   agentId: string;
   accessToken: string;
   chatId: string;
-}) {
-  if (!/^\d{1,64}$/u.test(input.chatId)) throw new Error('AILY_CHAT_INVALID');
+  remoteSessionId?: string;
+}
+export async function readAilyChatResult(input: AilyChatResultRequest) {
+  return readAilyChatSnapshot(input, true);
+}
+
+/** Enterprise observation consumes metadata, not the private-chat display text. */
+export async function observeAilyChat(input: AilyChatResultRequest) {
+  const {answer: _answer, ...observation} = await readAilyChatSnapshot(input, false);
+  return observation;
+}
+
+async function readAilyChatSnapshot(input: AilyChatResultRequest, includeAnswer: boolean) {
+  if (!isAilyChatId(input.chatId)) throw new Error('AILY_CHAT_INVALID');
+  if (
+    input.remoteSessionId !== undefined &&
+    !/^[A-Za-z0-9_-]{1,96}$/u.test(input.remoteSessionId)
+  )
+    throw new Error('AILY_SESSION_INVALID');
   const response = await fetch(`${chatUrl(input.agentId)}/${input.chatId}`, {
     method: 'GET',
     headers: {
@@ -163,6 +222,18 @@ export async function readAilyChatResult(input: {
     throw new Error('AILY_RESULT_INVALID');
   const result = data as Record<string, unknown>;
   if (
+    result.agent_chat_id !== undefined &&
+    (!isAilyChatId(result.agent_chat_id) || result.agent_chat_id !== input.chatId)
+  )
+    throw new Error('AILY_RESULT_CHAT_MISMATCH');
+  if (
+    result.session_id !== undefined &&
+    (typeof result.session_id !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,96}$/u.test(result.session_id) ||
+      (input.remoteSessionId !== undefined && result.session_id !== input.remoteSessionId))
+  )
+    throw new Error('AILY_RESULT_SESSION_MISMATCH');
+  if (
     result.finish_reason !== undefined &&
     (typeof result.finish_reason !== 'string' ||
       result.finish_reason.length > 200)
@@ -172,11 +243,11 @@ export async function readAilyChatResult(input: {
     typeof result.status !== 'string' ||
     !result.status ||
     result.status.length > 96 ||
-    !Array.isArray(result.content)
+    (includeAnswer && !Array.isArray(result.content))
   )
     throw new Error('AILY_RESULT_INVALID');
   const text: string[] = [];
-  for (const content of result.content) {
+  for (const content of includeAnswer && Array.isArray(result.content) ? result.content : []) {
     if (!content || typeof content !== 'object' || Array.isArray(content))
       throw new Error('AILY_RESULT_INVALID');
     const entry = content as Record<string, unknown>;
@@ -185,7 +256,7 @@ export async function readAilyChatResult(input: {
     text.push(entry.text);
   }
   const answer = text.join('\n');
-  if (answer.length > 60_000) throw new Error('AILY_RESULT_TOO_LARGE');
+  if (includeAnswer && answer.length > 60_000) throw new Error('AILY_RESULT_TOO_LARGE');
   return {
     chatId: input.chatId,
     answer,

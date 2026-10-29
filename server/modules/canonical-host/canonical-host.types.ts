@@ -1,4 +1,5 @@
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
+import type { SQL } from 'drizzle-orm';
 import type {
   CanonicalEntryQueryRequest,
   CanonicalFailureValidationWriteReceipt,
@@ -149,6 +150,8 @@ export interface CanonicalWorkItemRegistrarPort {
     jobAidWorkRevisionGuard?: CanonicalJobAidWorkRevisionGuard;
     /** Recheck native source/receipt authority inside the exact projection CAS transaction. */
     nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
+    /** Trusted server predicate, evaluated by the projection UPDATE itself. */
+    writePredicate?: SQL;
   }): Promise<CanonicalWorkItemProjection>;
   getExact(input: {
     workItemId: string;

@@ -12,6 +12,21 @@ import {
 } from '../../server/modules/action-attempt/action-attempt-envelope';
 
 describe('OpenClaw ActionAttempt envelopes', () => {
+  it('keeps explicit Aily selection distinct from unknown actual model and usage without relaxing Native results',()=>{
+    const {inputHash:_hash,...base}=taskEnvelope();
+    const task=sealTaskEnvelope({...base,modelInput:{executionMode:'AILY_AGENT_V1'},executionModel:{modelRef:'aily/deepseek-v4-pro',
+      displayName:'DeepSeek V4 Pro',providerKind:'BUILT_IN',settingsRevision:0,selectedAt:'2026-10-29T00:00:00.000Z'}});
+    const result=sealResultEnvelope({...withoutContentHash(resultEnvelope(task)),executionKind:'AILY_AGENT',modelVersion:null,
+      producer:{kind:'AILY_AGENT_V1',agentId:'agent_synthetic',publicationRef:'original-publication',selectedModelRef:'aily/deepseek-v4-pro',actualModelRef:null,usage:null},
+      runMetrics:{durationMs:100,inputUnits:null,outputUnits:null}});
+    expect(parseResultEnvelope({value:result,task})).toEqual(result);
+    expect(parseStoredResultEnvelope({value:canonicalJson(result),task})).toEqual(result);
+    expect(()=>parseResultEnvelope({value:result,task:taskEnvelope()})).toThrow('RESULT_AILY_PRODUCER_INVALID');
+    expect(()=>parseResultEnvelope({value:sealResultEnvelope({...withoutContentHash(result),
+      runMetrics:{durationMs:100,inputUnits:0,outputUnits:0}}),task})).toThrow('RESULT_AILY_USAGE_UNREPORTED');
+    expect(()=>parseResultEnvelope({value:sealResultEnvelope({...withoutContentHash(result),
+      producer:{...result.producer,actualModelRef:'aily/deepseek-v4-pro'}}),task})).toThrow('RESULT_AILY_PRODUCER_INVALID');
+  });
   it('seals an exact original input and rejects injected or invalid binding fields', () => {
     const { inputHash: _oldHash, ...base } = matterTaskEnvelope();
     const input = { kind: 'DOCUMENT_VERSION' as const, inputId: 'material-test', familyId: 'FAM', documentVersionId: 'DV',
@@ -320,6 +335,7 @@ describe('Host saved-work reconciliation result branch', () => {
     const task=sealTaskEnvelope({...base,modelInput:{...base.modelInput,savedWorkReconciliation:marker}});
     const {modelVersion:_modelVersion,...ordinary}=withoutContentHash(resultEnvelope(task));
     const result=sealResultEnvelope({...ordinary,executionKind:marker.executionKind,modelRequests:0,
+      status:'SUCCEEDED',businessOutcome:'CANDIDATE_READY',candidateStatus:null,
       modelVersion:null,sourceWork:{workRevisionRef:marker.workRevisionRef,sourceActionAttemptId:marker.sourceActionAttemptId},
       modelOutput:JSON.stringify({workRevisionRef:marker.workRevisionRef}),runMetrics:{durationMs:3,inputUnits:0,outputUnits:0}});
     return {task,result};

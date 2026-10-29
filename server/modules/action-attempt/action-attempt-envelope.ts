@@ -42,8 +42,17 @@ export function sealResultEnvelope(
   envelope: Omit<import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope, 'contentHash'>,
 ): import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope;
 export function sealResultEnvelope(
+  envelope: Omit<import('./action-attempt-envelope.types').AilyTaskResultEnvelope, 'contentHash'>,
+): import('./action-attempt-envelope.types').AilyTaskResultEnvelope;
+export function sealResultEnvelope(
   envelope: Omit<import('./action-attempt-envelope.types').OpenClawModelResultEnvelope, 'contentHash'> |
-    Omit<import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope, 'contentHash'>,
+    Omit<import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope, 'contentHash'> |
+    Omit<import('./action-attempt-envelope.types').AilyTaskResultEnvelope, 'contentHash'>,
+): OpenClawResultEnvelope;
+export function sealResultEnvelope(
+  envelope: Omit<import('./action-attempt-envelope.types').OpenClawModelResultEnvelope, 'contentHash'> |
+    Omit<import('./action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope, 'contentHash'> |
+    Omit<import('./action-attempt-envelope.types').AilyTaskResultEnvelope, 'contentHash'>,
 ): OpenClawResultEnvelope {
   return { ...envelope, contentHash: canonicalSha256(envelope) };
 }
@@ -231,7 +240,8 @@ export function parseResultEnvelope(input: {
       'contentHash',
       'errorCode',
       'errorDetail',
-      ...('executionKind' in value ? ['executionKind','modelRequests','sourceWork'] : []),
+      ...(value.executionKind === 'AILY_AGENT' ? ['executionKind', 'producer'] :
+        'executionKind' in value ? ['executionKind','modelRequests','sourceWork'] : []),
     ],
     'RESULT_ENVELOPE_SCHEMA_INVALID',
   );
@@ -355,6 +365,7 @@ function assertResultFields(
     isRecord(task.modelInput.correction) &&
     ['ENGINEERING_ISSUE_CORRECTION', 'ENGINEERING_OVERVIEW_CORRECTION'].includes(String(task.modelInput.correction.kind));
   const savedRecovery = 'executionKind' in result && result.executionKind === 'HOST_SAVED_WORK_RECONCILIATION';
+  const enterprise = 'executionKind' in result && result.executionKind === 'AILY_AGENT';
   if (savedRecovery) {
     const marker = task.modelInput.savedWorkReconciliation;
     if (task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' || !isRecord(marker) ||
@@ -366,7 +377,20 @@ function assertResultFields(
         result.runMetrics.inputUnits !== 0 || result.runMetrics.outputUnits !== 0)
       fail('RESULT_SAVED_WORK_RECONCILIATION_INVALID');
   }
-  if (correction) {
+  if (enterprise) {
+    if (task.schemaVersion !== 'wiselink.3_1.openclaw_task_envelope.v1' || task.taskType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+        task.modelInput.executionMode !== 'AILY_AGENT_V1' || !isRecord(result.producer)) fail('RESULT_AILY_PRODUCER_INVALID');
+    const producer = result.producer;
+    assertExactKeys(producer, ['kind','agentId','publicationRef','selectedModelRef','actualModelRef','usage'], 'RESULT_AILY_PRODUCER_INVALID');
+    if (producer.kind !== 'AILY_AGENT_V1' || !/^agent_[A-Za-z0-9_-]{1,59}$/u.test(String(producer.agentId)) ||
+        typeof producer.publicationRef !== 'string' || !producer.publicationRef.trim() ||
+        producer.selectedModelRef !== task.executionModel?.modelRef || producer.actualModelRef !== result.modelVersion || producer.usage !== null)
+      fail('RESULT_AILY_PRODUCER_INVALID');
+    assertNullableText(result.modelVersion, 'RESULT_AILY_PRODUCER_INVALID');
+    if (result.runMetrics.inputUnits !== null || result.runMetrics.outputUnits !== null)
+      fail('RESULT_AILY_USAGE_UNREPORTED');
+    requiredText(result.skillVersion, 'RESULT_ENVELOPE_SKILL_VERSION_REQUIRED');
+  } else if (correction) {
     if (!('producer' in result) || !isRecord(result.producer)) fail('RESULT_OFFICIAL_PLUGIN_PRODUCER_REQUIRED');
     const producer = result.producer;
     assertExactKeys(producer, ['kind', 'instanceId', 'pluginVersion', 'actionKey', 'concreteModel'], 'RESULT_OFFICIAL_PLUGIN_PRODUCER_INVALID');
@@ -386,7 +410,7 @@ function assertResultFields(
     result.toolVersions,
     'RESULT_ENVELOPE_TOOL_VERSIONS_INVALID',
   );
-  assertRunMetrics(result.runMetrics, correction);
+  assertRunMetrics(result.runMetrics, correction || enterprise);
   assertNullableText(result.errorCode, 'RESULT_ENVELOPE_ERROR_CODE_INVALID');
   assertNullableText(
     result.errorDetail,

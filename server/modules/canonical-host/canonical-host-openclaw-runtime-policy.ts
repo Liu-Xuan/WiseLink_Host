@@ -9,6 +9,7 @@ import type {
   OpenClawTaskEnvelope,
 } from '../action-attempt/action-attempt-envelope.types';
 import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
+import type { AilyExecutorRun } from './aily-executor-run';
 
 export const CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY = {
   runtimeAppId: 'app_17c3zn24kv2',
@@ -31,11 +32,20 @@ export interface CanonicalHostOpenClawResultPreflight {
 export function preflightCanonicalHostOpenClawResult(input: {
   row: ActionAttemptRow;
   result: unknown;
+  ailyRun?: AilyExecutorRun;
 }): CanonicalHostOpenClawResultPreflight {
   const task = parseCanonicalHostOpenClawAttemptTask(input.row);
   const result = parseResultEnvelope({ value: input.result, task });
   assertCanonicalHostOpenClawRuntimePolicy(result, task);
-  if (!isSavedWorkReconciliationResult(result) &&
+  if (result.executionKind === 'AILY_AGENT') {
+    if (!input.ailyRun || result.producer.agentId !== input.ailyRun.agentId ||
+        result.producer.publicationRef !== input.ailyRun.publicationRef ||
+        result.producer.selectedModelRef !== input.ailyRun.modelEvidence.selectedModelRef ||
+        result.producer.actualModelRef !== input.ailyRun.modelEvidence.actualModelRef ||
+        input.ailyRun.scope.tenantId !== task.tenantId || input.ailyRun.scope.workItemId !== task.workItemId ||
+        input.ailyRun.leaseGeneration !== input.row.leaseGeneration)
+      throw policyError('AILY_RESULT_RUN_BINDING_CHANGED');
+  } else if (!isSavedWorkReconciliationResult(result) &&
       (result.toolVersions['model-executor'] ?? 'HOSTED') !== canonicalHostExecutor())
     throw policyError('CANONICAL_RESULT_EXECUTOR_MISMATCH');
   return { task, result };
@@ -88,6 +98,13 @@ export function assertCanonicalHostOpenClawRuntimePolicy(
   task: OpenClawTaskEnvelope,
 ): void {
   const policy = CANONICAL_HOST_OPENCLAW_RUNTIME_POLICY;
+  if (result.executionKind === 'AILY_AGENT') {
+    if (task.modelInput.executionMode !== 'AILY_AGENT_V1' || result.toolVersions['model-executor'] !== 'AILY_AGENT_V1' ||
+        result.toolVersions['wiselink-aily-engineering'] !== '1.0.0' || result.skillVersion !== 'wiselink-aily-domain@v1')
+      throw policyError('AILY_RESULT_RUNTIME_POLICY_MISMATCH');
+    return;
+  }
+  if (task.modelInput.executionMode === 'AILY_AGENT_V1') throw policyError('AILY_RESULT_RUNTIME_POLICY_MISMATCH');
   if (task.taskType === 'OPENCLAW_INTERACTIVE_REVIEW') {
     const executionPolicy = task.modelInput.executionPolicy as { schemaVersion?: unknown; executor?: unknown } | undefined;
     const executor = executionPolicy?.schemaVersion === 'wiselink.3_1.review_execution.v1' ? 'CODEX' : 'HOSTED';
@@ -202,6 +219,6 @@ function policyError(code: string): CanonicalHostOpenClawRuntimePolicyError {
   return new CanonicalHostOpenClawRuntimePolicyError(code);
 }
 
-function isSavedWorkReconciliationResult(result: OpenClawResultEnvelope): result is import('../action-attempt/action-attempt-envelope.types').OpenClawSavedWorkReconciliationResultEnvelope {
+function isSavedWorkReconciliationResult(result: OpenClawResultEnvelope): boolean {
   return result.executionKind === 'HOST_SAVED_WORK_RECONCILIATION';
 }

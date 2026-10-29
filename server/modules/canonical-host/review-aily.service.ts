@@ -9,6 +9,10 @@ import {
 import { type AilyStreamProgress } from './aily-chat-stream';
 import { streamAilyChat } from './aily-chat-client';
 import {
+  recoverReviewAilyResult,
+  type ReviewAilyQueryRow as QueryRow,
+} from './review-aily-result-recovery';
+import {
   EngineeringMatterWorkingRepository,
   type EngineeringMatterWorkingTransactionExecutor,
 } from './engineering-matter-working.repository';
@@ -18,20 +22,6 @@ export interface ReviewAilyActor {
   tenantId: string;
   sessionId?: string;
 }
-interface QueryRow extends Record<string, unknown> {
-  query_ref: string;
-  message_ref?: string | null;
-  query_text: string;
-  session_id: string;
-  agent_id: string;
-  chat_id: string | null;
-  status: string;
-  answer_text: string | null;
-  error_code: string | null;
-  _created_at: string | Date;
-  remote_session_id?: string | null;
-}
-
 export interface AilyMessageInput {
   messageRef: string;
   requestKey: string;
@@ -319,28 +309,13 @@ export class ReviewAilyService {
     // Even a cached answer requires this user's still-valid delegation.
     const accessToken = await this.grant(actor);
     if (!accessToken) throw new Error('AILY_USER_REAUTHORIZATION_REQUIRED');
-    if (row.status === 'RUNNING' || row.status === 'STARTING') {
-      const createdAt = new Date(row._created_at).getTime();
-      if (!Number.isFinite(createdAt) || Date.now() - createdAt > 360_000) {
-        // A stopped Host cannot resume a write-only stream. Persist this terminal
-        // uncertainty, retaining partial text and never issuing a GET or new POST.
-        await this.update(
-          actor,
-          attemptRef,
-          queryRef,
-          'UNKNOWN',
-          row.chat_id,
-          row.answer_text,
-          'AILY_STREAM_RESULT_UNCONFIRMED',
-        );
-        return this.project({
-          ...row,
-          status: 'UNKNOWN',
-          error_code: 'AILY_STREAM_RESULT_UNCONFIRMED',
-        });
-      }
-    }
-    return this.project(row);
+    const recovered = await recoverReviewAilyResult({
+      actors: this.actors, actor, attemptRef, row, accessToken,
+      assertReadAuthorized: async () => {
+        if (!await this.grant(actor)) throw new Error('AILY_USER_REAUTHORIZATION_REQUIRED');
+      },
+    });
+    return this.project(recovered);
   }
 
   private async grant(actor: ReviewAilyActor, browserRead = false): Promise<string | null> {

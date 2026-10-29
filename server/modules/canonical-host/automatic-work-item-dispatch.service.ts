@@ -15,10 +15,12 @@ import type {
   BlockAutomaticWorkItemResponse,
   AutomaticWorkItemClaimResult,
   NextAutomaticWorkItemRequest,
+  CanonicalWorkItemProjection,
 } from '@shared/api.interface';
 import { MiaodaDocumentVersionSourceResolver } from '../work-item/miaoda-document-version-source.resolver';
 import {
   MiaodaWorkItemRepository,
+  type AilyInitialSuccessorAuthorizationInput,
   type AutoWorkItemAuthorizationBinding,
   type AutoWorkItemQueueCandidate,
   type AutoWorkItemQueueWorkItem,
@@ -37,7 +39,7 @@ import {
   CANCELLED_AUTOMATIC_WORK_ITEM_CODE,
   parseAutomaticWorkItemCancellation,
 } from './automatic-work-item-cancellation';
-import { canonicalJson } from '../action-attempt/action-attempt-envelope';
+import { canonicalJson, parseTaskEnvelope, parseStoredResultEnvelope } from '../action-attempt/action-attempt-envelope';
 import {
   AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
   type AutomaticWorkItemSourceAuthorizationPort,
@@ -50,6 +52,12 @@ import { ActionAttemptRepository } from '../action-attempt/action-attempt.reposi
 import { MiaodaHostedDocumentCatalog } from '../document-management/src/hosted/nest/miaoda-hosted-document-catalog';
 import { DocumentWorkRuntimeService } from './document-work-runtime.service';
 import { documentDeliveryRequestId } from './document-delivery-ref';
+import { AilyTaskAdmissionService } from './aily-task-admission';
+import { assertAilyTrustedTaskContext, type AilyTrustedTaskContext } from './aily-task-domain.types';
+import { taskAutomaticWorkItemLease } from '../action-attempt/automatic-work-item-attempt-lease';
+import { actionAttempt, workItem } from '../../database/schema';
+import { and, eq, sql } from 'drizzle-orm';
+import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 
 const CANONICAL_APP_ID = 'app_17bzc551rsg';
 const AUTO_WORK_ITEM_LEASE_MILLISECONDS = 60 * 60 * 1000;
@@ -88,7 +96,122 @@ export class AutomaticWorkItemDispatchService {
     @Optional()
     private readonly documentWork?: DocumentWorkRuntimeService,
     @Optional() private readonly problemAssessment?: CanonicalJobAidProblemService,
+    @Optional() private readonly ailyAdmission?: AilyTaskAdmissionService,
   ) {}
+
+  /** Called only by the explicit logged-in continuation with its transaction guard.
+   * TAT, ordinary claim and scheduled dispatch never obtain this callback.
+   */
+  async authorizeAilyInitialSuccessor(input: Pick<AilyInitialSuccessorAuthorizationInput,
+    'tenantId'|'actorUserId'|'workItem'|'request'|'stageRequestId'|'authorize'>) {
+    const config=this.ailyAdmission?.requireScope(input.tenantId,input.workItem);
+    if(!config||typeof input.authorize!=='function')throw new Error('AILY_INITIAL_SUCCESSOR_AUTHORIZATION_REQUIRED');
+    return this.workItems.authorizeAilyInitialSuccessor({...input,principalId:config.principalId,
+      leaseToken:randomUUID(),leaseMs:AUTO_WORK_ITEM_LEASE_MILLISECONDS});
+  }
+
+  async claimAilyWorkItem(input: {tenantId: string; actorUserId: string; workItem: CanonicalWorkItemProjection}) {
+    const config = this.ailyAdmission?.requireScope(input.tenantId,input.workItem);
+    if (!config || !this.leaseAuthorization) throw sourceAuthorizationUnavailable();
+    const identity = {tenantId: input.tenantId, workItemId: input.workItem.workItemId, leaseOwner: config.principalId, now: new Date()};
+    let active = await this.workItems.loadActiveAutoProcessingLease(identity);
+    if (!active) {
+      const candidates = await this.workItems.listAutoProcessingCandidates({...identity,limit:1});
+      const candidate = candidates.find(item => item.authorization.workItemId === identity.workItemId &&
+        item.authorization.requestId === config.intakeRequestId && item.authorization.actorUserId === input.actorUserId);
+      if (!candidate || candidate.authorization.status !== 'WAITING') throw autoWorkItemLeaseConflict();
+      const scope = {tenantId: input.tenantId, principalId: config.principalId, appId: CANONICAL_APP_ID,
+        authorizationFingerprint: config.authorizationFingerprint};
+      const reason = await this.validateCandidate(candidate,scope,true);
+      if (reason) throw new Error(reason);
+      const authorization = candidate.authorization;
+      const claimed = await this.workItems.claimAutoProcessingCandidate({tenantId: input.tenantId,
+        workItemId: identity.workItemId, requestId: config.intakeRequestId, actorUserId: input.actorUserId,
+        documentId: authorization.documentId, documentVersionId: authorization.documentVersionId,
+        sourceArtifactId: authorization.sourceArtifactId, sourceFileSha256: authorization.sourceFileSha256,
+        sourceByteLength: Number(authorization.sourceByteLength), expectedWorkItemRevision: candidate.workItem.revision,
+        leaseOwner: config.principalId, leaseToken: randomUUID(), now: identity.now,
+        leaseExpiresAt: new Date(identity.now.getTime()+AUTO_WORK_ITEM_LEASE_MILLISECONDS), ailyWaitingOnly: true});
+      if (!claimed) throw autoWorkItemLeaseConflict();
+      active = await this.workItems.loadActiveAutoProcessingLease({...identity,now:new Date()});
+    }
+    if (!active?.authorization.leaseToken || active.authorization.requestId !== config.intakeRequestId ||
+        active.authorization.actorUserId !== input.actorUserId) throw autoWorkItemLeaseConflict();
+    const lease = await this.leaseAuthorization.authorizeActiveLease({tenantId:input.tenantId,
+      workItemId:identity.workItemId,principalId:config.principalId,leaseToken:active.authorization.leaseToken,
+      leaseGeneration:active.authorization.leaseGeneration});
+    if (lease.requestId !== input.workItem.requestId || lease.actorUserId !== input.actorUserId ||
+        lease.documentVersionId !== input.workItem.source.documentVersionId || lease.documentId !== input.workItem.source.documentId ||
+        lease.sourceArtifactId !== input.workItem.source.sourceArtifactId ||
+        lease.sourceFileSha256 !== canonicalHostBareSha256(input.workItem.source.sourceFileSha256) ||
+        lease.sourceByteLength !== input.workItem.source.sourceByteLength) throw autoWorkItemLeaseConflict();
+    return lease;
+  }
+
+  async acknowledgeAilyWorkItem(context: AilyTrustedTaskContext) {
+    assertAilyTrustedTaskContext(context);
+    const snapshot = await context.revalidate();
+    const {row,scope,sealedInput,task,run} = snapshot;
+    const outer = taskAutomaticWorkItemLease(row);
+    if (!outer || !row.resultContentHash || !row.resultEnvelopeJson || row.status !== 'SUCCEEDED' || !row.projectionApplied)
+      throw new Error('AILY_FINAL_RESULT_UNCONFIRMED');
+    const assertHostFinal = async (database: PostgresJsDatabase, completedReplay = false) => {
+      const [proof] = await database.execute<{allowed:boolean}>(sql`SELECT (${snapshot.writePredicate}) AS allowed`);
+      if (proof?.allowed !== true) throw new Error('AILY_DOMAIN_AUTHORIZATION_CHANGED');
+      const [stored] = await database.select().from(actionAttempt).where(eq(actionAttempt.attemptId,row.attemptId)).limit(1).for('update');
+      if (!stored || stored.status !== 'SUCCEEDED' || !stored.projectionApplied || !stored.completedAt ||
+          stored.taskInputHash !== task.inputHash || stored.resultContentHash !== row.resultContentHash || stored.leaseToken || stored.leaseOwner)
+        throw new Error('AILY_FINAL_RESULT_UNCONFIRMED');
+      const originalTask = parseTaskEnvelope(stored.taskEnvelopeJson);
+      const result = parseStoredResultEnvelope({value:stored.resultEnvelopeJson,task:originalTask});
+      if (!('producer' in result) || !result.producer || result.producer.kind !== 'AILY_AGENT_V1' ||
+          result.producer.agentId !== run.agentId || result.producer.publicationRef !== run.publicationRef ||
+          result.producer.selectedModelRef !== run.modelEvidence.selectedModelRef || result.contentHash !== row.resultContentHash)
+        throw new Error('AILY_FINAL_RESULT_BINDING_CHANGED');
+      const [owner] = await database.select().from(workItem).where(and(eq(workItem.tenantId,row.tenantId),
+        eq(workItem.workItemId,row.workItemId))).limit(1);
+      const projection = owner?.projectionJson ? JSON.parse(owner.projectionJson) as CanonicalWorkItemProjection : null;
+      const output = JSON.parse(result.modelOutput ?? 'null') as {workRevisionRef?:unknown} | null;
+      if (!owner || owner.requestedByUserId !== sealedInput.actorUserId || owner.requestId !== outer.requestId ||
+          owner.documentVersionId !== task.documentVersionId || owner.revision < task.baseRevision+1)
+        throw new Error('AILY_FINAL_PROJECTION_UNCONFIRMED');
+      if (!completedReplay && (owner.revision !== task.baseRevision+1 ||
+          projection?.revision !== owner.revision || projection.integratedAssessment?.baseRules?.actionAttemptId !== row.attemptId ||
+          projection.integratedAssessment.overallSynthesis?.sourceAssessment?.actionAttemptId !== row.attemptId ||
+          projection.integratedAssessment.overallSynthesis.basedOnJobAidWorkRevisionRef !== output?.workRevisionRef))
+        throw new Error('AILY_FINAL_PROJECTION_UNCONFIRMED');
+    };
+    const active = await this.workItems.loadActiveAutoProcessingLease({tenantId:row.tenantId,workItemId:row.workItemId,
+      leaseOwner:scope.principalId,now:new Date()});
+    if (!active?.authorization.leaseToken) {
+      const replay = await this.workItems.readCompletedAilyAutoProcessingReceipt({tenantId:row.tenantId,workItemId:row.workItemId,
+        requestId:outer.requestId,actorUserId:sealedInput.actorUserId,leaseGeneration:outer.leaseGeneration,
+        readPredicate:snapshot.writePredicate,assertHostFinal:database=>assertHostFinal(database,true)});
+      if (!replay) throw autoWorkItemLeaseConflict();
+      return acknowledgementResponse(row.workItemId,replay);
+    }
+    const owner = await this.workItems.loadAutoProcessingProjection(row.workItemId,row.tenantId);
+    if (!owner?.projection) throw autoWorkItemLeaseConflict();
+    const source = owner.projection.source;
+    const current = await this.readCurrentInitialAnalysis(scope,{workItemId:row.workItemId,requestId:outer.requestId,
+      actorUserId:sealedInput.actorUserId,documentId:source.documentId,documentVersionId:task.documentVersionId,
+      sourceArtifactId:source.sourceArtifactId,sourceFileSha256:canonicalHostBareSha256(source.sourceFileSha256),
+      sourceByteLength:source.sourceByteLength},true);
+    if (!isHostInitialAnalysisComplete(current.status)) return {status:'NOT_ACKNOWLEDGED' as const,
+      reason:'AUTO_WORK_ITEM_INITIAL_ANALYSIS_NOT_COMPLETE',nextOperation:current.status.nextOperation};
+    if (!this.leaseAuthorization) throw sourceAuthorizationUnavailable();
+    const lease = await this.leaseAuthorization.authorizeActiveLease({tenantId:row.tenantId,workItemId:row.workItemId,
+      principalId:scope.principalId,leaseToken:active.authorization.leaseToken,leaseGeneration:outer.leaseGeneration});
+    if (lease.requestId !== outer.requestId || lease.leaseGeneration !== outer.leaseGeneration ||
+        lease.actorUserId !== sealedInput.actorUserId || lease.documentVersionId !== task.documentVersionId)
+      throw autoWorkItemLeaseConflict();
+    const acknowledged = await this.workItems.acknowledgeAutoProcessingLease({tenantId:row.tenantId,workItemId:row.workItemId,
+      leaseOwner:scope.principalId,leaseToken:active.authorization.leaseToken,leaseGeneration:outer.leaseGeneration,
+      expectedRequestId:outer.requestId,expectedWorkItemRevision:current.revision,now:new Date(),assertHostFinal,
+      writePredicate:snapshot.writePredicate});
+    if (!acknowledged) throw autoWorkItemLeaseConflict();
+    return acknowledgementResponse(row.workItemId,acknowledged);
+  }
 
   /** Explicit application of the saved setting; never discovery or model work. */
   async applyPendingModelConfiguration(raw: unknown): Promise<ApplyPendingModelConfigurationResponse> {
@@ -619,8 +742,9 @@ export class AutomaticWorkItemDispatchService {
   private async readCurrentInitialAnalysis(
     scope: CanonicalVerifiedAutoWorkItemQueueScope,
     lease: AutomaticSourceBinding,
+    enterprise = false,
   ): Promise<{ status: AilyInitialAnalysisStatus; revision: number }> {
-    assertCanonicalCodexWorkItem(lease.workItemId, lease.requestId);
+    if (!enterprise) assertCanonicalCodexWorkItem(lease.workItemId, lease.requestId);
     if (!this.initialAnalysisStatus) {
       throw Object.assign(new Error('INITIAL_ANALYSIS_STATUS_UNCONFIGURED'), {
         code: 'INITIAL_ANALYSIS_STATUS_UNCONFIGURED',
@@ -665,9 +789,10 @@ export class AutomaticWorkItemDispatchService {
   private async validateCandidate(
     candidate: AutoWorkItemQueueCandidate,
     scope: CanonicalVerifiedAutoWorkItemQueueScope,
+    enterprise = false,
   ): Promise<string | null> {
     const { authorization, workItem: row } = candidate;
-    assertCanonicalCodexWorkItem(authorization.workItemId, authorization.requestId);
+    if (!enterprise) assertCanonicalCodexWorkItem(authorization.workItemId, authorization.requestId);
     const rowMismatch = automaticAuthorizationBindingMismatch(
       authorization,
       row,

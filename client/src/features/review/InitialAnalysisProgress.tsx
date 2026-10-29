@@ -153,12 +153,30 @@ export default function InitialAnalysisProgress(props: Props) {
   return (
     <div className="parse-task-strip" aria-label="分析任务状态">
       <span className="parse-task-strip-label">分析进度</span>
+      {props.working?.stageOverall?.status === 'CURRENT' ? (
+        <span className="text-xs">工作 {props.working.stageOverall.receipt.workRevision} 的阶段综合可读；任务收尾另列。</span>
+      ) : null}
       {value?.analysisModel ? (
         <span className="text-xs">
           事项绑定模型：{value.analysisModel.displayName}
         </span>
       ) : null}
-      {value?.queuedContinuationRequest ? (
+      {value?.ailyTaskAdmission && !value.ailyTaskAdmission.available ? (
+        <p className="wl-initial-analysis-note">当前企业评估入口暂不可用；已有工作继续可读。</p>
+      ) : null}
+      {value?.ailyRecoveryRequest ? (
+        <InitialAnalysisContinueButton
+          key={value.ailyRecoveryRequest.requestId}
+          workItemId={props.workItemId}
+          expectedRevision={value.workItemRevision}
+          operation={value.ailyRecoveryRequest.operation}
+          executionMode={value.ailyRecoveryRequest.executionMode}
+          queuedRequest={value.ailyRecoveryRequest}
+          label="核对原企业请求"
+          onQueued={() => { void refresh(); props.onRevisionChanged(); }}
+          onAccessLost={props.onAccessLost}
+        />
+      ) : value?.queuedContinuationRequest ? (
         <InitialAnalysisContinueButton
           key={value.queuedContinuationRequest.requestId}
           workItemId={props.workItemId}
@@ -187,9 +205,10 @@ export default function InitialAnalysisProgress(props: Props) {
             operation={operation}
             executionMode={
               operation === 'EVALUATE_JOBAID'
-                ? 'PROGRAM_CONTROLLED_V1'
+                ? value.ailyTaskAdmission?.executionMode ?? 'PROGRAM_CONTROLLED_V1'
                 : undefined
             }
+            ailyTaskAdmission={operation === 'EVALUATE_JOBAID' ? value.ailyTaskAdmission : undefined}
             analysisModelName={value.analysisModel?.displayName}
             label={
               operation === 'TRANSLATE'
@@ -197,7 +216,7 @@ export default function InitialAnalysisProgress(props: Props) {
                   ? '重新翻译中文'
                   : '继续中文翻译'
                 : operation === 'EVALUATE_JOBAID'
-                  ? '开始程序评估'
+                  ? value.ailyTaskAdmission ? '开始评估' : '开始程序评估'
                   : '继续综合评估'
             }
             onQueued={() => {

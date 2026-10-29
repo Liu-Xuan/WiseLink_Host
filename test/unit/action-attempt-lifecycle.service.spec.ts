@@ -19,6 +19,41 @@ import {
 } from '../../server/modules/action-attempt/action-attempt.types';
 
 describe('ActionAttemptLifecycleService', () => {
+  it('uses an independently admitted enterprise snapshot and passes only its dedicated claim mode', async () => {
+    const repository = new MemoryActionAttemptRepository(); const models = fixedModelSettings();
+    const capture = jest.spyOn(models, 'captureForWorkItem');
+    const service = new ActionAttemptLifecycleService(repository as never, models);
+    const claimExact = jest.spyOn(repository, 'claimExact');
+    const input = {...reservationInput(async () => ({executionMode: 'AILY_AGENT_V1', requestedModelRef: 'aily/deepseek-v4-pro'})),
+      actorUserId: 'owner-test', leaseOwner: 'service:aily-test', ailyExecution: {intakeRequestId: 'original-intake', principalId: 'service:aily-test', model: {
+        modelRef: 'aily/deepseek-v4-pro', displayName: 'DeepSeek V4 Pro', providerKind: 'BUILT_IN' as const,
+        settingsRevision: 0, selectedAt: '2026-10-29T00:00:00.000Z'}}};
+    const result = await service.reserveAndClaim(input);
+    expect(result.task.executionModel?.modelRef).toBe('aily/deepseek-v4-pro');
+    expect(capture).not.toHaveBeenCalled();
+    expect(repository.terminalizedForSuccessor).toEqual([]);
+    expect(claimExact).toHaveBeenCalledWith(expect.objectContaining({ailyExecution: true, leaseOwner: input.leaseOwner}));
+    await expect(service.reserveAndClaim({...input, ailyExecution: undefined})).rejects.toThrow('ACTION_ATTEMPT_IDEMPOTENCY_PAYLOAD_MISMATCH');
+    expect(claimExact).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(['COMMITTING', 'CANCELLED', 'expired-lease', 'expired-deadline'])('never reclaims enterprise %s into a new generation', async state => {
+    const repository = new MemoryActionAttemptRepository(); const service = new ActionAttemptLifecycleService(repository as never, fixedModelSettings());
+    const input = {...reservationInput(async () => ({executionMode: 'AILY_AGENT_V1', requestedModelRef: 'aily/deepseek-v4-pro'})),
+      actorUserId: 'owner-test', leaseOwner: 'service:aily-test', ailyExecution: {intakeRequestId: 'original-intake', principalId: 'service:aily-test', model: {
+        modelRef: 'aily/deepseek-v4-pro', displayName: 'DeepSeek V4 Pro', providerKind: 'BUILT_IN' as const,
+        settingsRevision: 0, selectedAt: '2026-10-29T00:00:00.000Z'}}};
+    const claim = await service.reserveAndClaim(input);
+    repository.row = {...repository.requiredRow(), ...(state === 'expired-lease' ? {leaseExpiresAt: new Date(0)} :
+      state === 'expired-deadline' ? {deadlineAt: new Date(0)} : {status: state})};
+    // Existing terminal replay still resolves this exact row; it must not reserve a successor.
+    jest.spyOn(repository, 'readByIdempotency').mockResolvedValue(repository.requiredRow());
+    const recover = jest.spyOn(repository, 'recoverExpiredRunning'); const claimExact = jest.spyOn(repository, 'claimExact');
+    await expect(service.reserveAndClaim(input)).rejects.toThrow('ACTION_ATTEMPT_AILY_NOT_CLAIMABLE');
+    expect(repository.requiredRow().leaseGeneration).toBe(claim.leaseGeneration);
+    expect(recover).not.toHaveBeenCalled(); expect(claimExact).not.toHaveBeenCalled();
+  });
+
   it('reconciles a scoped expired RUNNING deadline with the saved fence without claiming new work', async () => {
     const repository = new MemoryActionAttemptRepository();
     const service = new ActionAttemptLifecycleService(repository as never, fixedModelSettings());

@@ -6,6 +6,15 @@ import type {
 import type { JobAidWorkRevision } from '@shared/jobaid-problem-assessment.interface';
 import { jobAidReadingResult } from './jobaid-problem-work';
 
+/** Same exact saved body/artifact input for a stage and the final WI projection. */
+export function deterministicJobAidOverallBody(revision: JobAidWorkRevision,
+  sourceAssessment: NonNullable<CanonicalOpenClawOverallProjection['sourceAssessment']>) {
+  assertJobAidOverallWorkCurrent(revision);
+  return {schemaVersion: 'wiselink.jobaid-initial-overall-projection.v1', sourceAssessment,
+    readingResult: jobAidReadingResult(revision), executionKind: 'DETERMINISTIC_PROJECTION', modelRequests: 0,
+    semanticReanalysisPerformed: false, authorityLevel: 'candidate_only', adopted: false};
+}
+
 /** Completed issues do not establish that their saved overview covers them. */
 export function assertJobAidOverallWorkCurrent(revision: JobAidWorkRevision): void {
   if (revision.content.overviewStatus !== 'CURRENT')

@@ -1,5 +1,8 @@
 import {
+  createAilyChat,
+  serializeAilyChatRequest,
   readAilyChatResult,
+  observeAilyChat,
   streamAilyChat,
 } from '../../server/modules/canonical-host/aily-chat-client';
 
@@ -14,6 +17,45 @@ describe('Host Aily transport', () => {
     message: '解释假设',
     remoteSessionId: 'remote-1',
   };
+
+  it('observes exact enterprise state for a full long answer while preserving the private-chat display limit',async()=>{
+    const body={code:0,data:{agent_chat_id:'1234',session_id:'remote-1',status:'Completed',content:[{type:'text',text:'完整工程正文'.repeat(20000)}]}};
+    globalThis.fetch=jest.fn().mockImplementation(async()=>Response.json(body));
+    await expect(observeAilyChat({...request,chatId:'1234'})).resolves.toMatchObject({chatId:'1234',remoteStatus:'Completed'});
+    await expect(readAilyChatResult({...request,chatId:'1234'})).rejects.toThrow('AILY_RESULT_TOO_LARGE');
+    expect((globalThis.fetch as jest.Mock).mock.calls.every(call=>call[1].method==='GET')).toBe(true);
+  });
+
+  it('does not infer a platform state from a response exceeding the original HTTP byte boundary',async()=>{
+    globalThis.fetch=jest.fn().mockResolvedValue(Response.json({code:0,data:{agent_chat_id:'1234',session_id:'remote-1',
+      status:'Completed',answer:'large'.repeat(500000)}}));
+    await expect(observeAilyChat({...request,chatId:'1234'})).rejects.toThrow();
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect((globalThis.fetch as jest.Mock).mock.calls[0][1].method).toBe('GET');
+  });
+
+  it('sends the exact persisted full task once with stream false and no model or lease fields', async () => {
+    const full = {...request, message: `完整安全任务${'完整原文'.repeat(16000)}`};
+    const expectedRequestBody = serializeAilyChatRequest(full);
+    globalThis.fetch = jest.fn().mockResolvedValue(Response.json({code: 0,
+      data: {agent_chat_id: '9'.repeat(64), session_id: request.remoteSessionId}}));
+    await expect(createAilyChat({...full, expectedRequestBody})).resolves.toEqual({chatId: '9'.repeat(64), remoteSessionId: request.remoteSessionId});
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    const [, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
+    expect(init.body).toBe(expectedRequestBody);
+    expect(JSON.parse(init.body)).toEqual({user_message: {content: [{type: 'text', text: full.message}]},
+      stream: false, session_id: request.remoteSessionId});
+    expect(init.redirect).toBe('error');
+  });
+
+  it('rejects changed original POST bytes before sending and never retries a missing chat receipt', async () => {
+    globalThis.fetch = jest.fn();
+    await expect(createAilyChat({...request, expectedRequestBody: '{}'})).rejects.toThrow('AILY_DISPATCH_BODY_CHANGED');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    (globalThis.fetch as jest.Mock).mockResolvedValue(Response.json({code: 0, data: {session_id: 'remote-1'}}));
+    await expect(createAilyChat(request)).rejects.toThrow('AILY_CHAT_RECEIPT_INVALID');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
 
   it('passes the Host remote session and public text directly without an analysis attempt', async () => {
     globalThis.fetch = jest
@@ -191,13 +233,14 @@ describe('Host Aily transport', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it('retains an asynchronous receipt without pretending it was a completed streamed answer', async () => {
+  it.each([3, 31, 64])('retains a %s-digit asynchronous receipt without pretending completion', async (length) => {
+    const chatId = '1'.repeat(length);
     globalThis.fetch = jest
       .fn()
       .mockResolvedValue(
         Response.json({
           code: 0,
-          data: { agent_chat_id: '123', session_id: 'remote-1' },
+          data: { agent_chat_id: chatId, session_id: 'remote-1' },
         }),
       );
     const progress = jest.fn().mockResolvedValue(undefined);
@@ -205,11 +248,43 @@ describe('Host Aily transport', () => {
       'AILY_STREAM_RESULT_UNCONFIRMED',
     );
     expect(progress).toHaveBeenCalledWith({
-      chatId: '123',
+      chatId,
       remoteSessionId: 'remote-1',
       answer: '',
       status: 'RUNNING',
     });
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([31, 64])('reads an exact %s-digit original chat without truncating its ID', async (length) => {
+    const chatId = '1'.repeat(length);
+    globalThis.fetch = jest.fn().mockResolvedValue(Response.json({
+      code: 0,
+      data: { agent_chat_id: chatId, session_id: request.remoteSessionId,
+        status: 'Completed', content: [{ type: 'text', text: '完整快照' }] },
+    }));
+    expect(await readAilyChatResult({ ...request, chatId })).toMatchObject({ chatId, answer: '完整快照' });
+    expect(globalThis.fetch).toHaveBeenCalledWith(
+      `https://open.feishu.cn/open-apis/aily/v1/agents/agent_test/chats/${chatId}`,
+      expect.objectContaining({ method: 'GET' }),
+    );
+  });
+
+  it.each(['', '1'.repeat(65), '123/456', '123-other'])('rejects an invalid decimal chat ID before GET: %s', async (chatId) => {
+    globalThis.fetch = jest.fn();
+    await expect(readAilyChatResult({ ...request, chatId })).rejects.toThrow('AILY_CHAT_INVALID');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [{ agent_chat_id: '456' }, 'AILY_RESULT_CHAT_MISMATCH'],
+    [{ session_id: 'other-session' }, 'AILY_RESULT_SESSION_MISMATCH'],
+  ])('rejects an echoed binding outside the original chat/session', async (binding, error) => {
+    globalThis.fetch = jest.fn().mockResolvedValue(Response.json({
+      code: 0,
+      data: { ...binding, status: 'Completed', content: [{ type: 'text', text: 'wrong chat' }] },
+    }));
+    await expect(readAilyChatResult({ ...request, chatId: '123' })).rejects.toThrow(error);
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,4 +1,4 @@
-import type { CanonicalAssessmentExecutionMode, CanonicalExecutionModelSelection } from '@shared/api.interface';
+import type { CanonicalProgramAssessmentExecutionMode, CanonicalExecutionModelSelection } from '@shared/api.interface';
 import type { CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import type {
   ActionAttemptStatus,
@@ -32,7 +32,9 @@ export interface ReserveActionAttemptInput {
   baseRevision: number;
   idempotencyKey: string;
   /** Explicit new initial-program request; never changes the WorkItem model pin. */
-  programControlled?: { modelRef: string; executionMode?: CanonicalAssessmentExecutionMode };
+  programControlled?: { modelRef: string; executionMode?: CanonicalProgramAssessmentExecutionMode };
+  /** Independent enterprise admission; never classified as a Native program request. */
+  ailyExecution?: { model: CanonicalExecutionModelSelection; intakeRequestId: string; principalId: string };
   priority?: number;
   maxAttempts?: number;
   deadlineAt?: Date;

@@ -1,13 +1,13 @@
 import { z } from 'zod/v4';
 import type {
-  CanonicalAssessmentExecutionMode,
+  CanonicalProgramAssessmentExecutionMode,
   CanonicalExecutionModelSelection,
   CanonicalProgramAgentPolicy,
 } from '@shared/api.interface';
 
 export interface ProgramAssessmentAdmission {
   modelRef: string;
-  executionMode?: CanonicalAssessmentExecutionMode;
+  executionMode?: CanonicalProgramAssessmentExecutionMode;
   agentPolicy?: CanonicalProgramAgentPolicy;
 }
 
@@ -19,7 +19,7 @@ export const programAgentPolicySchema = z.strictObject({
   timeoutSeconds: z.literal(3600),
 });
 
-export function isProgramAssessmentMode(value: unknown): value is CanonicalAssessmentExecutionMode {
+export function isProgramAssessmentMode(value: unknown): value is CanonicalProgramAssessmentExecutionMode {
   return value === 'PROGRAM_CONTROLLED_V1' || value === 'PROGRAM_AGENT_V1';
 }
 

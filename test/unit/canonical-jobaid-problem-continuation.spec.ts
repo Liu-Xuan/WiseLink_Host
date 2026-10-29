@@ -1,4 +1,7 @@
 import { overallUserRegenerationIdempotencyKey } from '../../server/modules/canonical-host/canonical-host-openclaw-overall.service';
+import { AilyTaskAdmissionService } from '../../server/modules/canonical-host/aily-task-admission';
+import { AILY_TASK_ROLE_MAPPING } from '../../server/modules/canonical-host/aily-executor-run';
+import { JOBAID_CHECKLIST_RC1 } from '@shared/jobaid-checklist-rc1';
 import * as authorizedWork from '../../server/modules/canonical-host/canonical-authorized-work-item-reader';
 import { CanonicalHostInitialAnalysisStatusService } from '../../server/modules/canonical-host/canonical-host-initial-analysis-status.service';
 import { taskModelSelection } from '../../server/modules/model-settings/canonical-model-catalog';
@@ -49,6 +52,34 @@ const scope = {
 };
 
 describe('JobAid continuation requests', () => {
+  it('seals the entire enterprise checklist, role mapping, original, methods and previous work while refusing legacy BEGIN', async () => {
+    const h = harness(); h.work.listForRuntime.mockResolvedValue([savedWork()]);
+    const selection = new AilyTaskAdmissionService({enabled: true, tenantId: TENANT, workItemId: h.current().workItemId,
+      intakeRequestId: h.current().requestId, agentId: 'agent_synthetic', principalId: 'service:aily-synthetic',
+      authorizationFingerprint: 'synthetic-scope', publicationRef: 'synthetic-publication', configurationSource: 'synthetic-fixture',
+      apiAccessVerified: true, trustedToolsVerified: true, modelOptions: [{modelRef: 'aily/deepseek-v4-pro', platformBuiltIn: true}]})
+      .require(TENANT, h.current());
+    const admission = {...selection, executionMode: 'AILY_AGENT_V1' as const, modelRef: selection.model.modelRef, actorUserId: OWNER};
+    await h.service.enqueueContinuation(h.current(), TENANT, 'permission-browser', REQUEST_1,
+      'INITIAL_PROBLEM_ASSESSMENT', undefined, undefined, undefined, admission);
+    await expect(h.service.begin(h.current(), scope, 'INITIAL_PROBLEM_ASSESSMENT', REQUEST_1)).rejects.toThrow('JOBAID_AILY_NATIVE_BEGIN_FORBIDDEN');
+    expect(h.attempts.reserveAndClaim).not.toHaveBeenCalled();
+    const started = await h.service.beginAily({workItem: h.current(), tenantId: TENANT, actorUserId: OWNER,
+      permissionSnapshotVersion: 'permission-browser', requestId: REQUEST_1, admission,
+      automaticWorkItemLease:{...h.current().source,sourceFileSha256:h.current().source.sourceFileSha256.replace(/^sha256:/u,''),
+        requestId:h.current().requestId,actorUserId:OWNER,leaseGeneration:1,leaseExpiresAt:'2099-01-01T00:00:00.000Z'}});
+    expect(started.modelInput.checklistBinding?.definition).toEqual(JOBAID_CHECKLIST_RC1);
+    expect(started.modelInput.checklistBinding?.selection).toHaveLength(8);
+    expect(started.modelInput.executionRoleMapping).toEqual(AILY_TASK_ROLE_MAPPING);
+    expect(started.modelInput.methodBinding).toEqual(JOBAID_METHOD_BINDING);
+    expect(started.modelInput.programOriginal?.units[0].payload).toEqual({text: ENGLISH});
+    expect(JSON.stringify(started.modelInput)).toContain(savedWork().content.understanding);
+    expect(started.task.executionModel?.modelRef).toBe('aily/deepseek-v4-pro');
+    expect(h.attempts.reserveAndClaim).toHaveBeenCalledWith(expect.objectContaining({actorUserId: OWNER,
+      leaseOwner: selection.configuration.principalId, ailyExecution: {model: selection.model,
+        intakeRequestId: selection.configuration.intakeRequestId, principalId: selection.configuration.principalId}}));
+  });
+
   it('registers exact program material bytes without putting plaintext in the progress journal', async () => {
     const h = harness();
     await h.service.enqueueContinuation(h.current(), TENANT, 'permission', REQUEST_1,
@@ -1473,7 +1504,7 @@ function harness(knowledge?: { binding: jest.Mock }, initialAilySessionId?: stri
     reserve: jest.fn(async (input: ReserveActionAttemptInput) => {
       const operationRef = `AQ-CONTINUATION-${rows.size + 1}`;
       const actionAttemptId = `ATT-CONTINUATION-${rows.size + 1}`;
-      const executionModel = input.programControlled ? input.programControlled.executionMode === 'PROGRAM_AGENT_V1'
+      const executionModel = input.ailyExecution ? input.ailyExecution.model : input.programControlled ? input.programControlled.executionMode === 'PROGRAM_AGENT_V1'
         ? {...taskModelSelection(input.programControlled.modelRef), schemaVersion: 'wiselink.3_1.execution_model_selection.v2' as const,
           maxOutputTokens: 131072, settingsRevision: 4}
         : taskModelSelection(input.programControlled.modelRef) : undefined;

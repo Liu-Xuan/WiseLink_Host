@@ -1,5 +1,6 @@
 import type { JobAidActivityRead, JobAidKnowledgeObservationStatus } from '@shared/jobaid-activity.interface';
 import { isJobAidConsumerStoppedReport } from '@shared/jobaid-activity.interface';
+import { parseAilyStageOverall } from './program-controlled-assessment';
 
 export const JOBAID_ACTIVITY_WINDOW = 50;
 export interface JobAidExecutionObservation {
@@ -71,6 +72,15 @@ export function projectJobAidActivity(
       }
       result.consumerStopped = { sequence: index + 1, observedAt,
         modelRound: record.modelRound, errorCode: record.errorCode, upstreamOutcome: 'UNKNOWN' };
+      continue;
+    }
+    if (record.kind === 'AILY_STAGE_OVERALL') {
+      try {
+        if (!('receipt' in record)) throw new Error();
+        const stage = parseAilyStageOverall(record.receipt);
+        if (stage.sourceAssessment.actionAttemptId !== attempt.attemptId || !('observedAt' in record) || record.observedAt !== stage.observedAt)
+          throw new Error();
+      } catch { result.malformedRecordCount++; }
       continue;
     }
     if (record.kind === 'ASSESSMENT_KNOWLEDGE_OBSERVED') {

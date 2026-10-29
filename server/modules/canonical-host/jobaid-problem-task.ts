@@ -1,5 +1,6 @@
 import type { JobAidChecklistBinding } from '@shared/jobaid-checklist.interface';
 import { assertJobAidChecklistBinding } from './jobaid-checklist-binding';
+import { AILY_TASK_ROLE_MAPPING } from './aily-executor-run';
 import { assertProgramAgentPolicyModel, isProgramAssessmentMode, readProgramAgentPolicy } from './program-agent-policy';
 import type { JobAidPreparationScope, JobAidPreparationView } from './jobaid-preparation-view';
 import { automaticWorkItemTaskLease, type AutomaticWorkItemTaskLease } from '../action-attempt/automatic-work-item-attempt-lease';
@@ -255,15 +256,18 @@ export function assertJobAidProblemTaskBinding(
     throw new Error('JOBAID_CHECKLIST_BINDING_INVALID');
   if (input.checklistBinding) {
     assertJobAidChecklistBinding(input.checklistBinding);
-    if (input.executionMode !== 'PROGRAM_AGENT_V1' || input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT')
+    if (!['PROGRAM_AGENT_V1', 'AILY_AGENT_V1'].includes(input.executionMode ?? '') || input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT')
       throw new Error('JOBAID_CHECKLIST_BINDING_INVALID');
   }
   if (input.executionMode !== input.modelInput.executionMode ||
-      (input.executionMode !== undefined && (!isProgramAssessmentMode(input.executionMode) ||
+      (input.executionMode !== undefined && ((!isProgramAssessmentMode(input.executionMode) && input.executionMode !== 'AILY_AGENT_V1') ||
         input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || !input.requestedModelRef ||
         !input.modelInput.programOriginal || canonicalJson(input.modelInput.programOriginal.binding) !==
           canonicalJson(input.modelInput.documentOverview.original?.binding))))
     throw new Error('JOBAID_PROGRAM_TASK_BINDING_INVALID');
+  if (input.executionMode === 'AILY_AGENT_V1' && (!input.checklistBinding ||
+      canonicalJson(input.modelInput.executionRoleMapping) !== canonicalJson(AILY_TASK_ROLE_MAPPING)))
+    throw new Error('JOBAID_AILY_TASK_BINDING_INVALID');
   if ((input.executionMode === 'PROGRAM_AGENT_V1') !== (input.agentPolicy !== undefined))
     throw new Error('JOBAID_PROGRAM_AGENT_POLICY_BINDING_INVALID');
   if (input.executionMode === 'PROGRAM_AGENT_V1') {

@@ -2,14 +2,9 @@ import { Injectable } from '@nestjs/common';
 
 import type { DrivePage } from '../drive-folder-scanner';
 import type { AuthorizedDrivePageFetcher } from './drive-source-scan.service';
+import { FeishuApplicationToken } from './feishu-application-token';
 
 type FetchLike = typeof globalThis.fetch;
-
-interface CachedTenantToken {
-  appId: string;
-  value: string;
-  expiresAt: number;
-}
 
 export interface DriveFileMetadata {
   token: string;
@@ -33,8 +28,15 @@ const MAX_SOURCE_BYTES = 100 * 1024 * 1024;
 export class FeishuDriveApplicationPageFetcher
   implements AuthorizedDrivePageFetcher
 {
-  private cachedToken: CachedTenantToken | null = null;
   private readonly fetchImpl: FetchLike = globalThis.fetch;
+  private readonly applicationToken: FeishuApplicationToken = new FeishuApplicationToken(
+    (url: URL, init: RequestInit): Promise<Response> => this.request(url, init),
+    {
+      notConfigured: 'DRIVE_APPLICATION_IDENTITY_NOT_CONFIGURED',
+      invalidResponse: 'DRIVE_HTTP_RESPONSE_INVALID',
+      requestFailed: 'FEISHU_DRIVE_REQUEST_FAILED',
+    },
+  );
 
   async list(folderToken: string, pageToken?: string): Promise<DrivePage> {
     if (!folderToken) throw new Error('DRIVE_FOLDER_TOKEN_REQUIRED');
@@ -128,43 +130,10 @@ export class FeishuDriveApplicationPageFetcher
   }
 
   private async tenantAccessToken(): Promise<string> {
-    const appId = process.env.FEISHU_OAUTH_CLIENT_ID?.trim();
-    const appSecret = process.env.FEISHU_OAUTH_CLIENT_SECRET?.trim();
-    if (!appId || !appSecret)
-      throw new Error('DRIVE_APPLICATION_IDENTITY_NOT_CONFIGURED');
-    if (this.cachedToken?.appId === appId &&
-      this.cachedToken.expiresAt > Date.now() + 60_000)
-      return this.cachedToken.value;
-
-    const response = await this.request(
-      new URL(
-        'https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal',
-      ),
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
-        body: JSON.stringify({ app_id: appId, app_secret: appSecret }),
-      },
-    );
-    const body = await readJson(response);
-    const code = readNumber(body, 'code');
-    const token = readString(body, 'tenant_access_token');
-    const expireSeconds = readNumber(body, 'expire');
-    if (
-      !response.ok ||
-      code !== 0 ||
-      !token ||
-      !expireSeconds ||
-      expireSeconds <= 0
-    ) {
-      throw driveHttpError(response.status, code, readString(body, 'msg'));
-    }
-    this.cachedToken = {
-      appId,
-      value: token,
-      expiresAt: Date.now() + expireSeconds * 1000,
-    };
-    return token;
+    return this.applicationToken.get({
+      appId: process.env.FEISHU_OAUTH_CLIENT_ID?.trim() ?? '',
+      appSecret: process.env.FEISHU_OAUTH_CLIENT_SECRET?.trim() ?? '',
+    });
   }
 
   private async request(url: URL, init: RequestInit): Promise<Response> {

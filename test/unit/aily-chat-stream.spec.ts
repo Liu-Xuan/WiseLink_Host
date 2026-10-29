@@ -122,4 +122,21 @@ describe('Aily SSE public answer reader', () => {
       status: 'FAILED',
     });
   });
+
+  it.each([1, 30, 31, 64])('retains the exact %s-digit chat ID shared with JSON/GET', async (length) => {
+    const chatId = '1'.repeat(length);
+    const wire = frame('start', { agent_chat_id: chatId, session_id: 'original-session' }) +
+      frame('message_delta', { agent_chat_id: chatId, delta: { type: 'content', text: '完整回答' } }) +
+      frame('done', { agent_chat_id: chatId, status: 'Completed' });
+    expect(await consumeAilyChatStream(response(wire), async () => undefined)).toEqual({
+      chatId, remoteSessionId: 'original-session', answer: '完整回答', status: 'COMPLETED',
+    });
+  });
+
+  it.each(['', '1'.repeat(65), '123/456', '123-other'])('rejects invalid chat ID %s without inventing a binding', async (chatId) => {
+    const onProgress = jest.fn();
+    await expect(consumeAilyChatStream(response(frame('start', { agent_chat_id: chatId })), onProgress))
+      .rejects.toThrow('AILY_STREAM_CHAT_MISMATCH');
+    expect(onProgress).not.toHaveBeenCalled();
+  });
 });

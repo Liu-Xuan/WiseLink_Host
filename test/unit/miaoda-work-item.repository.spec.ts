@@ -5,6 +5,12 @@ import { PgDialect } from 'drizzle-orm/pg-core';
 import { autoWorkItemAuthorization } from '../../server/database/auto-work-item-authorization.schema';
 import { MiaodaWorkItemRepository } from '../../server/modules/work-item/miaoda-work-item.repository';
 import { readerPreviewFailureProjection } from '../support/reader-preview-failure';
+import { sql, type SQL } from 'drizzle-orm';
+import { ailyInitialSuccessorFixture } from '../support/aily-initial-successor.fixture';
+import { MiaodaDocumentVersionSourceResolver } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
+import { canonicalJson, sealResultEnvelope,parseStoredResultEnvelope,parseTaskEnvelope } from '../../server/modules/action-attempt/action-attempt-envelope';
+import type { OpenClawModelResultEnvelope } from '../../server/modules/action-attempt/action-attempt-envelope.types';
+import { matchesFailedAttempt } from '../../server/modules/action-attempt/cancelled-initial-continuation';
 
 function projection(): Omit<CanonicalWorkItemProjection, 'revision'> {
   return {
@@ -35,6 +41,148 @@ function repository() {
     .mockResolvedValue(undefined as never);
   return { target, syncPrimaryAttempt };
 }
+
+describe('explicit owner Aily initial successor authorization',()=>{
+  afterEach(()=>jest.restoreAllMocks());
+  function fixture() {
+    const h=ailyInitialSuccessorFixture();
+    jest.spyOn(MiaodaDocumentVersionSourceResolver.prototype,'resolve').mockImplementation(async function(this:MiaodaDocumentVersionSourceResolver,id,options){
+      expect(id).toBe(h.owner.documentVersionId);expect(options).toEqual({requireCurrent:true,expectedCreatorUserId:h.owner.requestedByUserId});
+      expect((this as unknown as {db:unknown}).db).toBe(h.database);
+      return await h.source.resolve() as never;
+    });
+    return h;
+  }
+  function assertLegacyFailureBaseline(h:ReturnType<typeof ailyInitialSuccessorFixture>) {
+    const row=h.history[0];const task=parseTaskEnvelope(String(row.taskEnvelopeJson));
+    const result=parseStoredResultEnvelope({value:row.resultEnvelopeJson,task});
+    expect(result).toMatchObject({status:'FAILED',businessOutcome:'NOT_PRODUCED',modelOutput:null,outputArtifactRefs:[],
+      contentHash:row.resultContentHash,runMetrics:{durationMs:1,inputUnits:17,outputUnits:23}});
+    const stored:typeof actionAttempt.$inferSelect={...row,id:'00000000-0000-4000-8000-000000000906',
+      matterId:null,matterRevisionId:null,producerRunId:null,packageArtifactRef:null,packageArtifactSha256:null,
+      failureArtifactRef:null,failureArtifactSha256:null,createdBy:null,updatedBy:null,
+      errorCode:row.errorCode??null,errorMessage:row.errorMessage??null,reviewActivityJson:row.reviewActivityJson??null,
+      executionModelJson:row.executionModelJson??null};
+    expect(matchesFailedAttempt(stored,h.owner,h.state.clock)).toBe(true);
+  }
+  it('advances the expired legacy generation exactly once without changing old failed/timed-out records or keys',async()=>{
+    const h=fixture();const history=canonicalJson(h.history);const oldToken=h.grant.leaseToken;const oldGeneration=h.grant.leaseGeneration;
+    assertLegacyFailureBaseline(h);
+    expect(await h.authorization()).toEqual({status:'AUTHORIZED',leaseGeneration:oldGeneration+1});
+    expect(h.grant.leaseOwner).toBe(h.config.principalId);expect(h.grant.leaseToken).not.toBe(oldToken);
+    expect(h.grant.leaseGeneration).toBe(oldGeneration+1);expect(canonicalJson(h.history)).toBe(history);
+    expect(h.queued.status).toBe('QUEUED');expect(h.queued.leaseGeneration).toBe(0);
+    expect(h.locks.slice(0,3)).toEqual(['WI','GRANT','ATTEMPT']);
+    expect(h.authorize.mock.calls.every(([db])=>db===h.database)).toBe(true);
+    const update=h.statements.find(item=>item.kind==='UPDATE')!;
+    expect(update.sql).toContain('clock_timestamp()');expect(update.sql).toContain('executor_run_json IS NULL');
+    expect(update.sql).toContain('a.deadline_at>clock_timestamp()');expect(update.sql).toContain('wi.projection_json');
+    expect(update.params).toEqual(expect.arrayContaining([oldToken,oldGeneration,h.owner.sourceArtifactId,h.queued.taskInputHash,h.queued.attemptId]));
+    const expires=new PgDialect().sqlToQuery(h.changesApplied[0].leaseExpiresAt as SQL);
+    expect(expires.sql).toContain('clock_timestamp()');expect(expires.params).toContain(3_600_000);
+    const again=await h.authorization();expect(again).toEqual({status:'UNCHANGED',leaseGeneration:oldGeneration+1});
+    expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(1);expect(h.grant.leaseToken).not.toBe(oldToken);
+  });
+
+  it('serializes concurrent same-intent authorizations into one generation and one token',async()=>{
+    const h=fixture();const old=h.grant.leaseGeneration;
+    const values=await Promise.all([h.authorization(),h.authorization()]);
+    expect(values.map(value=>value.status).sort()).toEqual(['AUTHORIZED','UNCHANGED']);
+    expect(h.grant.leaseGeneration).toBe(old+1);expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(1);
+  });
+
+  it.each(['date','text'] as const)('normalizes the database wall clock returned as %s after acquiring the original locks',async shape=>{
+    const h=fixture();h.state.databaseClock=shape==='date'?new Date(h.state.clock.getTime()):h.state.clock.toISOString();
+    expect(await h.authorization()).toEqual({status:'AUTHORIZED',leaseGeneration:3});
+    expect(h.locks.slice(0,3)).toEqual(['WI','GRANT','ATTEMPT']);
+    expect(h.statements.find(item=>item.kind==='EXECUTE')!.sql).toContain('clock_timestamp() AS now');
+    expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(1);
+  });
+
+  it.each(['invalid text','',new Date('invalid'),null,0])('rejects invalid database time %s without treating the grant as expired',async clock=>{
+    const h=fixture();h.state.databaseClock=clock;const before=canonicalJson(h.grant);
+    await expect(h.authorization()).rejects.toThrow('AILY_INITIAL_SUCCESSOR_AUTHORIZATION_REJECTED');
+    expect(canonicalJson(h.grant)).toBe(before);expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(0);
+    expect(h.authorize).not.toHaveBeenCalled();
+  });
+
+  it.each(['hash','outcome','output','artifacts','metrics-null'])('rejects a persisted FAILED result with wrong %s despite a covered empty SAVE set',async reason=>{
+    const h=fixture();const old=h.history[0];assertLegacyFailureBaseline(h);
+    if(reason==='hash')old.resultContentHash='0'.repeat(64);
+    else {
+      const {contentHash:_hash,...result}=JSON.parse(old.resultEnvelopeJson!) as OpenClawModelResultEnvelope;
+      const changed=sealResultEnvelope({...result,...(reason==='outcome'?{businessOutcome:'CANDIDATE_READY' as const}:
+        reason==='output'?{modelOutput:'{}'}:reason==='metrics-null'?{runMetrics:{...result.runMetrics,inputUnits:null,outputUnits:null}}:
+          {outputArtifactRefs:[{ref:'artifact://unexpected',sha256:'c'.repeat(64)}]})});
+      old.resultEnvelopeJson=canonicalJson(changed);old.resultContentHash=changed.contentHash;
+    }
+    await expect(h.authorization()).rejects.toThrow();expect(h.grant.leaseGeneration).toBe(2);
+    expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(0);
+  });
+
+  it.each(['coverage','saved','active','committing','expired-running','queue-expired','run-present','unknown-activity','older-unknown-activity','read-without-save','projection'])
+  ('protects %s instead of interpreting it as a settled legacy failure',async reason=>{
+    const h=fixture();
+    if(reason==='coverage')h.state.covered=false;
+    if(reason==='saved')h.state.hasSavedWork=true;
+    if(reason==='active'||reason==='expired-running')h.history[1].status='RUNNING';
+    if(reason==='committing')h.history[1].status='COMMITTING';
+    if(reason==='queue-expired')h.queued.deadlineAt=new Date(0);
+    if(reason==='run-present')h.state.run={post:{state:'UNKNOWN'}};
+    if(reason==='unknown-activity')h.history[1].reviewActivityJson='[{"kind":"UNRECOGNIZED_SAVE_RECEIPT"}]';
+    if(reason==='older-unknown-activity')h.history[1].reviewActivityJson=canonicalJson([{kind:'UNRECOGNIZED_SAVE_RECEIPT'},
+      ...Array.from({length:60},()=>({kind:'ASSESSMENT_KNOWLEDGE_OBSERVED',status:'UNAVAILABLE',observedAt:new Date().toISOString()}))]);
+    if(reason==='read-without-save')h.history[1].reviewActivityJson=canonicalJson([{kind:'ASSESSMENT_WORK_READ',workRevisionRef:'JAWR-unknown',
+      workRevision:1,saveRequestId:'SAVE-unknown',observedAt:new Date().toISOString()}]);
+    if(reason==='projection') {
+      Object.assign(h.item,{integratedAssessment:{baseRules:{actionAttemptId:h.history[1].attemptId}}});
+      h.owner.projectionJson=canonicalJson(h.item);
+    }
+    await expect(h.authorization()).rejects.toThrow();expect(h.grant.leaseGeneration).toBe(2);
+    expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(0);
+    if(reason==='expired-running')expect(h.history[1].status).toBe('RUNNING');
+  });
+
+  it.each(['owner','revision','source','live-legacy','revoked'])('rechecks %s after waiting for the original locks',async reason=>{
+    const h=fixture();let allowed=true;
+    h.setOnLock(table=>{
+      if(table===workItem&&reason==='owner')h.owner.requestedByUserId='other-owner';
+      if(table===workItem&&reason==='revision')h.owner.revision++;
+      if(table===workItem&&reason==='source')h.owner.sourceArtifactId='other-source';
+      if(table===autoWorkItemAuthorization&&reason==='live-legacy')h.grant.leaseExpiresAt=new Date(Date.now()+60_000);
+      if(table===actionAttempt&&reason==='revoked')allowed=false;
+    });
+    h.authorize.mockImplementation(async()=>{if(!allowed)throw new Error('SYNTHETIC_AUTHORIZATION_REVOKED');});
+    await expect(h.authorization()).rejects.toThrow();expect(h.grant.leaseGeneration).toBe(2);
+    expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(0);
+  });
+
+  it('rolls the grant update back if the same pinned authorization is revoked before commit',async()=>{
+    const h=fixture();const before=canonicalJson(h.grant);
+    h.authorize.mockImplementation(async(db)=>{
+      expect(db).toBe(h.database);
+      if(h.statements.some(item=>item.kind==='UPDATE'))throw new Error('SYNTHETIC_REVOKED_BEFORE_COMMIT');
+    });
+    await expect(h.authorization()).rejects.toThrow('SYNTHETIC_REVOKED_BEFORE_COMMIT');
+    expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(1);expect(canonicalJson(h.grant)).toBe(before);
+  });
+
+  it('keeps ordinary service claim and its actual repository SQL from adopting the expired legacy grant',async()=>{
+    const h=fixture();const before=canonicalJson(h.grant);
+    await expect(h.automatic.claimAilyWorkItem({tenantId:h.owner.tenantId,actorUserId:h.owner.requestedByUserId,workItem:h.item})).rejects.toThrow();
+    const input={tenantId:h.owner.tenantId,workItemId:h.owner.workItemId,requestId:h.owner.requestId,actorUserId:h.owner.requestedByUserId,
+      documentId:h.owner.documentId,documentVersionId:h.owner.documentVersionId,sourceArtifactId:h.owner.sourceArtifactId,
+      sourceFileSha256:h.owner.sourceFileSha256,sourceByteLength:Number(h.owner.sourceByteLength),expectedWorkItemRevision:h.owner.revision,
+      leaseOwner:h.config.principalId,leaseToken:'00000000-0000-4000-8000-000000000804',now:new Date(),leaseExpiresAt:new Date(Date.now()+3_600_000),ailyWaitingOnly:true};
+    expect(await h.repository.claimAutoProcessingCandidate(input)).toBeNull();
+    expect(canonicalJson(h.grant)).toBe(before);expect(h.statements.filter(item=>item.kind==='UPDATE')).toHaveLength(0);
+    expect(h.statements.some(item=>item.kind==='SELECT'&&item.sql.includes('lease_owner')&&item.params.includes(h.config.principalId))).toBe(true);
+    Object.assign(h.grant,{status:'WAITING',leaseOwner:null,leaseToken:null,leaseExpiresAt:null,leaseGeneration:0});
+    expect(await h.repository.claimAutoProcessingCandidate(input)).toMatchObject({leaseGeneration:1});
+    const update=h.statements.find(item=>item.kind==='UPDATE')!;
+    expect(update.params).toContain('WAITING');expect(update.params).not.toContain('LEASED');
+  });
+});
 
 describe('MiaodaWorkItemRepository assessment CAS audit isolation', () => {
   it('does not rewrite the primary parse ActionAttempt for an assessment-only CAS', async () => {
@@ -867,7 +1015,7 @@ describe('MiaodaWorkItemRepository readable completion receipt', () => {
       run(executor),
     );
     const target = new MiaodaWorkItemRepository({ transaction } as never);
-    return { target, transaction, update, set, from, lock };
+    return { target, transaction, update, set, from, lock, where };
   }
   const input = {
     tenantId: 'tenant-A',
@@ -893,6 +1041,24 @@ describe('MiaodaWorkItemRepository readable completion receipt', () => {
     expect(fixture.set.mock.calls[1][0]).toEqual({
       projectionJson: expect.anything(),
     });
+  });
+  it('checks enterprise final under WI/grant locks and keeps mapping/expiry in the actual ACK statement',async()=>{
+    const fixture=setup([{workItemId:'WI-A'}]);const assertHostFinal=jest.fn(async()=>undefined);
+    await fixture.target.acknowledgeAutoProcessingLease({...input,expectedRequestId:'REQ-A',assertHostFinal,
+      writePredicate:sql`synthetic_current_identity_and_original_run`});
+    expect(fixture.lock).toHaveBeenCalledTimes(2);
+    expect(assertHostFinal.mock.invocationCallOrder[0]).toBeGreaterThan(fixture.lock.mock.invocationCallOrder[1]);
+    expect(assertHostFinal.mock.invocationCallOrder[0]).toBeLessThan(fixture.update.mock.invocationCallOrder[0]);
+    const query=new PgDialect().sqlToQuery(fixture.where.mock.calls[0][0]);
+    expect(query.sql).toContain('synthetic_current_identity_and_original_run');
+    expect(query.sql).toContain('clock_timestamp()');expect(query.sql).toContain('NOT EXISTS');
+    expect(query.params).toContain('REQ-A');expect(query.params).toContain(input.leaseToken);
+  });
+  it('does not write an ACK after the locked final proof fails',async()=>{
+    const fixture=setup([{workItemId:'WI-A'}]);
+    await expect(fixture.target.acknowledgeAutoProcessingLease({...input,assertHostFinal:async()=>{throw new Error('SYNTHETIC_FINAL_CHANGED');}}))
+      .rejects.toThrow('SYNTHETIC_FINAL_CHANGED');
+    expect(fixture.update).not.toHaveBeenCalled();
   });
   it('fails the transaction when the exact revision cannot receive the receipt', async () => {
     const fixture = setup([]);

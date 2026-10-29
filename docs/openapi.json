@@ -1,5 +1,29 @@
 {
   "paths": {
+    "/openapi/wiselink/aily-mcp": {
+      "post": {
+        "operationId": "handleAilyEngineeringMcp",
+        "summary": "企业智能体的获权工程任务工具",
+        "description": "MCP stateless JSON。先由原平台网关认证，再严格核验 x-aily-jwt 的原字符串密钥 HS256 签名、exp 和准确 agent_id。主体及租户的实际类型/namespace 未核时配置默认关闭；仅读既有 ACTIVE 身份映射，不创建映射或接受数字转字符串/邮箱替代。taskContextRef 仅选择原封存 AILY_AGENT_V1 任务；Host 重核当前 actor/tenant、来源、服务主体、原 lease/generation/deadline 和 outer grant，在可信侧注入凭据。模型不能提交 actor、tenant、lease、CAS、原结果外封。SAVE 先持久原 key/完整 payload，未知结果只核原 key；独立 READ 返回完整实际保存正文。阶段 Overall 不结束任务，FINISH 的原结果提交与条件 ACK 分列。没有新任务/claim/heartbeat/取消工具，不修改旧只读路由。正式调用身份 provider 和后台触发未配置，不代表已运行或自动化完成。",
+        "parameters": [{"in":"header","name":"x-aily-jwt","required":true,"schema":{"type":"string"},"description":"官方签名 JWT；敏感值，不进入日志、任务或模型。"}],
+        "requestBody": {"required":true,"content":{"application/json":{"schema":{"type":"object","required":["jsonrpc","method"],"properties":{"jsonrpc":{"type":"string","enum":["2.0"]},"id":{"oneOf":[{"type":"string"},{"type":"number"}]},"method":{"type":"string","enum":["initialize","notifications/initialized","tools/list","tools/call"]},"params":{"type":"object"}},"additionalProperties":false}}}},
+        "responses": {
+          "200":{"description":"MCP JSON-RPC 回执；工具失败以 isError=true 与准确代码返回，不静默重试或另造请求。"},
+          "401":{"description":"身份配置未就绪、签名/过期/agent/实际主体类型不匹配或既有映射不存在。"},
+          "403":{"description":"原网关或当前来源/actor/租户/任务授权拒绝。"},
+          "409":{"description":"原 fence、版本、取消、期限、pending 或成果读取尚未确认；保留原操作。"}
+        },
+        "x-wiselink-tools": {
+          "read_assessment_sources":{"type":"object","additionalProperties":false,"required":["taskContextRef","sourceRefs","purpose"],"properties":{"taskContextRef":{"type":"string","minLength":1,"maxLength":128},"sourceRefs":{"type":"array","minItems":1,"maxItems":96,"items":{"type":"string","minLength":1,"maxLength":512}},"purpose":{"type":"string","minLength":1,"maxLength":2000},"context":{"type":"string","enum":["EXACT","PAGE"],"default":"PAGE"}}},
+          "validate_assessment_work":{"type":"object","additionalProperties":false,"required":["taskContextRef","workJson"],"properties":{"taskContextRef":{"type":"string","minLength":1,"maxLength":128},"workJson":{"type":"string","minLength":2}}},
+          "save_assessment_work":{"type":"object","additionalProperties":false,"required":["taskContextRef","candidateRef"],"properties":{"taskContextRef":{"type":"string","minLength":1,"maxLength":128},"candidateRef":{"type":"string","format":"uuid"}}},
+          "read_assessment_work":{"type":"object","additionalProperties":false,"required":["taskContextRef"],"properties":{"taskContextRef":{"type":"string","minLength":1,"maxLength":128},"saveRequestId":{"type":"string","minLength":1,"maxLength":96},"workRevisionRef":{"type":"string","pattern":"^JAWR-[A-Za-z0-9-]{1,91}$"}}},
+          "project_assessment_stage_overall":{"type":"object","additionalProperties":false,"required":["taskContextRef","workRevisionRef"],"properties":{"taskContextRef":{"type":"string","minLength":1,"maxLength":128},"workRevisionRef":{"type":"string","pattern":"^JAWR-[A-Za-z0-9-]{1,91}$"}}},
+          "finish_assessment_task":{"type":"object","additionalProperties":false,"required":["taskContextRef","workRevisionRef"],"properties":{"taskContextRef":{"type":"string","minLength":1,"maxLength":128},"workRevisionRef":{"type":"string","pattern":"^JAWR-[A-Za-z0-9-]{1,91}$"}}}
+        },
+        "x-wiselink-deployment-status":"LOCAL_IMPLEMENTATION_DEFAULT_OFF_NOT_DEPLOYED"
+      }
+    },
   "/openapi/wiselink/local-mineru/claim": {
       "post": {
         "operationId": "claimLocalMineru",

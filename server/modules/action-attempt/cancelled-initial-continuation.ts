@@ -379,7 +379,7 @@ export function matchesInitialContinuationOwner(
     return false;
   }
 }
-function matchesFailedAttempt(
+export function matchesFailedAttempt(
   target: typeof actionAttempt.$inferSelect,
   owner: typeof workItem.$inferSelect,
   blockedAt: Date,

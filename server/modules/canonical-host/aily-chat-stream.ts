@@ -5,6 +5,11 @@ export interface AilyStreamProgress {
   status: 'RUNNING' | 'COMPLETED' | 'FAILED';
 }
 
+/** One bounded decimal identifier for POST receipts, result GETs and SSE. */
+export function isAilyChatId(value: unknown): value is string {
+  return typeof value === 'string' && /^\d{1,64}$/u.test(value);
+}
+
 /** Aily agent-chat SSE, verified against a live user-identity response.
  * Only public content deltas are retained; reasoning/tool payloads are ignored.
  */
@@ -51,8 +56,7 @@ export async function consumeAilyChatStream(
     if (name === 'error') throw new Error('AILY_STREAM_REMOTE_ERROR');
     const id = value.agent_chat_id;
     if (
-      typeof id !== 'string' ||
-      !/^\d{1,30}$/u.test(id) ||
+      !isAilyChatId(id) ||
       (progress.chatId !== null && progress.chatId !== id)
     )
       throw new Error('AILY_STREAM_CHAT_MISMATCH');

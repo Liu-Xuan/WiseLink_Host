@@ -129,6 +129,18 @@ import { WorkItemRuntimeModule } from '../work-item/work-item-runtime.module';
 import { IdentityModule } from '../identity/identity.module';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
 import { ReviewAilyService } from './review-aily.service';
+import { AILY_TASK_CONFIGURATION, AilyTaskAdmissionService } from './aily-task-admission';
+import { AILY_TASK_CHAT_CLIENT, AilyTaskExecutionService, AILY_TASK_CHAT_ADAPTER } from './aily-task-execution.service';
+import { AILY_HOST_INVOCATION_IDENTITY } from './aily-host-invocation-identity.port';
+import { AilyHostInvocationIdentityProvider } from './aily-host-invocation-identity.provider';
+import { AilyBackgroundDispatchService } from './aily-background-dispatch.service';
+import { AILY_ENTERPRISE_CONFIGURATION, loadAilyEnterpriseConfiguration,
+  type AilyEnterpriseConfigurationState } from './aily-enterprise-configuration';
+import { AilyMcpIdentityService, AILY_MCP_CONFIGURATION } from './aily-mcp-identity.service';
+import { AilyTaskDomainService } from './aily-task-domain.service';
+import { AilyTaskLifecycleService } from './aily-task-lifecycle.service';
+import { CanonicalHostAilyMcpService } from './canonical-host-aily-mcp.service';
+import { CanonicalHostAilyMcpOpenApiController } from './canonical-host-aily-mcp.openapi.controller';
 import { DialogueAssessmentRepository } from './dialogue-assessment.repository';
 import { DialogueAssessmentService } from './dialogue-assessment.service';
 import { DialogueBrowserScope } from './dialogue-browser-scope.service';
@@ -248,6 +260,7 @@ export interface CanonicalHostModuleOptions {
     CanonicalHostOpenApiController,
     CanonicalHostMcpOpenApiController,
     CanonicalHostOpenClawMcpOpenApiController,
+    CanonicalHostAilyMcpOpenApiController,
     LocalMineruWorkerOpenApiController,
     OauthSessionDevelopmentWorkItemController,
     CanonicalHostReviewActionController,
@@ -306,6 +319,24 @@ export interface CanonicalHostModuleOptions {
     DialogueRepository,
     DialogueContextService,
     ReviewAilyService,
+    AilyTaskAdmissionService,
+    AilyTaskExecutionService,
+    AilyMcpIdentityService,
+    AilyTaskDomainService,
+    AilyTaskLifecycleService,
+    AilyHostInvocationIdentityProvider,
+    AilyBackgroundDispatchService,
+    CanonicalHostAilyMcpService,
+    {provide: AILY_ENTERPRISE_CONFIGURATION, useFactory: () => loadAilyEnterpriseConfiguration({
+      WL_AILY_ENTERPRISE_CONFIGURATION_JSON: process.env.WL_AILY_ENTERPRISE_CONFIGURATION_JSON,
+      WL_AILY_MCP_SIGNING_SECRET: process.env.WL_AILY_MCP_SIGNING_SECRET,
+    })},
+    {provide: AILY_MCP_CONFIGURATION, inject: [AILY_ENTERPRISE_CONFIGURATION],
+      useFactory: (state: AilyEnterpriseConfigurationState) => state.status === 'READY' || state.status === 'MCP_ONLY' ? state.configuration.mcp : null},
+    {provide: AILY_HOST_INVOCATION_IDENTITY, useExisting: AilyHostInvocationIdentityProvider},
+    {provide: AILY_TASK_CONFIGURATION, inject: [AILY_ENTERPRISE_CONFIGURATION],
+      useFactory: (state: AilyEnterpriseConfigurationState) => state.status === 'READY' ? state.configuration.task : null},
+    {provide: AILY_TASK_CHAT_CLIENT, useValue: AILY_TASK_CHAT_ADAPTER},
     InitialAssessmentKnowledgeService,
     CanonicalHostCommonContextService,
     EngineeringIssueSearchService,
@@ -526,6 +557,7 @@ export class CanonicalHostModule {
         CanonicalHostOpenApiController,
         CanonicalHostMcpOpenApiController,
         CanonicalHostOpenClawMcpOpenApiController,
+        CanonicalHostAilyMcpOpenApiController,
     LocalMineruWorkerOpenApiController,
         OauthSessionDevelopmentWorkItemController,
         CanonicalHostReviewActionController,
@@ -613,6 +645,24 @@ export class CanonicalHostModule {
         DialogueRepository,
         DialogueContextService,
         ReviewAilyService,
+        AilyTaskAdmissionService,
+        AilyTaskExecutionService,
+        AilyMcpIdentityService,
+        AilyTaskDomainService,
+        AilyTaskLifecycleService,
+        AilyHostInvocationIdentityProvider,
+        AilyBackgroundDispatchService,
+        CanonicalHostAilyMcpService,
+        {provide: AILY_ENTERPRISE_CONFIGURATION, useFactory: () => loadAilyEnterpriseConfiguration({
+          WL_AILY_ENTERPRISE_CONFIGURATION_JSON: process.env.WL_AILY_ENTERPRISE_CONFIGURATION_JSON,
+          WL_AILY_MCP_SIGNING_SECRET: process.env.WL_AILY_MCP_SIGNING_SECRET,
+        })},
+        {provide: AILY_MCP_CONFIGURATION, inject: [AILY_ENTERPRISE_CONFIGURATION],
+          useFactory: (state: AilyEnterpriseConfigurationState) => state.status === 'READY' || state.status === 'MCP_ONLY' ? state.configuration.mcp : null},
+        {provide: AILY_HOST_INVOCATION_IDENTITY, useExisting: AilyHostInvocationIdentityProvider},
+        {provide: AILY_TASK_CONFIGURATION, inject: [AILY_ENTERPRISE_CONFIGURATION],
+          useFactory: (state: AilyEnterpriseConfigurationState) => state.status === 'READY' ? state.configuration.task : null},
+        {provide: AILY_TASK_CHAT_CLIENT, useValue: AILY_TASK_CHAT_ADAPTER},
         InitialAssessmentKnowledgeService,
         CanonicalHostCommonContextService,
         EngineeringIssueSearchService,

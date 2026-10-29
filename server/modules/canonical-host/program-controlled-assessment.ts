@@ -1,6 +1,8 @@
 import type { CanonicalOpenClawOverallProjection } from '@shared/api.interface';
 import type { JobAidWorkingReadModel, JobAidWorkRevision } from '@shared/jobaid-problem-assessment.interface';
 import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
+import type { AilyStageOverallReceipt } from '@shared/jobaid-problem-assessment.interface';
+import { z } from 'zod/v4';
 
 function observations(activityJson: string | null | undefined): Record<string, unknown>[] {
   const parsed: unknown = JSON.parse(activityJson ?? '[]');
@@ -13,6 +15,7 @@ function observations(activityJson: string | null | undefined): Record<string, u
 export function exactProgramWorkRead(
   row: Pick<ActionAttemptRow, 'attemptId' | 'workItemId' | 'documentVersionId' | 'baseRevision' | 'reviewActivityJson'>,
   revision: JobAidWorkRevision,
+  readObservedAt?: string,
 ): NonNullable<CanonicalOpenClawOverallProjection['sourceAssessment']> {
   if (revision.actionAttemptId !== row.attemptId || revision.workItemId !== row.workItemId ||
       revision.documentVersionId !== row.documentVersionId || revision.basedOnWorkItemRevision !== row.baseRevision)
@@ -20,10 +23,31 @@ export function exactProgramWorkRead(
   const read = observations(row.reviewActivityJson).reverse().find(item => item.kind === 'ASSESSMENT_WORK_READ' &&
     item.workRevisionRef === revision.workRevisionRef && item.workRevision === revision.workRevision &&
     item.saveRequestId === revision.requestId && typeof item.observedAt === 'string' &&
-    Number.isFinite(Date.parse(item.observedAt)));
+    Number.isFinite(Date.parse(item.observedAt)) && (readObservedAt === undefined || item.observedAt === readObservedAt));
   if (!read) throw new Error('JOBAID_PROGRAM_INDEPENDENT_READ_REQUIRED');
   return {actionAttemptId: row.attemptId, workRevisionRef: revision.workRevisionRef,
     workRevision: revision.workRevision, saveRequestId: revision.requestId, readObservedAt: String(read.observedAt)};
+}
+
+const stageSchema = z.strictObject({schemaVersion: z.literal('wiselink.aily-stage-overall.v1'),
+  workRevisionRef: z.string().regex(/^JAWR-[A-Za-z0-9-]{1,91}$/u), workRevision: z.number().int().positive(),
+  sourceAssessment: z.strictObject({actionAttemptId: z.string().min(1), workRevisionRef: z.string().min(1),
+    workRevision: z.number().int().positive(), saveRequestId: z.string().min(1), readObservedAt: z.iso.datetime()}),
+  artifact: z.strictObject({ref: z.string().min(1), sha256: z.string().regex(/^[a-f0-9]{64}$/u), byteLength: z.number().int().nonnegative(),
+    mediaType: z.literal('application/json'), storeRole: z.literal('UnifiedArtifactStoreCandidate')}), observedAt: z.iso.datetime(),
+});
+
+export function parseAilyStageOverall(value: unknown): AilyStageOverallReceipt {
+  const stage = stageSchema.parse(value);
+  if (stage.workRevisionRef !== stage.sourceAssessment.workRevisionRef || stage.workRevision !== stage.sourceAssessment.workRevision)
+    throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
+  return stage;
+}
+
+export function ailyStageOveralls(activityJson: string | null | undefined): AilyStageOverallReceipt[] {
+  const result = observations(activityJson).filter(item => item.kind === 'AILY_STAGE_OVERALL').map(item => parseAilyStageOverall(item.receipt));
+  if (new Set(result.map(item => item.workRevisionRef)).size !== result.length) throw new Error('AILY_STAGE_OVERALL_DUPLICATE');
+  return result;
 }
 
 export function latestProgramProgress(activityJson: string | null | undefined):

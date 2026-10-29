@@ -3,6 +3,7 @@ import type {
   CanonicalAssessmentExecutionMode,
   CanonicalInitialAnalysisContinuationRequest,
   CanonicalInitialAnalysisReadModel,
+  CanonicalAilyTaskAdmission,
 } from '@shared/api.interface';
 import {
   getCanonicalHostClientSessionGeneration,
@@ -17,6 +18,7 @@ interface Props {
   expectedRevision: number;
   operation: CanonicalInitialAnalysisContinuationRequest['operation'];
   executionMode?: CanonicalAssessmentExecutionMode;
+  ailyTaskAdmission?: CanonicalAilyTaskAdmission;
   analysisModelName?: string;
   blockIds?: string[];
   label: string;
@@ -96,6 +98,7 @@ function ContinuationRequestButton(
     props.operation,
     props.blockIds ?? [],
     props.executionMode ?? null,
+    props.ailyTaskAdmission ?? null,
     props.queuedRequest ?? null,
   ]);
   const currentKey = useRef(key);
@@ -142,14 +145,14 @@ function ContinuationRequestButton(
   const accepted: boolean =
     visible.confirmedRevision === props.expectedRevision;
   const modelReady: boolean =
-    !props.modelChoice ||
+    props.ailyTaskAdmission ? props.ailyTaskAdmission.available : !props.modelChoice ||
     (props.modelChoice.catalog.ready && props.modelChoice.displayName !== null);
   const executionMode: CanonicalAssessmentExecutionMode | null | undefined =
     unresolved
       ? pending.current?.input.executionMode
       : accepted
         ? visible.executionMode
-        : props.queuedRequest?.executionMode ?? props.modelChoice?.executionMode;
+        : props.queuedRequest?.executionMode ?? props.ailyTaskAdmission?.executionMode ?? props.modelChoice?.executionMode;
   const programAgent: boolean = executionMode === 'PROGRAM_AGENT_V1';
 
   async function send(): Promise<void> {
@@ -177,13 +180,15 @@ function ContinuationRequestButton(
                 executionMode: props.modelChoice.executionMode,
                 modelRef: props.modelChoice.value,
               }
+            : props.ailyTaskAdmission
+              ? {executionMode: 'AILY_AGENT_V1' as const, modelRef: props.ailyTaskAdmission.modelRef}
             : {}),
           ...(props.blockIds
             ? { retranslateBlockIds: [...props.blockIds] }
             : {}),
         },
         modelName:
-          props.queuedRequest?.modelName ?? props.modelChoice?.displayName ?? props.analysisModelName ?? null,
+          props.queuedRequest?.modelName ?? props.ailyTaskAdmission?.modelName ?? props.modelChoice?.displayName ?? props.analysisModelName ?? null,
       };
     const request = pending.current;
     if (!request) return;
@@ -224,19 +229,25 @@ function ContinuationRequestButton(
         'OBSOLETE',
         'WAITING_INPUT',
       ].includes(receipt.status);
-      if (active || ended) pending.current = null;
+      const uncertainAily: boolean = request.input.executionMode === 'AILY_AGENT_V1' &&
+        receipt.ailyDispatch?.dispatchStatus !== 'ACCEPTED';
+      if (!uncertainAily && (active || ended)) pending.current = null;
       setState({
         key,
         saving: false,
         checking: false,
-        failed: !active && !ended,
-        confirmedRevision: active ? props.expectedRevision : null,
+        failed: uncertainAily || (!active && !ended),
+        confirmedRevision: active && !uncertainAily ? props.expectedRevision : null,
         modelRef: request.input.modelRef ?? null,
         modelName: request.modelName,
         executionMode: request.input.executionMode ?? null,
-        message: active
+        message: uncertainAily
+          ? '投递结果待核；再次点击只核对原请求，不会重新发送。'
+          : active
           ? props.queuedRequest
             ? `已恢复原请求的等待流程，本次仍使用 ${request.modelName}。`
+            : props.ailyTaskAdmission
+            ? `企业智能体已受理本次请求；已保存工作继续可读。`
             : props.modelChoice
             ? `程序评估请求已保存，本次使用 ${request.modelName}；已保存工作继续可读。`
             : '接续请求已保存，将沿用本事项的模型继续；已保存内容仍保留。'
@@ -246,7 +257,7 @@ function ContinuationRequestButton(
               ? '已核对原请求已结束。原记录保留，可发起新一轮请求。'
               : '原请求结果待核；再次点击只核对同一请求，模型与输入保持不变。',
       });
-      props.onQueued();
+      if (!uncertainAily) props.onQueued();
     } catch (error) {
       if (!current()) return;
       const failure = error as CanonicalHostClientError;
@@ -315,6 +326,11 @@ function ContinuationRequestButton(
             。 这次选择只用于新评估；首次提交另建请求，旧请求与历史成果保留。
           </p>
         </>
+      ) : props.ailyTaskAdmission ? (
+        <p className="wl-initial-analysis-note">
+          {props.ailyTaskAdmission.available ? `本次由企业智能体评估，所选模型：${props.ailyTaskAdmission.modelName}。`
+            : '当前评估入口暂不可用，请保留原请求并稍后核对。'}
+        </p>
       ) : props.queuedRequest ? (
         <p className="wl-initial-analysis-note">
           已受理请求模型：{props.queuedRequest.modelName}。继续执行同一请求，原有记录保留。

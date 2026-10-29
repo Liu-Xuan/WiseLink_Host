@@ -1,5 +1,12 @@
 import { taskAutomaticWorkItemLease } from '../action-attempt/automatic-work-item-attempt-lease';
-import { readBrowserInitialContinuationClaim } from '../action-attempt/cancelled-initial-continuation';
+import { readBrowserInitialContinuationClaim, matchesInitialContinuationOwner, matchesFailedAttempt } from '../action-attempt/cancelled-initial-continuation';
+import { InitialExpiredAttemptRepository, type InitialAttemptAuthorize } from '../action-attempt/initial-expired-attempt.repository';
+import { readInitialAnalysisRequestInput } from '../action-attempt/initial-analysis-request';
+import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
+import { projectJobAidActivity, JOBAID_ACTIVITY_WINDOW } from '../canonical-host/jobaid-activity';
+import { isReviewAssessmentReadActivity } from '../action-attempt/review-evidence-activity';
+import { parseJobAidProblemTask } from '../canonical-host/jobaid-problem-task';
+import { dmDocumentParseRun } from '../../database/document-parsing.schema';
 import { ACTION_ATTEMPT_COMMIT_RECOVERY_MS } from '../action-attempt/action-attempt.types';
 import { ActionAttemptRepository } from '../action-attempt/action-attempt.repository';
 import { createHash, randomUUID } from 'node:crypto';
@@ -21,6 +28,7 @@ import {
   ne,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 
 import type {
@@ -91,6 +99,13 @@ export interface WorkItemReservation {
   requestId: string;
   attemptId: string;
   created: boolean;
+}
+
+/** Server-only explicit browser intent plus its original transaction authorization. */
+export interface AilyInitialSuccessorAuthorizationInput {
+  tenantId:string;actorUserId:string;workItem:CanonicalWorkItemProjection;stageRequestId:string;
+  request:Pick<ActionAttemptRow,'attemptId'|'operationRef'|'idempotencyKey'|'taskInputHash'>;
+  principalId:string;leaseToken:string;leaseMs:number;authorize:InitialAttemptAuthorize;
 }
 
 export interface ParseRetryReservation {
@@ -954,6 +969,189 @@ export class MiaodaWorkItemRepository {
   }
 
   /** One conditional UPDATE elects a single queue consumer for each lease. */
+  /** A normal owner action may authorize one new intent after a closed legacy
+   * execution. This never discovers/enrolls work or changes a former attempt. */
+  async authorizeAilyInitialSuccessor(input:AilyInitialSuccessorAuthorizationInput) {
+    const conflict=()=>canonicalModelError('AILY_INITIAL_SUCCESSOR_AUTHORIZATION_REJECTED',409);
+    if(typeof input.authorize!=='function'||!Number.isSafeInteger(input.leaseMs)||input.leaseMs<=0||
+        !/^service:[A-Za-z0-9:_-]{1,140}$/u.test(input.principalId)||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(input.stageRequestId)||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu.test(input.leaseToken))throw conflict();
+    return this.db.transaction(async database=>{
+      const [owner]=await database.select().from(workItem).where(and(eq(workItem.tenantId,input.tenantId),
+        eq(workItem.workItemId,input.workItem.workItemId))).limit(1).for('update');
+      const [grant]=await database.select().from(autoWorkItemAuthorization).where(and(
+        eq(autoWorkItemAuthorization.tenantId,input.tenantId),eq(autoWorkItemAuthorization.workItemId,input.workItem.workItemId)))
+        .limit(1).for('update');
+      if(!owner||!grant||!matchesInitialContinuationOwner(owner,input)||grant.grantKind!=='MIAODA_CANONICAL_PARSE_REQUEST'||
+          grant.tenantId!==owner.tenantId||grant.workItemId!==owner.workItemId||grant.actorUserId!==owner.requestedByUserId||
+          grant.requestId!==owner.requestId||grant.documentId!==owner.documentId||grant.documentVersionId!==owner.documentVersionId||
+          grant.sourceArtifactId!==owner.sourceArtifactId||grant.sourceFileSha256!==owner.sourceFileSha256||
+          Number(grant.sourceByteLength)!==Number(owner.sourceByteLength))throw conflict();
+      const rows=await database.select().from(actionAttempt).where(and(eq(actionAttempt.tenantId,input.tenantId),
+        eq(actionAttempt.workItemId,owner.workItemId),inArray(actionAttempt.actionType,
+          ['OPENCLAW_TRANSLATE','OPENCLAW_APPLICABILITY_EVALUATION','OPENCLAW_DYNAMIC_EVALUATION','OPENCLAW_OVERALL_SYNTHESIS'])))
+        .for('update');
+      const queued=rows.find(row=>row.attemptId===input.request.attemptId);
+      const [clock]=await database.execute<{now:Date|string}>(sql`SELECT clock_timestamp() AS now`);
+      const clockValue:unknown=clock?.now;
+      const now=clockValue instanceof Date?new Date(clockValue.getTime()):typeof clockValue==='string'?new Date(clockValue):null;
+      if(!now||!Number.isFinite(now.getTime())||!queued||queued.operationRef!==input.request.operationRef||
+          queued.idempotencyKey!==input.request.idempotencyKey||queued.taskInputHash!==input.request.taskInputHash||
+          queued.actorUserId!==input.actorUserId||queued.subjectKind!=='WORK_ITEM'||queued.requestOrigin!=='OPENCLAW_MCP_V1'||
+          queued.documentVersionId!==owner.documentVersionId||queued.actionType!=='OPENCLAW_DYNAMIC_EVALUATION'||
+          queued.status!=='QUEUED'||queued.baseRevision!==owner.revision||queued.inputRevision!==owner.revision||
+          queued.claimCount!==0||queued.retryCount!==0||queued.leaseGeneration!==0||queued.leaseOwner!==null||
+          queued.leaseToken!==null||queued.leaseExpiresAt!==null||queued.leaseSlot!==null||queued.startedAt!==null||
+          queued.lastHeartbeatAt!==null||queued.executorSessionKey!==null||queued.completedAt!==null||
+          queued.commitStartedAt!==null||queued.resultEnvelopeJson!==null||queued.resultContentHash!==null||
+          queued.projectionApplied||queued.cancelRequestedAt!==null||queued.cancelReason!==null||queued.terminalReason!==null||
+          !queued.triggerRequestId?.trim()||
+          !queued.deadlineAt||queued.deadlineAt<=now||
+          rows.some(row=>row.attemptId!==queued.attemptId&&(['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(row.status)||
+            row.idempotencyKey===queued.idempotencyKey||row.actionType===queued.actionType&&row.attemptNo>=queued.attemptNo)))throw conflict();
+      const task=parseTaskEnvelope(String(queued.taskEnvelopeJson));
+      const model=readStoredExecutionModel(queued.executionModelJson);
+      const request=readInitialAnalysisRequestInput(task);
+      const prepared=request?null:parseJobAidProblemTask(task);
+      const originalParseRunId=request?.originalParseRunId??prepared?.modelInput.documentOverview.original?.binding.parseRunId;
+      if(task.modelInput.executionMode!=='AILY_AGENT_V1'||!model||task.executionModel?.modelRef!==model.modelRef||
+          !['aily/glm-5.3','aily/deepseek-v4-pro'].includes(model.modelRef)||
+          canonicalJson(task.executionModel)!==canonicalJson(model)||task.actionAttemptId!==queued.attemptId||
+          task.operationRef!==queued.operationRef||task.tenantId!==owner.tenantId||task.workItemId!==owner.workItemId||
+          task.documentVersionId!==owner.documentVersionId||task.taskType!==queued.actionType||
+          task.baseRevision!==owner.revision||task.inputRevision!==owner.revision||task.inputHash!==queued.taskInputHash||
+          task.deadline!==queued.deadlineAt.toISOString()||task.idempotencyKey!==
+            `openclaw-v2:dynamic:${owner.workItemId}:${owner.documentVersionId}:${input.stageRequestId}`||
+          !task.sourceRefs.some(source=>source.ref===owner.sourceArtifactId&&source.sha256===owner.sourceFileSha256)||
+          !originalParseRunId||request&&request.requestId!==input.stageRequestId||
+          prepared&&(prepared.actorUserId!==owner.requestedByUserId||prepared.executionMode!=='AILY_AGENT_V1'))throw conflict();
+      const [run]=await database.execute<{value:unknown}>(sql`SELECT executor_run_json AS value FROM action_attempt
+        WHERE attempt_id=${queued.attemptId} AND tenant_id=${owner.tenantId} AND work_item_id=${owner.workItemId}`);
+      if(!run||run.value!==null)throw conflict();
+      const fresh=async()=>{
+        const source=await new MiaodaDocumentVersionSourceResolver(database).resolve(owner.documentVersionId,
+          {requireCurrent:true,expectedCreatorUserId:input.actorUserId});
+        if(source.version.documentId!==owner.documentId||source.version.sourceArtifactId!==owner.sourceArtifactId||
+            source.version.pdfSha256!==owner.sourceFileSha256||Number(source.version.byteLength)!==Number(owner.sourceByteLength))throw conflict();
+        await input.authorize(database,[owner]);
+      };
+      await fresh();
+      // These cases mint no new authority. The ordinary strict claim remains
+      // responsible for consuming an untouched grant or the existing own lease.
+      if(grant.status==='WAITING'&&grant.leaseGeneration===0&&grant.leaseOwner===null&&grant.leaseToken===null&&
+          grant.leaseExpiresAt===null&&request)return {status:'UNCHANGED' as const,leaseGeneration:0};
+      if(grant.status==='LEASED'&&grant.leaseOwner===input.principalId&&grant.leaseToken&&
+          Number.isSafeInteger(grant.leaseGeneration)&&grant.leaseGeneration>0&&grant.leaseExpiresAt&&grant.leaseExpiresAt>now) {
+        const bound=prepared&&taskAutomaticWorkItemLease(queued);
+        if(prepared&&(!bound||bound.requestId!==owner.requestId||bound.leaseGeneration!==grant.leaseGeneration))throw conflict();
+        return {status:'UNCHANGED' as const,leaseGeneration:grant.leaseGeneration};
+      }
+      if(!request||grant.status!=='LEASED'||!grant.leaseOwner?.trim()||!grant.leaseToken||
+          grant.leaseToken===input.leaseToken||!Number.isSafeInteger(grant.leaseGeneration)||grant.leaseGeneration<1||
+          grant.leaseGeneration>=2147483647||!grant.leaseExpiresAt||grant.leaseExpiresAt>now||
+          !Number.isFinite(grant.leaseExpiresAt.getTime())||grant.completedAt!==null||grant.completedLeaseGeneration!==null||
+          grant.completedLeaseTokenHash!==null||grant.blockedAt!==null||grant.blockedCode!==null||
+          grant.blockedLeaseGeneration!==null||grant.blockedLeaseTokenHash!==null)throw conflict();
+      const [original]=await database.select({id:dmDocumentParseRun.parseRunId}).from(dmDocumentParseRun).where(and(
+        eq(dmDocumentParseRun.tenantId,owner.tenantId),eq(dmDocumentParseRun.documentVersionId,owner.documentVersionId),
+        eq(dmDocumentParseRun.status,'PUBLISHED'))).orderBy(desc(dmDocumentParseRun.parseRevision)).limit(1);
+      if(original?.id!==originalParseRunId)throw conflict();
+      await this.assertAilyInitialSuccessorHistory(database,input,owner,rows.filter(row=>row.attemptId!==queued.attemptId),now);
+      const previousGeneration=grant.leaseGeneration;
+      await fresh();
+      const [updated]=await database.update(autoWorkItemAuthorization).set({leaseOwner:input.principalId,leaseToken:input.leaseToken,
+        leaseGeneration:sql`${autoWorkItemAuthorization.leaseGeneration}+1`,
+        leaseExpiresAt:sql`clock_timestamp()+(${input.leaseMs}*interval '1 millisecond')`,updatedAt:sql`clock_timestamp()`})
+        .where(and(eq(autoWorkItemAuthorization.tenantId,owner.tenantId),eq(autoWorkItemAuthorization.workItemId,owner.workItemId),
+          eq(autoWorkItemAuthorization.status,'LEASED'),eq(autoWorkItemAuthorization.leaseGeneration,grant.leaseGeneration),
+          eq(autoWorkItemAuthorization.leaseOwner,grant.leaseOwner),eq(autoWorkItemAuthorization.leaseToken,grant.leaseToken),
+          sql`${autoWorkItemAuthorization.leaseExpiresAt}<=clock_timestamp()`,
+          sql`EXISTS(SELECT 1 FROM work_item wi WHERE wi.tenant_id=${owner.tenantId} AND wi.work_item_id=${owner.workItemId}
+            AND wi.requested_by_user_id=${input.actorUserId} AND wi.request_id=${owner.requestId} AND wi.revision=${owner.revision}
+            AND wi.document_id=${owner.documentId} AND wi.document_version_id=${owner.documentVersionId}
+            AND wi.source_artifact_id=${owner.sourceArtifactId} AND wi.source_file_sha256=${owner.sourceFileSha256}
+            AND wi.source_byte_length=${owner.sourceByteLength} AND wi.projection_json=${owner.projectionJson})`,
+          sql`EXISTS(SELECT 1 FROM action_attempt a WHERE a.tenant_id=${owner.tenantId} AND a.work_item_id=${owner.workItemId}
+            AND a.attempt_id=${queued.attemptId} AND a.operation_ref=${queued.operationRef} AND a.idempotency_key=${queued.idempotencyKey}
+            AND a.task_input_hash=${queued.taskInputHash} AND a.actor_user_id=${input.actorUserId}
+            AND a.base_revision=${owner.revision} AND a.input_revision=${owner.revision} AND a.document_version_id=${owner.documentVersionId}
+            AND a.status='QUEUED' AND a.claim_count=0 AND a.retry_count=0 AND a.lease_generation=0
+            AND a.lease_owner IS NULL AND a.lease_token IS NULL AND a.lease_expires_at IS NULL AND a.lease_slot IS NULL
+            AND a.started_at IS NULL AND a.last_heartbeat_at IS NULL AND a.completed_at IS NULL AND a.commit_started_at IS NULL
+            AND a.result_envelope_json IS NULL AND a.result_content_hash IS NULL AND a.projection_applied=false
+            AND a.cancel_requested_at IS NULL AND a.cancel_reason IS NULL AND a.executor_session_key IS NULL
+            AND a.executor_run_json IS NULL AND a.deadline_at>clock_timestamp()
+            AND a.task_envelope_json::jsonb#>>'{modelInput,originalParseRunId}'=${originalParseRunId})`,
+          sql`${originalParseRunId}=(SELECT ${dmDocumentParseRun.parseRunId} FROM ${dmDocumentParseRun}
+            WHERE ${dmDocumentParseRun.tenantId}=${owner.tenantId} AND ${dmDocumentParseRun.documentVersionId}=${owner.documentVersionId}
+              AND ${dmDocumentParseRun.status}='PUBLISHED' ORDER BY ${dmDocumentParseRun.parseRevision} DESC LIMIT 1)`,
+          sql`NOT EXISTS(SELECT 1 FROM action_attempt active WHERE active.tenant_id=${owner.tenantId} AND active.work_item_id=${owner.workItemId}
+            AND active.attempt_id<>${queued.attemptId} AND active.action_type IN
+              ('OPENCLAW_TRANSLATE','OPENCLAW_APPLICABILITY_EVALUATION','OPENCLAW_DYNAMIC_EVALUATION','OPENCLAW_OVERALL_SYNTHESIS')
+            AND active.status IN ('QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'))`))
+        .returning({leaseGeneration:autoWorkItemAuthorization.leaseGeneration});
+      if(!updated||updated.leaseGeneration!==previousGeneration+1)throw conflict();
+      await fresh();
+      return {status:'AUTHORIZED' as const,leaseGeneration:updated.leaseGeneration};
+    });
+  }
+
+  private async assertAilyInitialSuccessorHistory(database:PostgresJsDatabase,input:AilyInitialSuccessorAuthorizationInput,
+    owner:typeof workItem.$inferSelect,history:readonly (typeof actionAttempt.$inferSelect)[],now:Date):Promise<void> {
+    const conflict=()=>canonicalModelError('AILY_INITIAL_SUCCESSOR_HISTORY_PROTECTED',409);
+    const controls=new InitialExpiredAttemptRepository(database);
+    // Same existing owner SELECT-policy proof, now covering the whole WI so an
+    // orphan/other attempt's SAVE cannot disappear behind the selected history.
+    const [coverage]=await database.execute<{covered:boolean;hasSavedWork:boolean}>(sql`
+      SELECT current_setting('app.user_id',true)=${input.actorUserId}
+        AND engineering_matter_actor_has_tenant(${owner.tenantId})
+        AND engineering_matter_work_item_owned_by_actor(${owner.tenantId},${owner.workItemId}) AS covered,
+        EXISTS(SELECT 1 FROM ${assessmentWorkRevision} r WHERE r.tenant_id=${owner.tenantId}
+          AND r.work_item_id=${owner.workItemId}) AS "hasSavedWork"`);
+    if(coverage?.covered!==true||coverage.hasSavedWork!==false)throw conflict();
+    for(const row of history) {
+      if(row.actionType!=='OPENCLAW_DYNAMIC_EVALUATION'||!['TIMED_OUT','FAILED'].includes(row.status)||
+          !row.completedAt||row.completedAt>now||row.leaseOwner!==null||row.leaseToken!==null||row.leaseExpiresAt!==null||
+          row.leaseSlot!==null||row.commitStartedAt!==null||row.projectionApplied||row.cancelRequestedAt!==null||row.cancelReason!==null||
+          !matchesFailedAttempt(row,owner,now))throw conflict();
+      const task=parseTaskEnvelope(String(row.taskEnvelopeJson));
+      const sources:unknown=task.modelInput.sourceBindings;
+      if(!Array.isArray(sources)||sources.length!==1)throw conflict();
+      const binding:unknown=sources[0];
+      if(!binding||typeof binding!=='object'||Array.isArray(binding)||!('workItemId'in binding)||binding.workItemId!==owner.workItemId||
+          !('documentVersionId'in binding)||binding.documentVersionId!==owner.documentVersionId||!('artifactRef'in binding)||
+          binding.artifactRef!==owner.sourceArtifactId||!('artifactSha256'in binding)||typeof binding.artifactSha256!=='string'||
+          canonicalHostBareSha256(binding.artifactSha256)!==owner.sourceFileSha256)throw conflict();
+      let records:unknown;
+      try{records=JSON.parse(row.reviewActivityJson??'[]');}catch{throw conflict();}
+      if(!Array.isArray(records))throw conflict();
+      for(let offset=0;offset<records.length;offset+=JOBAID_ACTIVITY_WINDOW) {
+        const portion:unknown[]=records.slice(offset,offset+JOBAID_ACTIVITY_WINDOW);
+        const activity=projectJobAidActivity({attemptId:row.attemptId,attemptRef:row.operationRef,status:row.status,activityJson:JSON.stringify(portion)},[]);
+        if(activity.error||activity.unknownRecordCount||activity.malformedRecordCount||portion.some(value=>!value||typeof value!=='object'||
+            Array.isArray(value)||!('observedAt'in value)||typeof value.observedAt!=='string'||!Number.isFinite(Date.parse(value.observedAt))||
+            !('kind'in value)||['ASSESSMENT_WORK_READ','AILY_STAGE_OVERALL'].includes(String(value.kind))||
+            value.kind==='ASSESSMENT_SOURCES_READ'&&!isReviewAssessmentReadActivity(value)))throw conflict();
+      }
+      const projected=input.workItem.integratedAssessment;
+      if(projected?.baseRules?.actionAttemptId===row.attemptId||projected?.overallSynthesis?.actionAttemptId===row.attemptId||
+          projected?.overallSynthesis?.sourceAssessment?.actionAttemptId===row.attemptId)throw conflict();
+      if(task.modelInput.executionMode==='AILY_AGENT_V1') {
+        const run=await new ActionAttemptRepository(database).readAilyExecutorRun({tenantId:owner.tenantId,workItemId:owner.workItemId,attemptId:row.attemptId});
+        if(run&&(run.pending||run.scope.intakeRequestId!==owner.requestId||run.leaseGeneration!==row.leaseGeneration))throw conflict();
+      }
+      const facts=await controls.read({tenantId:owner.tenantId,actorUserId:input.actorUserId,workItemId:owner.workItemId},
+        {attemptId:row.attemptId,attemptRef:row.operationRef!},async(tx,owners)=>{
+          if(owners.length!==1||!matchesInitialContinuationOwner(owners[0],input))throw conflict();
+          await input.authorize(tx,owners);
+        });
+      if(facts.savedWorks.length||row.status==='TIMED_OUT'&&facts.reconciliation!=='ALREADY_TIMED_OUT')throw conflict();
+      // coverage.otherActive includes the exact new QUEUED intent. Every other
+      // active row was independently rejected from the full locked collection.
+    }
+  }
+
   async claimAutoProcessingCandidate(input: {
     tenantId: string;
     workItemId: string;
@@ -970,6 +1168,8 @@ export class MiaodaWorkItemRepository {
     now: Date;
     leaseExpiresAt: Date;
     preserveExecutorOwnership?: boolean;
+    /** Enterprise admission never takes over an expired or foreign executor. */
+    ailyWaitingOnly?: boolean;
     assertCommittingRecoveryAuthorized?: (row: import('../action-attempt/action-attempt.types').ActionAttemptRow, database: PostgresJsDatabase) => Promise<void>;
   }): Promise<AutoWorkItemLease | null> {
     return this.db.transaction(async (database) => {
@@ -984,6 +1184,15 @@ export class MiaodaWorkItemRepository {
         .limit(1).for('update');
       if (!grant || (grant.status !== 'WAITING' &&
           !(grant.status === 'LEASED' && grant.leaseExpiresAt && grant.leaseExpiresAt <= input.now))) return null;
+      if (input.ailyWaitingOnly) {
+        if (grant.status !== 'WAITING' || grant.leaseGeneration !== 0 || grant.leaseOwner || grant.leaseToken || grant.leaseExpiresAt) return null;
+        const active = await database.select().from(actionAttempt).where(and(
+          eq(actionAttempt.tenantId,input.tenantId),eq(actionAttempt.workItemId,input.workItemId),
+          inArray(actionAttempt.status,['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING']),
+        )).for('update');
+        if (active.some(row => row.status !== 'QUEUED' || row.leaseOwner || row.leaseToken ||
+            parseTaskEnvelope(row.taskEnvelopeJson).modelInput.executionMode !== 'AILY_AGENT_V1')) return null;
+      }
       const browserContinuation = input.preserveExecutorOwnership && grant.status === 'WAITING' && grant.leaseGeneration > 0
         ? await readBrowserInitialContinuationClaim(database,owner,grant,input) : null;
       if (input.preserveExecutorOwnership && !browserContinuation && !(
@@ -1011,7 +1220,7 @@ export class MiaodaWorkItemRepository {
           throw canonicalModelError('CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE', 409);
       }
       const attempts = new ActionAttemptRepository(database);
-      for (const actionType of ['OPENCLAW_TRANSLATE', 'OPENCLAW_APPLICABILITY_EVALUATION',
+      for (const actionType of input.ailyWaitingOnly ? [] : ['OPENCLAW_TRANSLATE', 'OPENCLAW_APPLICABILITY_EVALUATION',
         'OPENCLAW_DYNAMIC_EVALUATION', 'OPENCLAW_OVERALL_SYNTHESIS']) {
         await attempts.terminalizeExpiredActiveForSuccessor({tenantId:input.tenantId,
           workItemId:input.workItemId,actionType,now:input.now});
@@ -1105,7 +1314,7 @@ export class MiaodaWorkItemRepository {
             autoWorkItemAuthorization.sourceByteLength,
             input.sourceByteLength,
           ),
-          or(
+          input.ailyWaitingOnly ? eq(autoWorkItemAuthorization.status, 'WAITING') : or(
             eq(autoWorkItemAuthorization.status, 'WAITING'),
             and(
               eq(autoWorkItemAuthorization.status, 'LEASED'),
@@ -1303,6 +1512,9 @@ export class MiaodaWorkItemRepository {
     leaseGeneration: number;
     expectedWorkItemRevision: number;
     now: Date;
+    expectedRequestId?: string;
+    assertHostFinal?: (database: PostgresJsDatabase) => Promise<void>;
+    writePredicate?: SQL;
   }): Promise<{ acknowledgedAt: Date; replayed: boolean } | null> {
     return this.db.transaction(async (transaction) => {
       // Match SAVE and queue takeover: WorkItem -> grant. Otherwise ACK can
@@ -1315,6 +1527,12 @@ export class MiaodaWorkItemRepository {
           eq(workItem.workItemId, input.workItemId),
         ))
         .for('update');
+      if (input.assertHostFinal) {
+        await transaction.select().from(autoWorkItemAuthorization).where(and(
+          eq(autoWorkItemAuthorization.tenantId,input.tenantId),eq(autoWorkItemAuthorization.workItemId,input.workItemId),
+        )).for('update');
+        await input.assertHostFinal(transaction);
+      }
       const leaseTokenHash = createHash('sha256')
         .update(input.leaseToken)
         .digest('hex');
@@ -1341,11 +1559,13 @@ export class MiaodaWorkItemRepository {
             eq(autoWorkItemAuthorization.status, 'LEASED'),
             eq(autoWorkItemAuthorization.leaseOwner, input.leaseOwner),
             eq(autoWorkItemAuthorization.leaseToken, input.leaseToken),
+            ...(input.expectedRequestId ? [eq(autoWorkItemAuthorization.requestId,input.expectedRequestId)] : []),
+            ...(input.writePredicate ? [input.writePredicate] : []),
             eq(
               autoWorkItemAuthorization.leaseGeneration,
               input.leaseGeneration,
             ),
-            gt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
+            input.assertHostFinal ? sql`${autoWorkItemAuthorization.leaseExpiresAt}>clock_timestamp()` : gt(autoWorkItemAuthorization.leaseExpiresAt, input.now),
             sql`EXISTS (
             SELECT 1 FROM work_item wi
             WHERE wi.tenant_id = ${input.tenantId}
@@ -1421,6 +1641,7 @@ export class MiaodaWorkItemRepository {
             eq(autoWorkItemAuthorization.tenantId, input.tenantId),
             eq(autoWorkItemAuthorization.workItemId, input.workItemId),
             eq(autoWorkItemAuthorization.status, 'COMPLETED'),
+            ...(input.writePredicate ? [input.writePredicate] : []),
             eq(
               autoWorkItemAuthorization.completedLeaseTokenHash,
               leaseTokenHash,
@@ -1465,6 +1686,38 @@ export class MiaodaWorkItemRepository {
     return completed?.completedAt
       ? { acknowledgedAt: completed.completedAt, replayed: true }
       : null;
+  }
+
+  /** Read-only replay after enterprise ACK cleared the original active token. */
+  async readCompletedAilyAutoProcessingReceipt(input: {
+    tenantId: string; workItemId: string; requestId: string; actorUserId: string; leaseGeneration: number;
+    readPredicate: SQL; assertHostFinal: (database: PostgresJsDatabase) => Promise<void>;
+  }): Promise<{acknowledgedAt: Date; replayed: true} | null> {
+    return this.db.transaction(async database => {
+      const [value] = await database.select({grant: autoWorkItemAuthorization, projection: workItem.projectionJson})
+        .from(autoWorkItemAuthorization).innerJoin(workItem,and(
+          eq(workItem.tenantId,autoWorkItemAuthorization.tenantId),eq(workItem.workItemId,autoWorkItemAuthorization.workItemId)))
+        .where(and(eq(autoWorkItemAuthorization.tenantId,input.tenantId),eq(autoWorkItemAuthorization.workItemId,input.workItemId),
+          eq(autoWorkItemAuthorization.requestId,input.requestId),eq(autoWorkItemAuthorization.actorUserId,input.actorUserId),
+          eq(autoWorkItemAuthorization.status,'COMPLETED'),eq(autoWorkItemAuthorization.grantKind,'MIAODA_CANONICAL_PARSE_REQUEST'),
+          eq(autoWorkItemAuthorization.completedLeaseGeneration,input.leaseGeneration),
+          eq(workItem.requestId,input.requestId),eq(workItem.requestedByUserId,input.actorUserId),
+          eq(workItem.documentId,autoWorkItemAuthorization.documentId),eq(workItem.documentVersionId,autoWorkItemAuthorization.documentVersionId),
+          eq(workItem.sourceArtifactId,autoWorkItemAuthorization.sourceArtifactId),eq(workItem.sourceFileSha256,autoWorkItemAuthorization.sourceFileSha256),
+          eq(workItem.sourceByteLength,autoWorkItemAuthorization.sourceByteLength),input.readPredicate)).limit(1);
+      if (!value?.grant.completedAt || !value.projection) return null;
+      const projection = JSON.parse(value.projection) as CanonicalWorkItemProjection;
+      const receipt = projection.autoProcessingCompletionReceipt;
+      const grant = value.grant;
+      if (grant.completedLeaseGeneration !== input.leaseGeneration || grant.requestId !== input.requestId ||
+          grant.actorUserId !== input.actorUserId || !receipt || receipt.tenantId !== input.tenantId || receipt.workItemId !== input.workItemId ||
+          receipt.requestId !== input.requestId || receipt.actorUserId !== input.actorUserId ||
+          receipt.documentId !== grant.documentId || receipt.documentVersionId !== grant.documentVersionId ||
+          receipt.sourceArtifactId !== grant.sourceArtifactId || receipt.sourceFileSha256 !== grant.sourceFileSha256 ||
+          receipt.sourceByteLength !== Number(grant.sourceByteLength) || receipt.completedAt !== grant.completedAt!.toISOString()) return null;
+      await input.assertHostFinal(database);
+      return {acknowledgedAt: grant.completedAt!, replayed: true as const};
+    });
   }
 
   /** Explicit cancelled-claim parking uses the shared WI reservation fence. */
@@ -2462,6 +2715,7 @@ export class MiaodaWorkItemRepository {
     applicabilityInputGuard?: { tenantId: string };
     jobAidWorkRevisionGuard?: CanonicalJobAidWorkRevisionGuard;
     nativeEvidenceGuard?: (database: PostgresJsDatabase) => Promise<void>;
+    writePredicate?: SQL;
   }): Promise<CanonicalWorkItemProjection> {
     this.requireNativeProjectionGuard(input);
     if (input.jobAidWorkRevisionGuard) {
@@ -2708,6 +2962,7 @@ export class MiaodaWorkItemRepository {
         and(
           eq(workItem.workItemId, input.workItemId),
           eq(workItem.revision, input.expectedRevision),
+          ...(input.writePredicate ? [input.writePredicate] : []),
         ),
       )
       .returning({ workItemId: workItem.workItemId });

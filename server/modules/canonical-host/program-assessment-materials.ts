@@ -6,6 +6,7 @@ import type { UnifiedPackageArtifactDescriptor } from '@shared/api.interface';
 import type { OpenClawTaskEnvelope } from '../action-attempt/action-attempt-envelope.types';
 import { canonicalJson } from '../action-attempt/action-attempt-envelope';
 import type { JobAidProblemTaskInput } from './jobaid-problem-task';
+import type { JobAidWorkRevision } from '@shared/jobaid-problem-assessment.interface';
 
 function object(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -120,6 +121,11 @@ export function programMaterialsObservation(activityJson: string | null | undefi
 /** Completing a round accounts for every previous issue; retaining it implicitly is insufficient. */
 export function assertProgramCompleteIssueCoverage(command: unknown, input: JobAidProblemTaskInput): void {
   if (!isProgramAssessmentMode(input.executionMode)) return;
+  assertCompleteIssueCoverage(command, input.previousWork);
+}
+
+/** Explicit enterprise callers supply the real independently-read current base. */
+export function assertCompleteIssueCoverage(command: unknown, previous: JobAidWorkRevision | null): void {
   const value = object(command);
   if (!['COMPLETE', 'COMPLETE_WITH_OPEN_QUESTIONS'].includes(String(value.roundCompletion))) return;
   const acknowledged = new Set([
@@ -127,6 +133,6 @@ export function assertProgramCompleteIssueCoverage(command: unknown, input: JobA
     ...(Array.isArray(value.unchangedIssueKeys) ? value.unchangedIssueKeys : []),
     ...(Array.isArray(value.retiredIssues) ? value.retiredIssues.map(issue => object(issue).issueKey) : []),
   ]);
-  if (input.previousWork?.content.issues.some(issue => !acknowledged.has(issue.issueKey)))
+  if (previous?.content.issues.some(issue => !acknowledged.has(issue.issueKey)))
     throw new Error('JOBAID_PROGRAM_PREVIOUS_ISSUE_COVERAGE_REQUIRED');
 }

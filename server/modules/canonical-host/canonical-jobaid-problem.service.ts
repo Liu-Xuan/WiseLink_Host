@@ -1,9 +1,13 @@
 import { buildJobAidChecklistBinding } from './jobaid-checklist-binding';
+import type { AilyAssessmentAdmission } from './aily-task-admission';
+import { AILY_TASK_ROLE_MAPPING, ailyFinalCommitGuard, type AilyFinalCommitGuard } from './aily-executor-run';
+import { assertAilyTrustedTaskContext, type AilyTrustedTaskContext } from './aily-task-domain.types';
+import type { AilyStageOverallReceipt } from '@shared/jobaid-problem-assessment.interface';
 import { jobAidChecklistFeedback } from './jobaid-checklist-feedback';
 import { buildProgramAgentPolicy, isProgramAssessmentMode, readProgramAgentPolicy, type ProgramAssessmentAdmission } from './program-agent-policy';
 import { canonicalHostExecutor, assertCanonicalCodexWorkItem } from './canonical-host-executor-policy';
-import { assertProgramCompleteIssueCoverage, parseProgramMaterialSnapshot, programMaterialsObservation } from './program-assessment-materials';
-import { exactProgramWorkRead, latestProgramProgress } from './program-controlled-assessment';
+import { assertCompleteIssueCoverage, assertProgramCompleteIssueCoverage, parseProgramMaterialSnapshot, programMaterialsObservation } from './program-assessment-materials';
+import { ailyStageOveralls, exactProgramWorkRead, latestProgramProgress } from './program-controlled-assessment';
 import { assertTdmsSealedResultFence, tdmsReviewBinding, type TdmsReviewCaller, type TdmsReviewIngress } from '../tdms-source/tdms-review-delegation';
 import type { TdmsReviewSavedContext, TdmsReviewContext } from './tdms-review-saved-context';
 import { assertJobAidSemanticContent, JobAidSemanticValidationError } from './jobaid-semantic-content';
@@ -70,6 +74,7 @@ import {
   canonicalSha256,
   parseTaskEnvelope,
   parseStoredResultEnvelope,
+  sealResultEnvelope,
 } from '../action-attempt/action-attempt-envelope';
 import { ActionAttemptLifecycleService } from '../action-attempt/action-attempt-lifecycle.service';
 import {
@@ -115,6 +120,7 @@ import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import {
   assertJobAidOverallWorkCurrent,
   buildJobAidOverallProjection,
+  deterministicJobAidOverallBody,
 } from './jobaid-overall-projection';
 import { preflightCanonicalHostOpenClawResult, parseCanonicalHostOpenClawAttemptTask, parseCanonicalHostOpenClawStoredResult } from './canonical-host-openclaw-runtime-policy';
 import {
@@ -268,6 +274,8 @@ export class CanonicalJobAidProblemService {
           throw new Error('CANONICAL_CODEX_LEGACY_WORK_NOT_ADOPTABLE');
         continuationReceipt(existing, purpose);
         const sealedTask = parseTaskEnvelope(existing.taskEnvelopeJson);
+        if (sealedTask.modelInput.executionMode === 'AILY_AGENT_V1')
+          throw new Error('JOBAID_AILY_NATIVE_BEGIN_FORBIDDEN');
         const sealedRequest = readInitialAnalysisRequestInput(sealedTask);
         originalParseRunId = sealedRequest?.originalParseRunId;
         if (isProgramAssessmentMode(sealedTask.modelInput.executionMode))
@@ -352,6 +360,53 @@ export class CanonicalJobAidProblemService {
       modelInput: structuredClone(input.modelInput),
       selectedDiscoveryRefs: [],
     };
+  }
+
+  /** Exact enterprise admission reuses the original preparation and claim path. */
+  async beginAily(input: {
+    workItem: CanonicalWorkItemProjection; tenantId: string; actorUserId: string;
+    permissionSnapshotVersion: string; requestId: string; admission: AilyAssessmentAdmission;
+    automaticWorkItemLease: NonNullable<CanonicalVerifiedServiceScope['automaticWorkItemLease']>;
+  }): Promise<BeginJobAidProblemResult> {
+    const { workItem, admission } = input;
+    if (admission.actorUserId !== input.actorUserId || admission.configuration.tenantId !== input.tenantId ||
+        admission.configuration.workItemId !== workItem.workItemId || admission.configuration.intakeRequestId !== workItem.requestId)
+      throw new Error('JOBAID_AILY_ADMISSION_CHANGED');
+    const existing = await this.attempts.readRequest({tenantId: input.tenantId, workItemId: workItem.workItemId,
+      taskType: 'OPENCLAW_DYNAMIC_EVALUATION', documentVersionId: workItem.source.documentVersionId,
+      idempotencyKey: problemIdempotencyKey(workItem, 'INITIAL_PROBLEM_ASSESSMENT', input.requestId)});
+    if (!existing) throw new Error('JOBAID_AILY_REQUEST_REQUIRED');
+    const sealed = parseTaskEnvelope(existing.taskEnvelopeJson);
+    if (sealed.modelInput.executionMode !== 'AILY_AGENT_V1' || sealed.executionModel?.modelRef !== admission.modelRef)
+      throw new Error('JOBAID_REQUEST_SCOPE_CHANGED');
+    const request = readInitialAnalysisRequestInput(sealed);
+    const loaded = await this.workItems.loadTenantScopedProjection(workItem.workItemId, input.tenantId);
+    if (!loaded || loaded.row.requestedByUserId !== input.actorUserId ||
+        loaded.row.documentVersionId !== workItem.source.documentVersionId)
+      throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
+    const scope: CanonicalVerifiedServiceScope = {principalId: admission.configuration.principalId,
+      appId: 'app_17bzc551rsg', tenantId: input.tenantId, workItemId: workItem.workItemId,
+      authorizationFingerprint: admission.configuration.authorizationFingerprint,
+      automaticWorkItemLease: input.automaticWorkItemLease};
+    if (input.automaticWorkItemLease.requestId !== workItem.requestId || input.automaticWorkItemLease.actorUserId !== input.actorUserId ||
+        input.automaticWorkItemLease.documentVersionId !== workItem.source.documentVersionId)
+      throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED');
+    const claim = await this.attempts.reserveAndClaim({
+      ailyExecution: {model: admission.model, intakeRequestId: admission.configuration.intakeRequestId,
+        principalId: admission.configuration.principalId}, workItemId: workItem.workItemId,
+      taskType: 'OPENCLAW_DYNAMIC_EVALUATION', actorUserId: input.actorUserId, tenantId: input.tenantId,
+      leaseOwner: scope.principalId, documentVersionId: workItem.source.documentVersionId,
+      inputRevision: sealed.inputRevision, baseRevision: sealed.baseRevision,
+      idempotencyKey: sealed.idempotencyKey, sourceRefs: sealed.sourceRefs, allowedConnectors: sealed.allowedConnectors,
+      initialKnowledgeSession: {expectedSessionId: loaded.row.initialAilySessionId ?? null},
+      buildModelInput: identity => this.buildInput(workItem, input.tenantId, input.actorUserId,
+        input.permissionSnapshotVersion, 'INITIAL_PROBLEM_ASSESSMENT', identity.createdAt.toISOString(), [],
+        undefined, request?.originalParseRunId, undefined, false, {scope, taskContextRef: identity.operationRef},
+        undefined, admission),
+    });
+    const taskInput = parseJobAidProblemTask(claim.task);
+    await this.assertSourcesAuthorized(taskInput.sourceCatalog, taskInput, input.tenantId, workItem.workItemId, scope);
+    return {...claim, task: structuredClone(claim.task), modelInput: structuredClone(taskInput.modelInput), selectedDiscoveryRefs: []};
   }
 
   /** A caller supplies only a persisted turn pointer; the Host chooses the work. */
@@ -548,11 +603,18 @@ export class CanonicalJobAidProblemService {
     scope: CanonicalVerifiedServiceScope,
     purpose: 'INITIAL_PROBLEM_ASSESSMENT' | 'OVERALL_CONSISTENCY',
     expectedOriginal: {parseRunId:string;parseRevision:number},
+    ailyAdmission?: AilyAssessmentAdmission,
   ) {
     const loaded = await this.workItems.loadTenantScopedProjection(workItem.workItemId, scope.tenantId);
     if (!loaded || loaded.row.documentVersionId !== workItem.source.documentVersionId)
       throw new Error('JOBAID_WORK_ITEM_BINDING_INVALID');
     const actorUserId = loaded.row.requestedByUserId;
+    if (ailyAdmission && (purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || ailyAdmission.actorUserId !== actorUserId ||
+        ailyAdmission.configuration.tenantId !== scope.tenantId || ailyAdmission.configuration.workItemId !== workItem.workItemId ||
+        ailyAdmission.configuration.intakeRequestId !== workItem.requestId ||
+        ailyAdmission.configuration.principalId !== scope.principalId ||
+        ailyAdmission.configuration.authorizationFingerprint !== scope.authorizationFingerprint))
+      throw new Error('JOBAID_AILY_ADMISSION_CHANGED');
     return this.work.withActorScope(actorUserId, async () => {
       const original = await this.work.publishedOriginalBindingForRequest({tenantId:scope.tenantId,
         actorUserId,workItemId:workItem.workItemId,documentVersionId:workItem.source.documentVersionId});
@@ -565,7 +627,7 @@ export class CanonicalJobAidProblemService {
       // failed request is replayed as failed, never given a new random identity.
       const requestId = `original-${original.parseRevision}`;
       const receipt = await this.enqueueContinuation(workItem, scope.tenantId,
-        scope.authorizationFingerprint, requestId, purpose, undefined, original);
+        scope.authorizationFingerprint, requestId, purpose, undefined, original, undefined, ailyAdmission);
       return {...receipt,requestId,parseRunId:original.parseRunId};
     });
   }
@@ -584,7 +646,7 @@ export class CanonicalJobAidProblemService {
     },
     expectedOriginal?: {parseRunId:string;parseRevision:number},
     cancelledInitialContinuation?: CancelledInitialContinuationGuard,
-    programControlled?: ProgramAssessmentAdmission,
+    programControlled?: ProgramAssessmentAdmission | AilyAssessmentAdmission,
   ) {
     if (programControlled && (purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || activeConfigurationEvidenceReevaluation(workItem)))
       throw new Error('JOBAID_PROGRAM_SCOPE_INVALID');
@@ -635,10 +697,13 @@ export class CanonicalJobAidProblemService {
       original.parseRevision !== expectedOriginal.parseRevision)) throw new Error('JOBAID_ORIGINAL_REQUEST_CHANGED');
     const reserved = await this.attempts.reserve({
       cancelledInitialContinuation,
-      ...(programControlled ? { programControlled } : {}),
+      ...(programControlled?.executionMode === 'AILY_AGENT_V1'
+        ? {ailyExecution: {model: programControlled.model, intakeRequestId: programControlled.configuration.intakeRequestId,
+            principalId: programControlled.configuration.principalId}}
+        : programControlled ? { programControlled } : {}),
       workItemId: execution.workItemId,
       taskType,
-      actorUserId: 'service:openclaw-main',
+      actorUserId: programControlled?.executionMode === 'AILY_AGENT_V1' ? programControlled.actorUserId : 'service:openclaw-main',
       tenantId,
       documentVersionId: execution.source.documentVersionId,
       inputRevision: execution.revision,
@@ -828,7 +893,7 @@ export class CanonicalJobAidProblemService {
     requestContext = false,
     nativeAdmission?: {scope:CanonicalVerifiedServiceScope;taskContextRef:string},
     reviewCaller?: TdmsReviewCaller,
-    programControlled?: ProgramAssessmentAdmission,
+    programControlled?: ProgramAssessmentAdmission | AilyAssessmentAdmission,
   ): Promise<JobAidProblemTaskInput> {
     const readScope = new UnifiedArtifactReadScope(this.artifactStore);
     if (!this.originalReader) throw new Error('DOCUMENT_ORIGINAL_READER_UNAVAILABLE');
@@ -1079,11 +1144,12 @@ export class CanonicalJobAidProblemService {
       taskInput.executionMode = executionMode;
       taskInput.requestedModelRef = programControlled.modelRef;
       taskInput.modelInput.executionMode = executionMode;
-      if (executionMode === 'PROGRAM_AGENT_V1') {
-        taskInput.agentPolicy = readProgramAgentPolicy(programControlled.agentPolicy);
+      if (executionMode === 'PROGRAM_AGENT_V1' || executionMode === 'AILY_AGENT_V1') {
+        if (executionMode === 'PROGRAM_AGENT_V1') taskInput.agentPolicy = readProgramAgentPolicy(programControlled.agentPolicy);
         taskInput.checklistBinding = buildJobAidChecklistBinding({ workItemId: workItem.workItemId,
           documentVersionId: workItem.source.documentVersionId, basedOnWorkItemRevision: workItem.revision });
         taskInput.modelInput.checklistBinding = structuredClone(taskInput.checklistBinding);
+        if (executionMode === 'AILY_AGENT_V1') taskInput.modelInput.executionRoleMapping = structuredClone(AILY_TASK_ROLE_MAPPING);
       }
       taskInput.modelInput.programOriginal = { binding: original.original.binding, coverage: original.original.coverage,
         units: original.structuredSource.units, sourceLocators: original.structuredSource.sourceLocators,
@@ -2080,11 +2146,12 @@ export class CanonicalJobAidProblemService {
     sourceRefs: string[];
     purpose: string;
     context: 'EXACT' | 'PAGE';
-  }) {
+  }, aily?: AilyTrustedTaskContext) {
     const { row, taskInput, scope } = await this.authorizedAttempt(
       input.attemptRef,
       'READ_ASSESSMENT_SOURCES',
       input.workItemId,
+      aily,
     );
     if (!input.purpose.trim())
       throw new Error('JOBAID_SOURCE_PURPOSE_REQUIRED');
@@ -2132,6 +2199,7 @@ export class CanonicalJobAidProblemService {
               canonicalJson(actual.map(item=>item.nativeReadReceipt))!==canonicalJson(result.receipts))
             throw new Error('JOBAID_TDMS_READ_BINDING_INVALID');
           await this.work.recordSourceRead({row,actorUserId:taskInput.actorUserId,
+            ...(aily ? {writePredicate: aily.snapshot.writePredicate} : {}),
             fence:{...input,principalId:scope.principalId,automaticLeaseRequired:false},sourceBindings:taskInput.sourceBindings,
             sourceRefs:[...selected,...actual].map(item=>item.evidenceRef),nativeEvidence:actual,
             assertNativeAuthorized:assertReadAuthorized,purpose:input.purpose});
@@ -2149,6 +2217,7 @@ export class CanonicalJobAidProblemService {
     await this.assertNativeTaskAuthorized(taskInput, scope);
     if(!journaled) await this.work.recordSourceRead({
       row,
+      ...(aily ? {writePredicate: aily.snapshot.writePredicate} : {}),
       actorUserId: taskInput.actorUserId,
       fence: { ...input, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease },
       sourceBindings: taskInput.sourceBindings,
@@ -2390,11 +2459,12 @@ export class CanonicalJobAidProblemService {
     requestId: string;
     expectedWorkRevision: number;
     workJson: string;
-  }) {
-    const { row, taskInput, scope } = await this.authorizedAttempt(
+  }, aily?: AilyTrustedTaskContext) {
+    const { row, taskInput, scope, ailySnapshot } = await this.authorizedAttempt(
       input.attemptRef,
       'SAVE_ASSESSMENT_WORK',
       input.workItemId,
+      aily,
     );
     if (taskInput.successorReviewTurnRef)
       throw new Error('JOBAID_SUCCESSOR_OVERALL_EXACT_WORK_READ_ONLY');
@@ -2412,13 +2482,14 @@ export class CanonicalJobAidProblemService {
     });
     const preparation = await this.currentPreparation(row,taskInput,scope.tenantId,history[0] ?? null);
     const command: unknown = JSON.parse(input.workJson);
-    assertProgramCompleteIssueCoverage(command, taskInput);
     const replay = history.find((item) => item.requestId === input.requestId);
     const previous = replay
       ? (history.find(
           (item) => item.workRevisionRef === replay.previousWorkRevisionRef,
         ) ?? null)
       : (history[0] ?? taskInput.previousWork);
+    if (ailySnapshot) assertCompleteIssueCoverage(command, previous);
+    else assertProgramCompleteIssueCoverage(command, taskInput);
     const content = materializeJobAidWork(command, await this.workValidationContext(row, taskInput, scope, previous));
     const saved = await this.work.save({
       row,
@@ -2432,6 +2503,7 @@ export class CanonicalJobAidProblemService {
         work: command,
       },
       content,
+      ...(ailySnapshot ? {writePredicate: ailySnapshot.writePredicate} : {}),
       ...(taskInput.tdmsContext ? {assertNativeAuthorized:async(database:PostgresJsDatabase)=>{
         await assertTdmsNativeInTransaction({actor:{tenantId:scope.tenantId,actorUserId:taskInput.actorUserId},
           ...this.nativeTransactionCaller(scope,taskInput.actorUserId,taskInput.tdmsContext!),
@@ -2491,29 +2563,33 @@ export class CanonicalJobAidProblemService {
   }
 
   /** Current candidate check only: no SAVE replay, read receipt, heartbeat or adoption. */
-  async validateWork(input: JobAidWorkValidationRequest): Promise<JobAidWorkValidationResult> {
-    const { row, task, taskInput, scope } = await this.authorizedAttempt(
+  async validateWork(input: JobAidWorkValidationRequest, aily?: AilyTrustedTaskContext): Promise<JobAidWorkValidationResult> {
+    const { row, task, taskInput, scope, ailySnapshot } = await this.authorizedAttempt(
       input.attemptRef, 'SAVE_ASSESSMENT_WORK', input.workItemId,
+      aily,
     );
     if (task.operationRef !== row.operationRef || task.actionAttemptId !== row.attemptId ||
         task.tenantId !== scope.tenantId || task.workItemId !== scope.workItemId ||
         task.documentVersionId !== row.documentVersionId || task.inputRevision !== row.inputRevision ||
         task.baseRevision !== row.baseRevision || task.inputHash !== row.taskInputHash)
       throw new Error('JOBAID_VALIDATION_TASK_BINDING_CHANGED');
-    if (taskInput.executionMode !== 'PROGRAM_AGENT_V1' || taskInput.contentValidationVersion !== 'jobaid-semantic.v1' ||
+    if ((taskInput.executionMode !== 'PROGRAM_AGENT_V1' && !(ailySnapshot && taskInput.executionMode === 'AILY_AGENT_V1')) || taskInput.contentValidationVersion !== 'jobaid-semantic.v1' ||
         taskInput.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT' || taskInput.successorReviewTurnRef)
       throw new Error('JOBAID_PROGRAM_VALIDATION_MODE_REQUIRED');
-    if (input.expectedWorkRevision !== taskInput.modelInput.expectedWorkRevision)
+    const baseline = ailySnapshot ? ailySnapshot.baseline : taskInput.previousWork;
+    if (ailySnapshot && baseline?.actionAttemptId === row.attemptId) exactProgramWorkRead(row, baseline);
+    if (input.expectedWorkRevision !== (ailySnapshot ? baseline?.workRevision ?? 0 : taskInput.modelInput.expectedWorkRevision))
       throw new Error('JOBAID_WORK_REVISION_CONFLICT');
     const snapshotInput = {
       row, actorUserId: taskInput.actorUserId, sourceBindings: taskInput.sourceBindings,
       fence: { principalId: scope.principalId, leaseToken: input.leaseToken, leaseGeneration: input.leaseGeneration,
         automaticLeaseRequired: !!scope.automaticWorkItemLease },
       expectedWorkRevision: input.expectedWorkRevision,
-      expectedPreviousWorkRevisionRef: taskInput.previousWork?.workRevisionRef ?? null,
+      expectedPreviousWorkRevisionRef: baseline?.workRevisionRef ?? null,
+      ...(ailySnapshot ? {writePredicate: ailySnapshot.writePredicate} : {}),
     };
     const snapshot = await this.work.readValidationSnapshot(snapshotInput);
-    if (canonicalJson(snapshot.previous) !== canonicalJson(taskInput.previousWork))
+    if (canonicalJson(snapshot.previous) !== canonicalJson(baseline))
       throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
     const context = await this.workValidationContext(
       { ...row, reviewActivityJson: snapshot.reviewActivityJson }, taskInput, scope, snapshot.previous,
@@ -2524,7 +2600,8 @@ export class CanonicalJobAidProblemService {
     let omittedViolationCount = 0;
     try {
       const command: unknown = JSON.parse(input.workJson);
-      assertProgramCompleteIssueCoverage(command, taskInput);
+      if (ailySnapshot) assertCompleteIssueCoverage(command, snapshot.previous);
+      else assertProgramCompleteIssueCoverage(command, taskInput);
       materializeJobAidWork(command, context);
     } catch (error) {
       // A JOBAID prefix never turns an authorization, lease, CAS or technical error into feedback.
@@ -2532,7 +2609,7 @@ export class CanonicalJobAidProblemService {
       violations = error.violations;
       omittedViolationCount = error.omittedViolationCount;
     }
-    const current = await this.authorizedAttempt(input.attemptRef, 'SAVE_ASSESSMENT_WORK', input.workItemId);
+    const current = await this.authorizedAttempt(input.attemptRef, 'SAVE_ASSESSMENT_WORK', input.workItemId, aily);
     if (current.scope.principalId !== scope.principalId || current.scope.appId !== scope.appId ||
         current.scope.tenantId !== scope.tenantId || current.scope.workItemId !== scope.workItemId ||
         current.scope.authorizationFingerprint !== scope.authorizationFingerprint ||
@@ -2574,11 +2651,12 @@ export class CanonicalJobAidProblemService {
   }
 
   async readAttemptWork(attemptRef: string, requestId?: string, workItemId?: string,
-    readFence?: {leaseToken: string; leaseGeneration: number}, workRevisionRef?: string) {
-    const { row, taskInput, scope } = await this.authorizedAttempt(
+    readFence?: {leaseToken: string; leaseGeneration: number}, workRevisionRef?: string, aily?: AilyTrustedTaskContext) {
+    const { row, taskInput, scope, ailySnapshot } = await this.authorizedAttempt(
       attemptRef,
       'READ_ASSESSMENT_WORK',
       workItemId,
+      aily,
     );
     await this.assertSourcesAuthorized(taskInput.sourceCatalog,taskInput,scope.tenantId,scope.workItemId,scope);
     const history = await this.work.listForRuntime({
@@ -2586,7 +2664,7 @@ export class CanonicalJobAidProblemService {
       workItemId: scope.workItemId,
       actorUserId: taskInput.actorUserId,
     });
-    if (workRevisionRef && (requestId || !isProgramAssessmentMode(taskInput.executionMode) ||
+    if (!ailySnapshot && workRevisionRef && (requestId || !isProgramAssessmentMode(taskInput.executionMode) ||
         workRevisionRef !== taskInput.previousWork?.workRevisionRef))
       throw new Error('JOBAID_PROGRAM_BASELINE_READ_INVALID');
     const revision = workRevisionRef ? history.find(item => item.workRevisionRef === workRevisionRef) ?? null
@@ -2607,12 +2685,17 @@ export class CanonicalJobAidProblemService {
         scope.workItemId,
         scope,
       );
-    if (workRevisionRef && (!revision || canonicalJson(revision) !== canonicalJson(taskInput.previousWork)))
+    if (!ailySnapshot && workRevisionRef && (!revision || canonicalJson(revision) !== canonicalJson(taskInput.previousWork)))
       throw new Error('JOBAID_PROGRAM_BASELINE_READ_CHANGED');
-    if (!workRevisionRef && revision && isProgramAssessmentMode(taskInput.executionMode) && readFence) {
-      if (!requestId || revision.actionAttemptId !== row.attemptId || revision.requestId !== requestId)
+    if (ailySnapshot && revision && ((requestId && revision.requestId !== requestId) ||
+        (revision.actionAttemptId !== row.attemptId && canonicalJson(revision) !== canonicalJson(taskInput.previousWork))))
+      throw new Error('AILY_WORK_READ_BINDING_CHANGED');
+    if (revision && readFence && ((!workRevisionRef && isProgramAssessmentMode(taskInput.executionMode)) ||
+        (ailySnapshot && revision.actionAttemptId === row.attemptId && row.status === 'RUNNING'))) {
+      if ((!ailySnapshot && !requestId) || revision.actionAttemptId !== row.attemptId || requestId && revision.requestId !== requestId)
         throw new Error('JOBAID_PROGRAM_READ_BINDING_INVALID');
       await this.work.recordWorkRead({row, actorUserId: taskInput.actorUserId,
+        ...(ailySnapshot ? {writePredicate: ailySnapshot.writePredicate} : {}),
         fence: {...readFence, principalId: scope.principalId, automaticLeaseRequired: !!scope.automaticWorkItemLease},
         sourceBindings: taskInput.sourceBindings, revision,
         ...(taskInput.tdmsContext ? {assertNativeAuthorized: async (database: PostgresJsDatabase) =>
@@ -2630,12 +2713,98 @@ export class CanonicalJobAidProblemService {
     };
   }
 
+  async projectAilyStage(context: AilyTrustedTaskContext, workRevisionRef: string): Promise<AilyStageOverallReceipt> {
+    assertAilyTrustedTaskContext(context);
+    const snapshot = await context.revalidate();
+    const {row, sealedInput, scope} = snapshot;
+    if (row.status !== 'RUNNING' || !row.leaseToken || !scope.automaticWorkItemLease)
+      throw new Error('AILY_STAGE_OVERALL_LEASE_REQUIRED');
+    const history = await this.work.listForRuntime({tenantId: row.tenantId, actorUserId: sealedInput.actorUserId, workItemId: row.workItemId});
+    const revision = history.find(item => item.workRevisionRef === workRevisionRef && item.actionAttemptId === row.attemptId);
+    if (!revision || revision.content.roundCompletion === 'IN_PROGRESS') throw new Error('JOBAID_COMPLETED_WORK_REQUIRED');
+    await this.assertSourcesAuthorized(revision.content.evidence, sealedInput, row.tenantId, row.workItemId, scope);
+    const existing = ailyStageOveralls(row.reviewActivityJson).find(stage => stage.workRevisionRef === workRevisionRef);
+    const sourceAssessment = exactProgramWorkRead(row, revision, existing?.sourceAssessment.readObservedAt);
+    if (existing) {
+      if (canonicalJson(existing.sourceAssessment) !== canonicalJson(sourceAssessment)) throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
+      await this.assertAilyStageArtifact(revision,existing);
+      await this.assertSourcesAuthorized(revision.content.evidence,sealedInput,row.tenantId,row.workItemId,scope);
+      return existing;
+    }
+    const bytes = new TextEncoder().encode(canonicalJson(deterministicJobAidOverallBody(revision, sourceAssessment)));
+    const artifact = await this.artifactStore.persistAndReadback(bytes);
+    if (!Buffer.from(artifact.bytes).equals(Buffer.from(bytes))) throw new Error('AILY_STAGE_OVERALL_ARTIFACT_UNCONFIRMED');
+    const receipt: AilyStageOverallReceipt = {schemaVersion: 'wiselink.aily-stage-overall.v1', workRevisionRef,
+      workRevision: revision.workRevision, sourceAssessment, artifact: artifact.artifact, observedAt: new Date().toISOString()};
+    await this.work.recordAilyStage({row, actorUserId: sealedInput.actorUserId,
+      fence: {principalId: scope.principalId, leaseToken: row.leaseToken, leaseGeneration: row.leaseGeneration, automaticLeaseRequired: true},
+      sourceBindings: sealedInput.sourceBindings, writePredicate: snapshot.writePredicate, revision, receipt,
+      ...(sealedInput.tdmsContext ? {assertNativeAuthorized:async(database:PostgresJsDatabase)=>
+        assertTdmsNativeInTransaction({actor:{tenantId:scope.tenantId,actorUserId:sealedInput.actorUserId},
+          ...this.nativeTransactionCaller(scope,sealedInput.actorUserId,sealedInput.tdmsContext!),
+          evidence:revision.content.evidence,database},this.nativeVerifier)} : {})});
+    return receipt;
+  }
+
+  private async assertAilyStageArtifact(revision:JobAidWorkRevision,receipt:AilyStageOverallReceipt):Promise<void> {
+    const bytes=await this.artifactStore.readActualBytes(receipt.artifact);
+    if(!Buffer.from(bytes).equals(Buffer.from(canonicalJson(deterministicJobAidOverallBody(revision,receipt.sourceAssessment)))))
+      throw new Error('AILY_STAGE_OVERALL_ARTIFACT_UNCONFIRMED');
+  }
+
+  async finishAily(context: AilyTrustedTaskContext, workRevisionRef: string) {
+    assertAilyTrustedTaskContext(context);
+    const snapshot = await context.revalidate();
+    const {row, task, run, scope, sealedInput} = snapshot;
+    if (row.status === 'SUCCEEDED' || row.status === 'COMMITTING') {
+      if (!row.resultEnvelopeJson || !row.resultContentHash) throw new Error('AILY_FINAL_RESULT_UNCONFIRMED');
+      const original = preflightCanonicalHostOpenClawResult({row, result: JSON.parse(row.resultEnvelopeJson) as unknown, ailyRun: run});
+      if (original.result.contentHash !== row.resultContentHash || parseFinishOutput(original.result.modelOutput).workRevisionRef !== workRevisionRef)
+        throw new Error('AILY_FINAL_RESULT_BINDING_CHANGED');
+      if (row.status === 'SUCCEEDED') {
+        if (!row.projectionApplied || !row.completedAt) throw new Error('AILY_FINAL_RESULT_UNCONFIRMED');
+        const revision = await this.work.readByRefForRuntime({tenantId: row.tenantId, actorUserId: sealedInput.actorUserId,
+          workItemId: row.workItemId, workRevisionRef});
+        if (!revision || revision.actionAttemptId !== row.attemptId) throw new Error('AILY_FINAL_RESULT_BINDING_CHANGED');
+        await this.assertSourcesAuthorized(revision.content.evidence, sealedInput, row.tenantId, row.workItemId, scope);
+        return {status: 'SUCCEEDED' as const, attemptRef: row.operationRef, workRevisionRef, replayed: true};
+      }
+      if (!row.leaseToken) throw new Error('AILY_DOMAIN_LEASE_REQUIRED');
+      return this.commit({row, scope, leaseToken: row.leaseToken, leaseGeneration: row.leaseGeneration,
+        result: original.result, ailyContext: context});
+    }
+    if (row.status !== 'RUNNING' || !row.leaseToken || !row.startedAt || !scope.automaticWorkItemLease ||
+        run.pending?.phase !== 'READ' || run.pending.workRevisionRef !== workRevisionRef ||
+        snapshot.baseline?.workRevisionRef !== workRevisionRef)
+      throw new Error('AILY_FINAL_INDEPENDENT_READ_REQUIRED');
+    const finalGuard=ailyFinalCommitGuard(run,workRevisionRef,sealedInput.actorUserId);
+    const stage = await this.projectAilyStage(context, workRevisionRef);
+    const fresh = await context.revalidate();
+    const result = sealResultEnvelope({schemaVersion: 'wiselink.3_1.openclaw_result_envelope.v1', executionKind: 'AILY_AGENT',
+      actionAttemptId: row.attemptId, operationRef: row.operationRef!, taskType: 'OPENCLAW_DYNAMIC_EVALUATION',
+      workItemId: row.workItemId, baseRevision: task.baseRevision, status: 'SUCCEEDED', businessOutcome: 'CANDIDATE_READY',
+      candidateStatus: null, modelOutput: canonicalJson({workRevisionRef}), outputArtifactRefs: [{ref: stage.artifact.ref, sha256: stage.artifact.sha256}],
+      sourceRefs: task.sourceRefs, factsConsidered: [], missingInputs: [], conflicts: [], warnings: [],
+      modelVersion: run.modelEvidence.actualModelRef, promptVersion: sealedInput.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA
+        ? 'wiselink-jobaid-problem@v3' : 'wiselink-jobaid-problem@v2', skillVersion: 'wiselink-aily-domain@v1',
+      toolVersions: {'model-executor': 'AILY_AGENT_V1', 'wiselink-aily-engineering': '1.0.0',
+        'jobaid-problem-protocol': sealedInput.schemaVersion === JOBAID_PROBLEM_SOURCE_STATEMENT_TASK_SCHEMA ? '3' : '2',
+        ...(sealedInput.tdmsContext ? {'tdms-native-context': '1'} : {})},
+      producer: {kind: 'AILY_AGENT_V1', agentId: run.agentId, publicationRef: run.publicationRef,
+        selectedModelRef: run.modelEvidence.selectedModelRef, actualModelRef: run.modelEvidence.actualModelRef, usage: null},
+      runMetrics: {durationMs: Math.max(0, Date.now() - row.startedAt.getTime()), inputUnits: null, outputUnits: null}, errorCode: null, errorDetail: null});
+    return this.commit({row: fresh.row, scope: fresh.scope, leaseToken: fresh.row.leaseToken!,
+      leaseGeneration: fresh.row.leaseGeneration, result, ailyContext: context,ailyFinal:finalGuard});
+  }
+
   async commit(input: {
     row: ActionAttemptRow;
     scope: CanonicalVerifiedOpenClawAttemptScope;
     leaseToken: string;
     leaseGeneration: number;
     result: unknown;
+    ailyContext?: AilyTrustedTaskContext;
+    ailyFinal?: AilyFinalCommitGuard;
   }): Promise<
     | {
         workItemId: string;
@@ -2648,9 +2817,14 @@ export class CanonicalJobAidProblemService {
   > {
     if(input.scope.successorReviewDelegation) await this.admitSuccessorSources(input.scope,
       input.scope.successorReviewDelegation.reviewTurnRef,input.scope.attemptRef);
+    if (parseTaskEnvelope(input.row.taskEnvelopeJson).modelInput.executionMode === 'AILY_AGENT_V1' && !input.ailyContext)
+      throw new Error('AILY_DOMAIN_TRUSTED_CONTEXT_REQUIRED');
+    if (input.ailyContext) assertAilyTrustedTaskContext(input.ailyContext);
+    const ailySnapshot = input.ailyContext ? await input.ailyContext.revalidate() : null;
     const preflight = preflightCanonicalHostOpenClawResult({
       row: input.row,
       result: input.result,
+      ...(ailySnapshot ? {ailyRun: ailySnapshot.run} : {}),
     });
     const taskInput = parseJobAidProblemTask(preflight.task);
     if (input.scope.automaticWorkItemLease && !taskAutomaticWorkItemLease(input.row))
@@ -2686,6 +2860,8 @@ export class CanonicalJobAidProblemService {
       leaseToken: input.leaseToken,
       leaseGeneration: input.leaseGeneration,
       result: preflight.result,
+      ...(ailySnapshot ? {writePredicate: ailySnapshot.writePredicate, failClosedWithoutRejectionMutation: true,
+        ...(input.ailyFinal ? {ailyFinal:input.ailyFinal} : {})} : {}),
     });
     if (
       prepared.row.status !== 'COMMITTING' &&
@@ -2697,7 +2873,7 @@ export class CanonicalJobAidProblemService {
       workItemId: input.scope.workItemId,
     });
     const isOverall = prepared.task.taskType === 'OPENCLAW_OVERALL_SYNTHESIS';
-    const isProgram = isProgramAssessmentMode(taskInput.executionMode);
+    const isProgram = isProgramAssessmentMode(taskInput.executionMode) || !!ailySnapshot;
     const committed = isOverall
       ? current.integratedAssessment?.overallSynthesis
       : (activeConfigurationEvidenceReevaluation(current)?.stagedBundle
@@ -2802,9 +2978,14 @@ export class CanonicalJobAidProblemService {
         workItemId: current.workItemId,
         expectedRevision: prepared.task.baseRevision,
         syncPrimaryAttempt: false,
+        ...(ailySnapshot ? {writePredicate:ailySnapshot.writePredicate} : {}),
         jobAidWorkRevisionGuard:{tenantId:input.scope.tenantId,workRevisionRef:revision.workRevisionRef,
           sourceGuard:{actorUserId:taskInput.actorUserId,sourceBindings:taskInput.sourceBindings}},
         nativeEvidenceGuard:(database:PostgresJsDatabase)=>this.work.withActorScope(taskInput.actorUserId,async()=>{
+          if (ailySnapshot) {
+            const [proof] = await database.execute<{allowed: boolean}>(sql`SELECT (${ailySnapshot.writePredicate}) AS allowed`);
+            if (proof?.allowed !== true) throw new Error('AILY_DOMAIN_AUTHORIZATION_CHANGED');
+          }
           await this.assertProjectionWriteFence(database,prepared,taskInput,input.scope);
           await this.assertNativeProjectionAuthorized(baseRules,taskInput,input.scope,database);
         },database),
@@ -2861,14 +3042,13 @@ export class CanonicalJobAidProblemService {
 
   private async buildProgramOverall(prepared: PreparedActionAttemptCommit,
     current: CanonicalWorkItemProjection, revision: JobAidWorkRevision, baseRules: CanonicalJobAidProblemCandidateProjection) {
-    const sourceAssessment = exactProgramWorkRead(prepared.row, revision);
+    const stage = parseJobAidProblemTask(prepared.task).executionMode === 'AILY_AGENT_V1'
+      ? ailyStageOveralls(prepared.row.reviewActivityJson).find(item => item.workRevisionRef === revision.workRevisionRef) : undefined;
+    const sourceAssessment = exactProgramWorkRead(prepared.row, revision, stage?.sourceAssessment.readObservedAt);
     assertJobAidOverallWorkCurrent(revision);
-    const readingResult = jobAidReadingResult(revision);
-    const artifact = await this.artifactStore.persistAndReadback(new TextEncoder().encode(canonicalJson({
-      schemaVersion: 'wiselink.jobaid-initial-overall-projection.v1', sourceAssessment, readingResult,
-      executionKind: 'DETERMINISTIC_PROJECTION', modelRequests: 0, semanticReanalysisPerformed: false,
-      authorityLevel: 'candidate_only', adopted: false,
-    })));
+    if(stage)await this.assertAilyStageArtifact(revision,stage);
+    const artifact = stage ? {artifact: stage.artifact} : await this.artifactStore.persistAndReadback(
+      new TextEncoder().encode(canonicalJson(deterministicJobAidOverallBody(revision, sourceAssessment))));
     const basis: CanonicalWorkItemProjection = {...current, integratedAssessment: {
       status: 'BASE_RULE_CANDIDATE_READY', baseRules,
       engineerReviews: current.integratedAssessment?.engineerReviews ?? null,
@@ -3084,15 +3264,17 @@ export class CanonicalJobAidProblemService {
     revision: JobAidWorkRevision;
     overall: { status: 'CANDIDATE_ONLY' | 'STALE';
       readingResult: NonNullable<CanonicalOpenClawOverallProjection['readingResult']> } | null;
+    stageOverall?: JobAidWorkingReadModel['stageOverall'];
   }> {
     const { workItem, revision } = await this.readAuthorizedBrowserRevision(
       workItemId, workRevisionRef, actor,
     );
     const overall = workItem.integratedAssessment?.overallSynthesis;
     const readingResult = overall?.readingResult;
+    const stageOverall = revision.actionAttemptId ? await this.readBrowserStageOverall(revision,workItem,actor) : null;
     if (!overall || !readingResult ||
       overall.basedOnJobAidWorkRevisionRef !== workRevisionRef) {
-      return { revision, overall: null };
+      return { revision, overall: null, ...(stageOverall ? {stageOverall} : {}) };
     }
     if (readingResult.scope.kind !== 'WORK_ITEM' ||
       readingResult.scope.workItemId !== workItemId ||
@@ -3104,7 +3286,24 @@ export class CanonicalJobAidProblemService {
       actor.objectAccessActor?.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT',
       {actor,workItem,workRevisionRefs:[workRevisionRef]},
     );
-    return { revision, overall: { status: overall.status, readingResult } };
+    return { revision, overall: { status: overall.status, readingResult }, ...(stageOverall ? {stageOverall} : {}) };
+  }
+
+  private async readBrowserStageOverall(revision: JobAidWorkRevision, workItem: CanonicalWorkItemProjection,
+    actor: CanonicalHostActor): Promise<JobAidWorkingReadModel['stageOverall']> {
+    const row = await this.attempts.readScopedById({attemptId:revision.actionAttemptId,tenantId:actor.tenantId,workItemId:workItem.workItemId});
+    const task = parseTaskEnvelope(row.taskEnvelopeJson);
+    if (task.modelInput.executionMode !== 'AILY_AGENT_V1') return null;
+    const input = parseJobAidProblemTask(task);
+    if (input.actorUserId !== actor.userId || row.taskInputHash !== task.inputHash ||
+        revision.documentVersionId !== task.documentVersionId) throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
+    const receipt = ailyStageOveralls(row.reviewActivityJson).find(item => item.workRevisionRef === revision.workRevisionRef);
+    if (!receipt) return null;
+    const actualRead = exactProgramWorkRead(row,revision,receipt.sourceAssessment.readObservedAt);
+    if (canonicalJson(actualRead) !== canonicalJson(receipt.sourceAssessment)) throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
+    await this.assertAilyStageArtifact(revision,receipt);
+    return {status:revision.documentVersionId === workItem.source.documentVersionId ? 'CURRENT' : 'STALE',
+      receipt,readingResult:jobAidReadingResult(revision)};
   }
 
   private async readAuthorizedBrowserRevision(
@@ -3183,6 +3382,8 @@ export class CanonicalJobAidProblemService {
         {actor,workItem,workRevisionRefs:[current.workRevisionRef]},
       );
     const activity = execution ? projectJobAidActivity(execution, savedActivity) : null;
+    const stageOverall = current && execution?.executionMode === 'AILY_AGENT_V1'
+      ? await this.readBrowserStageOverall(current,workItem,actor) : null;
     const overall = workItem.integratedAssessment?.overallSynthesis;
     const base = workItem.integratedAssessment?.baseRules;
     return {
@@ -3213,6 +3414,7 @@ export class CanonicalJobAidProblemService {
         (!base && this.enabledForNewTasks()),
       executionStatus: execution?.status ?? null,
       activity,
+      ...(execution?.executionMode === 'AILY_AGENT_V1' ? {stageOverall} : {}),
       currentInputChanged:
         !!current &&
         current.basedOnWorkItemRevision !== workItem.revision &&
@@ -3743,7 +3945,17 @@ export class CanonicalJobAidProblemService {
       | 'READ_ASSESSMENT_WORK'
       | 'HEARTBEAT_ATTEMPT',
     workItemId?: string,
+    aily?: AilyTrustedTaskContext,
   ) {
+    if (aily) {
+      assertAilyTrustedTaskContext(aily);
+      const snapshot = await aily.revalidate();
+      if (snapshot.row.operationRef !== attemptRef || workItemId && snapshot.scope.workItemId !== workItemId ||
+          snapshot.sealedInput.executionMode !== 'AILY_AGENT_V1') throw new Error('AILY_DOMAIN_TASK_BINDING_CHANGED');
+      await this.assertNativeTaskAuthorized(snapshot.sealedInput, snapshot.scope);
+      return {row: snapshot.row, task: snapshot.task, taskInput: snapshot.sealedInput,
+        scope: snapshot.scope, ailySnapshot: snapshot};
+    }
     const scope = await this.serviceScope.authorizeOpenClawAttempt({
       attemptRef,
       operation,
@@ -3778,7 +3990,7 @@ export class CanonicalJobAidProblemService {
     if (operation !== 'READ_ASSESSMENT_WORK' && scope.automaticWorkItemLease && !taskAutomaticWorkItemLease(row))
       throw new Error('AUTO_WORK_ITEM_TASK_LEASE_BINDING_REQUIRED');
     await this.assertNativeTaskAuthorized(taskInput, scope);
-    return { row, task, taskInput, scope };
+    return { row, task, taskInput, scope, ailySnapshot: null };
   }
 }
 

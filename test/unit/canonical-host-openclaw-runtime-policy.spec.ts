@@ -1,6 +1,16 @@
 import { assertCanonicalHostOpenClawRuntimePolicy, isCanonicalHostOpenClawSkillVersionCompatible } from '../../server/modules/canonical-host/canonical-host-openclaw-runtime-policy';
 
 describe('canonical Host OpenClaw Skill compatibility', () => {
+  it('accepts only the explicit sealed enterprise runtime without claiming the old HOSTED/CODEX skill',()=>{
+    const task={taskType:'OPENCLAW_DYNAMIC_EVALUATION',modelInput:{executionMode:'AILY_AGENT_V1'}} as never;
+    const result={executionKind:'AILY_AGENT',modelVersion:null,skillVersion:'wiselink-aily-domain@v1',
+      toolVersions:{'model-executor':'AILY_AGENT_V1','wiselink-aily-engineering':'1.0.0'}};
+    expect(()=>assertCanonicalHostOpenClawRuntimePolicy(result as never,task)).not.toThrow();
+    expect(()=>assertCanonicalHostOpenClawRuntimePolicy({...result,toolVersions:{'model-executor':'CODEX'}} as never,task))
+      .toThrow('AILY_RESULT_RUNTIME_POLICY_MISMATCH');
+    expect(()=>assertCanonicalHostOpenClawRuntimePolicy({...result,executionKind:undefined} as never,task))
+      .toThrow('AILY_RESULT_RUNTIME_POLICY_MISMATCH');
+  });
   it('requires the semantic translation runtime even when final assembly reuses saved blocks', () => {
     const task = { taskType: 'OPENCLAW_TRANSLATE', modelInput: { schemaVersion: 'wiselink.3_1.translation_task.v2' } } as never;
     const result = { modelVersion: 'host-assembly/no-model-call', skillVersion: 'wiselink-research-and-synthesize@r09.c44',

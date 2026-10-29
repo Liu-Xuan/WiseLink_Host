@@ -20,8 +20,10 @@ import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
 } from '@lark-apaas/fullstack-nestjs-core';
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
+import { ailyStageOveralls, exactProgramWorkRead, parseAilyStageOverall } from './program-controlled-assessment';
 import type {
+  AilyStageOverallReceipt,
   JobAidProblemWorkContent,
   JobAidWorkRevision,
   JobAidWorkingReadModel,
@@ -60,6 +62,8 @@ interface JobAidSaveScope {
   fence: JobAidWorkFence;
   sourceBindings: JobAidSourceBinding[];
   reviewCaller?:TdmsReviewCaller;
+  writePredicate?: SQL;
+  assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
 }
 
 export function assertJobAidWorkFence(
@@ -380,7 +384,7 @@ export class JobAidWorkRepository {
           ${actionAttempt.actionType} AS "actionType", ${actionAttempt.createdAt} AS "createdAt",
           ${actionAttempt.startedAt} AS "startedAt", ${actionAttempt.completedAt} AS "completedAt",
           CASE WHEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode'
-            IN ('PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1')
+            IN ('PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1', 'AILY_AGENT_V1')
             THEN ${actionAttempt.taskEnvelopeJson}::jsonb->'modelInput'->>'executionMode' ELSE NULL END AS "executionMode",
           ${actionAttempt.executionModelJson}::jsonb AS "executionModel",
           ${checklistTaskSelection()} AS "checklistContext"
@@ -517,6 +521,7 @@ export class JobAidWorkRepository {
       // Keep the same native-verifier placement and source/grant/attempt order as SAVE.
       await input.assertNativeAuthorized?.(database);
       const { primary, attempt } = await this.lockSaveScope(input, database);
+      await this.assertAilyPredicate(database, input.writePredicate);
       assertJobAidWorkFence(attempt, input.fence);
       if (attempt.operationRef !== input.row.operationRef || attempt.inputRevision !== input.row.inputRevision)
         throw new Error('JOBAID_SAVE_ATTEMPT_CHANGED');
@@ -533,6 +538,7 @@ export class JobAidWorkRepository {
       await assertAutomaticWorkItemAttemptLease(database, input.row, input.fence.principalId, input.fence.automaticLeaseRequired);
       // Snapshot reads can await I/O; expiry during them is still a failed preview.
       assertJobAidWorkFence(attempt, input.fence);
+      await this.assertAilyPredicate(database, input.writePredicate);
       return { reviewActivityJson: attempt.reviewActivityJson, previous };
     });
   }
@@ -549,6 +555,7 @@ export class JobAidWorkRepository {
       content: JobAidProblemWorkContent;
       assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
       reviewCaller?:TdmsReviewCaller;
+      writePredicate?: SQL;
     },
     executor?: PostgresJsDatabase,
   ): Promise<{ revision: JobAidWorkRevision; replayed: boolean }> {
@@ -564,6 +571,7 @@ export class JobAidWorkRepository {
     const apply = async (database: PostgresJsDatabase) => {
       await input.assertNativeAuthorized?.(database);
       const { primary, attempt } = await this.lockSaveScope(input, database);
+      await this.assertAilyPredicate(database, input.writePredicate);
       const [existing] = await database
         .select()
         .from(assessmentWorkRevision)
@@ -585,6 +593,7 @@ export class JobAidWorkRepository {
         // Response-loss recovery returns the original saved content even after
         // this attempt becomes terminal. It cannot advance a working pointer.
         await input.assertNativeAuthorized?.(database);
+        await this.assertAilyPredicate(database, input.writePredicate);
         return { revision: project(existing), replayed: true };
       }
       if (
@@ -610,22 +619,28 @@ export class JobAidWorkRepository {
       if ((current?.workRevision ?? 0) !== input.expectedWorkRevision)
         throw new Error('JOBAID_WORK_REVISION_CONFLICT');
       await input.assertNativeAuthorized?.(database);
-      const [saved] = await database
+      const saveValues = {
+        assessmentWorkRevisionId: `JAWR-${randomUUID()}`, tenantId: attempt.tenantId, workItemId: attempt.workItemId,
+        workRevision: input.expectedWorkRevision + 1, requestId: input.requestId, actionAttemptId: attempt.attemptId,
+        basedOnWorkItemRevision: attempt.baseRevision!, documentVersionId: attempt.documentVersionId!,
+        previousWorkRevisionId: current?.workRevisionRef ?? null, commandJson,
+        contentJson: canonicalJson(input.content), createdByUserId: input.actorUserId,
+      };
+      let saved: typeof assessmentWorkRevision.$inferSelect | undefined;
+      if (input.writePredicate) {
+        const inserted = await database.execute<{ref: string}>(sql`
+          INSERT INTO ${assessmentWorkRevision} (assessment_work_revision_id,tenant_id,work_item_id,work_revision,request_id,
+            action_attempt_id,based_on_work_item_revision,document_version_id,previous_work_revision_id,command_json,content_json,created_by_user_id)
+          SELECT ${saveValues.assessmentWorkRevisionId},${saveValues.tenantId},${saveValues.workItemId},${saveValues.workRevision},${saveValues.requestId},
+            ${saveValues.actionAttemptId},${saveValues.basedOnWorkItemRevision},${saveValues.documentVersionId},${saveValues.previousWorkRevisionId},
+            ${saveValues.commandJson},${saveValues.contentJson},${saveValues.createdByUserId}
+          WHERE (${input.writePredicate}) RETURNING assessment_work_revision_id AS ref`);
+        if (inserted.length !== 1) throw new Error('AILY_DOMAIN_AUTHORIZATION_CHANGED');
+        [saved] = await database.select().from(assessmentWorkRevision)
+          .where(eq(assessmentWorkRevision.assessmentWorkRevisionId, inserted[0].ref)).limit(1);
+      } else [saved] = await database
         .insert(assessmentWorkRevision)
-        .values({
-          assessmentWorkRevisionId: `JAWR-${randomUUID()}`,
-          tenantId: attempt.tenantId,
-          workItemId: attempt.workItemId,
-          workRevision: input.expectedWorkRevision + 1,
-          requestId: input.requestId,
-          actionAttemptId: attempt.attemptId,
-          basedOnWorkItemRevision: attempt.baseRevision!,
-          documentVersionId: attempt.documentVersionId!,
-          previousWorkRevisionId: current?.workRevisionRef ?? null,
-          commandJson,
-          contentJson: canonicalJson(input.content),
-          createdByUserId: input.actorUserId,
-        })
+        .values(saveValues)
         .returning();
       if (!saved) throw new Error('JOBAID_WORK_SAVE_READBACK_MISSING');
       await this.searchProjection.enqueuePending({ tenantId: saved.tenantId, ownerKind: 'USER',
@@ -634,6 +649,7 @@ export class JobAidWorkRepository {
       await this.wikiChanges?.record({ tenantId: saved.tenantId, actorUserId: input.actorUserId,
         kind: 'WORK_ITEM', subjectId: saved.workItemId, versionRef: saved.assessmentWorkRevisionId }, database);
       await input.assertNativeAuthorized?.(database);
+      await this.assertAilyPredicate(database, input.writePredicate);
       return { revision: project(saved), replayed: false };
     };
     return executor
@@ -642,6 +658,38 @@ export class JobAidWorkRepository {
           input.actorUserId,
           ({ database }) => apply(database),
         );
+  }
+
+  /** Exact SAVE reconciliation, with an explicit owner-policy coverage proof. */
+  async readAilySave(input: {row: ActionAttemptRow; actorUserId: string; requestId: string;
+    command: unknown; readPredicate: SQL}): Promise<JobAidWorkRevision | null> {
+    return this.withActorScope(input.actorUserId, async () => {
+      const [proof] = await this.db.select({saved:assessmentWorkRevision,covered:sql<boolean>`
+        current_setting('app.user_id',true)=${input.actorUserId}
+        AND engineering_matter_actor_has_tenant(${input.row.tenantId})
+        AND engineering_matter_work_item_owned_by_actor(${input.row.tenantId},${input.row.workItemId})
+        AND (${input.readPredicate})`}).from(workItem).leftJoin(assessmentWorkRevision,and(
+          eq(assessmentWorkRevision.tenantId,workItem.tenantId),eq(assessmentWorkRevision.workItemId,workItem.workItemId),
+          eq(assessmentWorkRevision.requestId,input.requestId),
+        )).where(and(eq(workItem.tenantId,input.row.tenantId),eq(workItem.workItemId,input.row.workItemId))).limit(1);
+      if (proof?.covered !== true) throw new Error('AILY_SAVE_COVERAGE_UNKNOWN');
+      const saved=proof.saved;
+      if (!saved) return null;
+      if (saved.actionAttemptId !== input.row.attemptId || saved.basedOnWorkItemRevision !== input.row.baseRevision ||
+          saved.commandJson !== canonicalJson(input.command)) throw new Error('JOBAID_SAVE_REQUEST_REUSE');
+      return project(saved);
+    });
+  }
+
+  async recordAilyStage(input: JobAidSaveScope & {revision: JobAidWorkRevision; receipt: AilyStageOverallReceipt}): Promise<void> {
+    const receipt = parseAilyStageOverall(input.receipt);
+    return this.recordReadObservation(input, {kind: 'AILY_STAGE_OVERALL', receipt}, input.revision);
+  }
+
+  private async assertAilyPredicate(database: PostgresJsDatabase, predicate?: SQL): Promise<void> {
+    if (!predicate) return;
+    const [proof] = await database.execute<{allowed: boolean}>(sql`SELECT (${predicate}) AS allowed`);
+    if (proof?.allowed !== true) throw new Error('AILY_DOMAIN_AUTHORIZATION_CHANGED');
   }
 
   /** Check an unchanged Review under its caller's already-held actor
@@ -817,11 +865,13 @@ export class JobAidWorkRepository {
     fence: JobAidWorkFence;
     sourceBindings: JobAidSourceBinding[];
     assertNativeAuthorized?: (database: PostgresJsDatabase) => Promise<void>;
+    writePredicate?: SQL;
   }, observation: { kind: 'ASSESSMENT_SOURCES_READ'; sourceRefs: string[]; purpose: string; nativeEvidence?: AssessmentTdmsNativeEvidence[] }
     | { kind: 'ASSESSMENT_KNOWLEDGE_OBSERVED'; status: JobAidKnowledgeObservationStatus }
     | { kind: 'ASSESSMENT_WORK_READ'; workRevisionRef: string; workRevision: number; saveRequestId: string }
     | { kind: 'ASSESSMENT_PROGRAM_PROGRESS'; phase: 'MATERIALS_READY' | 'MODEL_RESPONSE_SAVED'; checkpointRef: string;
-      materialsArtifact?: import('@shared/api.interface').UnifiedPackageArtifactDescriptor },
+      materialsArtifact?: import('@shared/api.interface').UnifiedPackageArtifactDescriptor }
+    | {kind: 'AILY_STAGE_OVERALL'; receipt: AilyStageOverallReceipt},
     exactRead?: JobAidWorkRevision): Promise<void> {
     await this.actorTransactions.withActorTransaction(
       input.actorUserId,
@@ -857,6 +907,21 @@ export class JobAidWorkRepository {
         )
           throw new Error('JOBAID_SOURCE_READ_BINDING_CHANGED');
         assertJobAidWorkFence(attempt, input.fence);
+        await this.assertAilyPredicate(database, input.writePredicate);
+        if (observation.kind === 'AILY_STAGE_OVERALL') {
+          if (!exactRead || observation.receipt.sourceAssessment.actionAttemptId !== attempt.attemptId)
+            throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
+          const saved = await this.readByRef({tenantId: attempt.tenantId, workItemId: attempt.workItemId,
+            workRevisionRef: observation.receipt.workRevisionRef}, database);
+          if (!saved || canonicalJson(saved) !== canonicalJson(exactRead) ||
+              canonicalJson(exactProgramWorkRead(attempt, saved, observation.receipt.sourceAssessment.readObservedAt)) !== canonicalJson(observation.receipt.sourceAssessment))
+            throw new Error('AILY_STAGE_OVERALL_READ_REQUIRED');
+          const previous = ailyStageOveralls(attempt.reviewActivityJson).find(stage => stage.workRevisionRef === saved.workRevisionRef);
+          if (previous) {
+            if (canonicalJson(previous) !== canonicalJson(observation.receipt)) throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
+            return;
+          }
+        }
         if (observation.kind === 'ASSESSMENT_WORK_READ') {
           const saved = await this.readByRef({tenantId: attempt.tenantId, workItemId: attempt.workItemId,
             workRevisionRef: observation.workRevisionRef}, database);
@@ -878,14 +943,18 @@ export class JobAidWorkRepository {
         const activity = {
           ...observation,
           ...(observation.kind === 'ASSESSMENT_SOURCES_READ' ? tdmsReadObservation(observation,attempt.reviewActivityJson,attempt.operationRef) : {}),
-          observedAt: new Date().toISOString(),
+          observedAt: observation.kind === 'AILY_STAGE_OVERALL' ? observation.receipt.observedAt : new Date().toISOString(),
         };
-        await database
+        const write = database
           .update(actionAttempt)
           .set({
             reviewActivityJson: sql`(COALESCE(${actionAttempt.reviewActivityJson}::jsonb, '[]'::jsonb) || ${JSON.stringify([activity])}::jsonb)::text`,
           })
-          .where(eq(actionAttempt.attemptId, attempt.attemptId));
+          .where(and(eq(actionAttempt.attemptId, attempt.attemptId), input.writePredicate));
+        if (input.writePredicate) {
+          if ((await write.returning({attemptId: actionAttempt.attemptId})).length !== 1)
+            throw new Error('AILY_DOMAIN_AUTHORIZATION_CHANGED');
+        } else await write;
         await input.assertNativeAuthorized?.(database);
       },
     );

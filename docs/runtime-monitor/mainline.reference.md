@@ -2,9 +2,9 @@
 
 以下共同规则与附录 A—D 原文摘自 2026-10-27 v1.10 契约，用于按需查阅 13 个节点、47 条关系、58 个场景与 10 条规则。目录数量不是完成率，也不是首单必须全部接入的前置。原文中“第几节”等指 v1.10 章节，不指新版主文的同号章节。
 
-现行主线：v1.11结构＋Codex原生职责修订，合并用户2026-10-29候选与[新分享](https://chatgpt.com/share/6ae2adf4-b884-83e8-a07b-264a0eaa083d)，以最新直接Goal保留Codex＋LiteLLM＋Host与完整Agent循环。本目录保留原增量11及v1.10的范围和成功判据；后继统一边界以[本地主契约第6节](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#6-统一最小修订方案增量11)及原开发卡为准，N01—N24不是新节点或派工数量。旧运行观察在[历史验证快照](../history/mainline-graph/20261029-retired-verification/README.md)，不作为当前状态。
+现行目标：保留本机v1.11结构，当前职责本地按用户v2.6直接Goal及[主契约](../WISELINK_MAINLINE_GRAPH_CONTRACT.md)读取。正式自动化为Aily企业智能体；团队仅获权只读问答／解释／进度／导航，不新建／续办／取消／写业务。交互复核含不保存须登录WiseLink后显式受理，链接／登录不建任务，既有获权后台触发保留；两入口共享准确成果／版本，不复制完整聊天，群受众分别核证。GLM-5.3可用优先，否则DeepSeek V4 Pro，无强制备用。以下v1.10共同规则及附录保留原文，只供历史定位；当前规则和W1—W6从本机JSON、生成页面及[主契约第6节](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#6-统一最小实施方案企业主线)消费，不以旧定义覆盖当前职责。旧证据见[历史验证快照](../history/mainline-graph/20261029-retired-verification/README.md)。
 
-现行边界区分阶段seal／SAVE与任务明确final；原合同允许时同session可吸收准确回执继续，不一律新建请求。下列v1.10附录保留原文，不能据旧封存提交条款推导所有保存都终结工程任务，也不据新要求宣称中途SAVE已实现。
+阶段seal／SAVE只固定该revision，B仍消费A独立READ的物化正文、引用、revision及保存引用；合同允许才接续。A Overall不提前FINISH／ACK，B失败不抹A，UNKNOWN先核原操作。13节点／47关系／58场景、R01—R10及8项RC1标识保持，目标修订不宣称配置或业务已验。
 
 ### 2.1 十项共同规则
 

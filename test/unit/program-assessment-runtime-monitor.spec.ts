@@ -36,6 +36,22 @@ function research(read: JobAidWorkingReadModel) {
   )!;
 }
 
+it('shows enterprise stage output without changing final Overall, attempt status or queue completion',()=>{
+  const read=programRead('AILY_AGENT_V1');
+  read.stageOverall={status:'CURRENT',readingResult:{} as never,receipt:{schemaVersion:'wiselink.aily-stage-overall.v1',
+    workRevisionRef:read.current!.workRevisionRef,workRevision:read.current!.workRevision,
+    sourceAssessment:{actionAttemptId:read.current!.actionAttemptId,workRevisionRef:read.current!.workRevisionRef,
+      workRevision:read.current!.workRevision,saveRequestId:read.current!.requestId,readObservedAt:'2026-10-29T00:00:00.000Z'},
+    artifact:{ref:'artifact://synthetic-stage',sha256:'a'.repeat(64),byteLength:10,mediaType:'application/json',storeRole:'UnifiedArtifactStoreCandidate'},
+    observedAt:'2026-10-29T00:00:01.000Z'}};
+  const graph=adaptJobAidWorkingRead(read,context)!;
+  const overall=graph.nodes.find(node=>node.id==='assessment.overall')!;
+  expect(overall.summary).toContain('阶段综合可读');expect(overall.summary).toContain('不表示任务最终完成');
+  expect(overall.outputs).toEqual([{label:`阶段综合 · 工作 ${read.current!.workRevision}`,ref:'artifact://synthetic-stage'}]);
+  expect(read.overallStatus).toBe('NOT_AVAILABLE');expect(read.selectedExecution!.status).toBe('RUNNING');
+  expect(read.autoProcessingAcknowledgement).toBeFalsy();
+});
+
 describe.each(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1'] as const)(
   '%s',
   (executionMode) => {

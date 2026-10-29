@@ -1,4 +1,7 @@
 import { drizzle } from 'drizzle-orm/postgres-js';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { AilyTaskAdmissionService, type AilyTaskConfiguration } from '../../server/modules/canonical-host/aily-task-admission';
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common';
 import { SessionResolver } from '../../server/modules/identity/session-resolver.service';
 import * as cancelledContinuation from '../../server/modules/action-attempt/cancelled-initial-continuation';
@@ -6,7 +9,8 @@ import postgres from 'postgres';
 import { actionAttempt as actionAttemptTable, translationWorkspace, workItem as workItemTable } from '../../server/database/schema';
 import { dmDocumentParseRun } from '../../server/database/document-parsing.schema';
 import { autoWorkItemAuthorization } from '../../server/database/auto-work-item-authorization.schema';
-import { canonicalJson } from '../../server/modules/action-attempt/action-attempt-envelope';
+import { canonicalJson, sealTaskEnvelope } from '../../server/modules/action-attempt/action-attempt-envelope';
+import { buildInitialAnalysisRequestInput } from '../../server/modules/action-attempt/initial-analysis-request';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import type {
   CanonicalApplicabilityCandidateProjection,
@@ -68,17 +72,20 @@ describe('CanonicalHost initial-analysis status projection', () => {
       previous.clear(); jest.restoreAllMocks();
     });
 
-    function harness() {
+    function harness(ailyConfig?: Partial<AilyTaskConfiguration>) {
       const projection = parsedWorkItem();
       projection.classification.normalizedFamily = 'FTD';
       const owner = ownerRow(projection);
+      const recoveryRows: unknown[] = [];
+      const execute = jest.fn(async (statement: SQL) => new PgDialect().sqlToQuery(statement).sql.includes('executor_run_json AS run')
+        ? recoveryRows : [{service: false}]);
       const query = (values: unknown[]) => {
         const chain = { where: () => chain, orderBy: () => chain, innerJoin: () => chain,
           limit: async () => values };
         return chain;
       };
       const db = {
-        execute: async () => [{ service: false }],
+        execute,
         select: () => ({ from: (table: unknown) => {
           if (table === workItemTable) return query([{ ...owner, model: null }]);
           if (table === dmDocumentParseRun) return query([{ id: 'published-original' }]);
@@ -94,7 +101,12 @@ describe('CanonicalHost initial-analysis status projection', () => {
         {} as never, executionScope, {} as never);
       const withVerifiedReviewServiceSql = jest.fn(async (operation: () => Promise<unknown>) => operation());
       const status = new CanonicalHostInitialAnalysisStatusService(db as never, {} as never,
-        undefined, undefined, applicability, { withVerifiedReviewServiceSql } as never);
+        undefined, undefined, applicability, { withVerifiedReviewServiceSql } as never,
+        ailyConfig ? new AilyTaskAdmissionService({enabled: true, tenantId: 'tenant-1', workItemId: projection.workItemId,
+          intakeRequestId: projection.requestId, agentId: 'agent_synthetic', principalId: 'service:aily-synthetic',
+          authorizationFingerprint: 'synthetic-scope', publicationRef: 'synthetic-publication', configurationSource: 'synthetic-fixture',
+          apiAccessVerified: true, trustedToolsVerified: true,
+          modelOptions: [{modelRef: 'aily/deepseek-v4-pro', platformBuiltIn: true}], ...ailyConfig}) : undefined);
       const registrar = { getTenantScopedByWorkItemId: jest.fn().mockResolvedValue(projection) };
       const authorize = jest.fn().mockResolvedValue({ action: 'READ_DOCUMENT_PARSING', allowed: true,
         actorFingerprint: HASH, decisionId: 'decision-library', decisionHash: HASH,
@@ -106,7 +118,7 @@ describe('CanonicalHost initial-analysis status projection', () => {
         {} as never, { inspectSourcePackage: async () => ({ sourceKind: 'FROZEN2' }) } as never,
         { status: () => ({}) } as never, {} as never, null,
         undefined, undefined, undefined, undefined, undefined, status);
-      return { projection, applicability, executionScope, leaseAuthority, status, page, actor,
+      return { projection, applicability, executionScope, leaseAuthority, status, page, actor, recoveryRows, execute,
         registrar, authorize, withVerifiedReviewServiceSql };
     }
 
@@ -126,6 +138,104 @@ describe('CanonicalHost initial-analysis status projection', () => {
         workItemId: h.projection.workItemId, tenantId: h.actor.tenantId });
       expect(h.withVerifiedReviewServiceSql).toHaveBeenCalledWith(expect.any(Function), h.actor.userId);
       expect(h.leaseAuthority.authorizeActiveLease).not.toHaveBeenCalled();
+    });
+
+    it('offers only the exact read-only enterprise admission while leaving the global CODEX route unchanged', async () => {
+      const h = harness({});
+      const value = await h.status.projectForBrowser({workItem: h.projection, tenantId: h.actor.tenantId, actorUserId: h.actor.userId});
+      expect(value.ailyTaskAdmission).toEqual({executionMode: 'AILY_AGENT_V1', modelRef: 'aily/deepseek-v4-pro', modelName: 'DeepSeek V4 Pro', available: true});
+      expect(value.continuationOperations).toContain('EVALUATE_JOBAID');
+      expect(process.env.WL_MODEL_EXECUTOR).toBe('CODEX');
+      expect(h.leaseAuthority.authorizeActiveLease).not.toHaveBeenCalled();
+    });
+
+    it('shows unavailable exact enterprise configuration without offering the legacy assessment action', async () => {
+      const h = harness({apiAccessVerified: false});
+      const value = await h.status.projectForBrowser({workItem: h.projection, tenantId: h.actor.tenantId, actorUserId: h.actor.userId});
+      expect(value.ailyTaskAdmission).toMatchObject({executionMode: 'AILY_AGENT_V1', available: false});
+      expect(value.continuationOperations).not.toContain('EVALUATE_JOBAID');
+    });
+
+    it.each(['QUEUED', 'RUNNING', 'TIMED_OUT'])('projects the exact original enterprise UUID/model for page recovery from %s without remote dispatch', async status => {
+      const h = harness({modelOptions: [{modelRef: 'aily/glm-5.3', platformBuiltIn: true}], publicationRef: 'new-glm-publication'});
+      const requestId = '00000000-0000-4000-8000-000000000101';
+      const model = {modelRef: 'aily/deepseek-v4-pro', displayName: 'DeepSeek V4 Pro', providerKind: 'BUILT_IN' as const,
+        settingsRevision: 0, selectedAt: '2026-10-29T00:00:00.000Z'};
+      const task = sealTaskEnvelope({schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1', actionAttemptId: 'ATT-aily',
+        operationRef: 'AQ-aily', taskType: 'OPENCLAW_DYNAMIC_EVALUATION', priority: 100, tenantId: h.actor.tenantId,
+        workItemId: h.projection.workItemId, inputRevision: h.projection.revision, baseRevision: h.projection.revision,
+        documentVersionId: h.projection.source.documentVersionId,
+        sourceRefs: [{ref: h.projection.source.sourceArtifactId!, sha256: h.projection.source.sourceFileSha256.replace(/^sha256:/u, '')}],
+        allowedConnectors: [], hostResolvedMissingInputs: [], executionModel: model,
+        modelInput: {executionMode: 'AILY_AGENT_V1'}, deadline: '2026-10-29T01:00:00.000Z',
+        idempotencyKey: `openclaw-v2:dynamic:${h.projection.workItemId}:${h.projection.source.documentVersionId}:${requestId}`});
+      const run = status === 'QUEUED' ? null : {schemaVersion: 'wiselink.aily-executor-run.v1', executor: 'AILY_AGENT_V1',
+        requestId, agentId: 'agent_synthetic', publicationRef: 'original-deepseek-publication', configurationSource: 'synthetic-fixture',
+        hostSessionId: '00000000-0000-4000-8000-000000000102', leaseGeneration: 1,
+        scope: {tenantId: h.actor.tenantId, workItemId: h.projection.workItemId, intakeRequestId: h.projection.requestId, principalId: 'service:aily-synthetic'},
+        modelEvidence: {selectedModelRef: model.modelRef, actualModelRef: null},
+        post: {state: 'ACCEPTED', startedAt: '2026-10-29T00:00:00.000Z', acceptedAt: '2026-10-29T00:01:00.000Z',
+          requestBody: '{"stream":false}', chatId: '123', remoteSessionId: 'original-remote-session'}};
+      const originalRun = canonicalJson(run);
+      h.recoveryRows.push({status, taskEnvelopeJson: canonicalJson(task), taskInputHash: task.inputHash,
+        actorUserId: h.actor.userId, actionType: task.taskType, idempotencyKey: task.idempotencyKey,
+        attemptId: task.actionAttemptId, operationRef: task.operationRef, executionModelJson: canonicalJson(model), leaseGeneration: run ? 1 : 0, run});
+      const value = await h.status.projectForBrowser({workItem: h.projection, tenantId: h.actor.tenantId, actorUserId: h.actor.userId});
+      expect(value.ailyTaskAdmission?.modelRef).toBe('aily/glm-5.3');
+      expect(value.ailyRecoveryRequest).toEqual({requestId, operation: 'EVALUATE_JOBAID', executionMode: 'AILY_AGENT_V1',
+        modelRef: 'aily/deepseek-v4-pro', modelName: 'DeepSeek V4 Pro'});
+      expect(value.ailyRecoveryRequest).not.toHaveProperty('leaseToken');
+      expect(value.ailyRecoveryRequest).not.toHaveProperty('chatId');
+      expect(canonicalJson(run)).toBe(originalRun);
+      const read = h.execute.mock.calls.map(([statement]) => new PgDialect().sqlToQuery(statement))
+        .find(query => query.sql.includes('executor_run_json AS run'))!;
+      expect(read.params).toEqual(expect.arrayContaining([h.actor.userId, h.actor.tenantId, h.projection.workItemId, h.projection.requestId]));
+      expect(read.sql).not.toMatch(/UPDATE|INSERT|FOR UPDATE/u);
+    });
+
+    it.each(['QUEUED', 'RUNNING'])('projects original background %s progress without a UUID browser command', async status => {
+      const h = harness({modelOptions: [{modelRef: 'aily/glm-5.3', platformBuiltIn: true}], publicationRef: 'new-glm-publication'});
+      const requestId = 'original-2'; const model = {modelRef: 'aily/deepseek-v4-pro', displayName: 'DeepSeek V4 Pro',
+        providerKind: 'BUILT_IN' as const, settingsRevision: 0, selectedAt: '2026-10-29T00:00:00.000Z'};
+      const task = sealTaskEnvelope({schemaVersion: 'wiselink.3_1.openclaw_task_envelope.v1', actionAttemptId: 'ATT-background',
+        operationRef: 'AQ-background', taskType: 'OPENCLAW_DYNAMIC_EVALUATION', priority: 100, tenantId: h.actor.tenantId,
+        workItemId: h.projection.workItemId, inputRevision: h.projection.revision, baseRevision: h.projection.revision,
+        documentVersionId: h.projection.source.documentVersionId,
+        sourceRefs: [{ref: h.projection.source.sourceArtifactId!, sha256: h.projection.source.sourceFileSha256.replace(/^sha256:/u, '')}],
+        allowedConnectors: [], hostResolvedMissingInputs: [], executionModel: model,
+        modelInput: buildInitialAnalysisRequestInput({taskType: 'OPENCLAW_DYNAMIC_EVALUATION', requestId,
+          originalParseRunId: 'PR-2', executionMode: 'AILY_AGENT_V1', modelRef: model.modelRef}),
+        deadline: '2026-10-29T01:00:00.000Z',
+        idempotencyKey: `openclaw-v2:dynamic:${h.projection.workItemId}:${h.projection.source.documentVersionId}:${requestId}`});
+      const run = status === 'QUEUED' ? null : {schemaVersion: 'wiselink.aily-executor-run.v1', executor: 'AILY_AGENT_V1', requestId,
+        agentId: 'agent_synthetic', publicationRef: 'original-ds-publication', configurationSource: 'synthetic-fixture',
+        hostSessionId: null, invocation: {purpose: 'BACKGROUND', callerAppId: 'cli_synthetic', identityRef: 'synthetic-caller', configurationSource: 'synthetic-fixture'},
+        leaseGeneration: 1, scope: {tenantId: h.actor.tenantId, workItemId: h.projection.workItemId,
+          intakeRequestId: h.projection.requestId, principalId: 'service:aily-synthetic'},
+        modelEvidence: {selectedModelRef: model.modelRef, actualModelRef: null},
+        post: {state: 'UNKNOWN', startedAt: '2026-10-29T00:00:00.000Z', observedAt: '2026-10-29T00:01:00.000Z',
+          requestBody: '{"stream":false}', errorCode: 'AILY_POST_RESULT_UNCONFIRMED'}};
+      h.recoveryRows.push({status, taskEnvelopeJson: canonicalJson(task), taskInputHash: task.inputHash,
+        actorUserId: h.actor.userId, actionType: task.taskType, idempotencyKey: task.idempotencyKey,
+        attemptId: task.actionAttemptId, operationRef: task.operationRef, executionModelJson: canonicalJson(model), leaseGeneration: run ? 1 : 0, run});
+      const before = canonicalJson(run);
+      const value = await h.status.projectForBrowser({workItem: h.projection, tenantId: h.actor.tenantId, actorUserId: h.actor.userId});
+      expect(value.ailyRecoveryRequest).toBeUndefined();
+      expect(value.ailyBackgroundRequest).toEqual({requestId, attemptRef: 'AQ-background', operation: 'EVALUATE_JOBAID',
+        executionMode: 'AILY_AGENT_V1', modelRef: model.modelRef, modelName: model.displayName, hostStatus: status,
+        postState: run ? 'UNKNOWN' : null});
+      expect(await h.status.readAilyBackgroundRequest({workItem: h.projection, tenantId: h.actor.tenantId,
+        actorUserId: h.actor.userId, expectedAttemptRef: 'AQ-background'})).toEqual(value.ailyBackgroundRequest);
+      expect(canonicalJson(run)).toBe(before);
+      expect(JSON.stringify(value.ailyBackgroundRequest)).not.toMatch(/hostSessionId|lease|requestBody|callerAppId/u);
+      expect(h.execute.mock.calls.some(([statement]) => new PgDialect().sqlToQuery(statement).params.includes('AQ-background'))).toBe(true);
+    });
+
+    it('does not read a private recovery pointer for another owner or an unconfigured target', async () => {
+      const h = harness({});
+      const value = await h.status.projectForBrowser({workItem: h.projection, tenantId: h.actor.tenantId, actorUserId: 'other-owner'});
+      expect(value.ailyRecoveryRequest).toBeUndefined();
+      expect(h.execute.mock.calls.some(([statement]) => new PgDialect().sqlToQuery(statement).sql.includes('executor_run_json AS run'))).toBe(false);
     });
 
     it('keeps browser access denial ahead of all projection and execution checks', async () => {

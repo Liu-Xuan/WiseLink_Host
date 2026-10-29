@@ -1,5 +1,10 @@
 import { checklistTaskSelection } from '../canonical-host/jobaid-checklist-reading';
 import { isProgramAssessmentMode } from '../canonical-host/program-agent-policy';
+import { parseAilyExecutorRun, serializeAilyExecutorRun, sameAilyPendingOperation, type AilyExecutorRun, type AilyFinalCommitGuard } from '../canonical-host/aily-executor-run';
+import { InitialExpiredAttemptRepository, initialAttemptConflict } from './initial-expired-attempt.repository';
+import { JOBAID_ACTIVITY_WINDOW, projectJobAidActivity } from '../canonical-host/jobaid-activity';
+import { isReviewAssessmentReadActivity } from './review-evidence-activity';
+import { ailyStageOveralls } from '../canonical-host/program-controlled-assessment';
 import { assertAutomaticWorkItemAttemptLeaseBinding, automaticWorkItemTaskLease } from './automatic-work-item-attempt-lease';
 import { assertCancelledInitialContinuation, cancelledContinuationConflict, type CancelledInitialContinuationGuard } from './cancelled-initial-continuation';
 import { randomUUID } from 'node:crypto';
@@ -22,14 +27,16 @@ import {
   max,
   or,
   sql,
+  type SQL,
 } from 'drizzle-orm';
 
-import { actionAttempt, workItem } from '../../database/schema';
+import { actionAttempt, assessmentWorkRevision, workItem } from '../../database/schema';
 import type {
+  CanonicalWorkItemProjection,
   ReviewEvidenceActivity,
   ReviewRuntimeActivity,
 } from '@shared/api.interface';
-import { canonicalJson } from './action-attempt-envelope';
+import { canonicalJson, parseTaskEnvelope, parseStoredResultEnvelope } from './action-attempt-envelope';
 import { INITIAL_ANALYSIS_REQUEST_SCHEMA } from './initial-analysis-request';
 import { autoWorkItemAuthorization } from '../../database/auto-work-item-authorization.schema';
 import { readStoredExecutionModel } from '../model-settings/canonical-execution-model';
@@ -67,6 +74,119 @@ export class ActionAttemptRepository {
   constructor(
     @Inject(DRIZZLE_DATABASE) private readonly db: PostgresJsDatabase,
   ) {}
+
+  /** New mode only. Old readers never select an unapplied migration column. */
+  async assertAilyExecutorStorage(): Promise<void> {
+    try {
+      await this.db.execute(sql`SELECT executor_run_json FROM action_attempt WHERE FALSE`);
+    } catch (cause) {
+      if (cause && typeof cause === 'object' && 'code' in cause && cause.code === '42703')
+        throw new Error('INITIAL_CONTINUATION_AILY_STORAGE_UNAVAILABLE');
+      throw cause;
+    }
+  }
+
+  async readAilyExecutorRun(input: {tenantId: string; workItemId: string; attemptId: string}): Promise<AilyExecutorRun | null> {
+    const rows = await this.db.execute<{value: unknown}>(sql`
+      SELECT executor_run_json AS value FROM action_attempt
+      WHERE attempt_id=${input.attemptId} AND tenant_id=${input.tenantId} AND work_item_id=${input.workItemId}
+        AND task_envelope_json::jsonb #>> '{modelInput,executionMode}'='AILY_AGENT_V1'`);
+    if (!rows[0]) throw new Error('ACTION_ATTEMPT_NOT_FOUND');
+    return parseAilyExecutorRun(rows[0].value);
+  }
+
+  /** The existing plaintext UUID lease stays only in this trusted SQL fence. */
+  async compareAndSetAilyExecutorRun(input: {
+    row: ActionAttemptRow; principalId: string; expected: AilyExecutorRun | null; next: AilyExecutorRun;
+  }): Promise<boolean> {
+    const { row } = input;
+    if (!row.leaseToken || row.leaseOwner !== input.principalId ||
+        input.next.leaseGeneration !== row.leaseGeneration || input.next.scope.tenantId !== row.tenantId ||
+        input.next.scope.workItemId !== row.workItemId || input.next.scope.principalId !== input.principalId)
+      throw new Error('ACTION_ATTEMPT_LEASE_FENCE_REJECTED');
+    if (input.expected === null ? input.next.post.state !== 'STARTED' :
+        input.expected.post.state !== 'STARTED' || input.next.post.state === 'STARTED' ||
+        canonicalJson({...input.expected, post: undefined, observation: undefined}) !==
+          canonicalJson({...input.next, post: undefined, observation: undefined}) ||
+        input.expected.post.startedAt !== input.next.post.startedAt ||
+        input.expected.post.requestBody !== input.next.post.requestBody)
+      throw new Error('AILY_EXECUTOR_RUN_TRANSITION_INVALID');
+    const expected = input.expected === null ? null : serializeAilyExecutorRun(input.expected);
+    const next = serializeAilyExecutorRun(input.next);
+    const nextValue = input.expected === null ? sql`${next}::jsonb`
+      : sql`jsonb_set(executor_run_json,'{post}',${canonicalJson(input.next.post)}::jsonb,false)`;
+    const expectedValue = input.expected === null
+      ? sql`executor_run_json IS NOT DISTINCT FROM ${expected}::jsonb`
+      : sql`(executor_run_json-'pending') IS NOT DISTINCT FROM (${expected}::jsonb-'pending')`;
+    const changed = await this.db.execute(sql`
+      UPDATE action_attempt SET executor_run_json=${nextValue},updated_at=clock_timestamp()
+      WHERE attempt_id=${row.attemptId} AND tenant_id=${row.tenantId} AND work_item_id=${row.workItemId}
+        AND operation_ref=${row.operationRef} AND task_input_hash=${row.taskInputHash}
+        AND task_envelope_json::jsonb #>> '{modelInput,executionMode}'='AILY_AGENT_V1'
+        AND lease_owner=${input.principalId} AND lease_token=${row.leaseToken} AND lease_generation=${row.leaseGeneration}
+        AND status='RUNNING' AND cancel_requested_at IS NULL
+        AND lease_expires_at>clock_timestamp() AND deadline_at>clock_timestamp()
+        AND ${expectedValue}
+      RETURNING attempt_id`);
+    return changed.length === 1;
+  }
+
+  /** Observation is independent of the concurrent SAVE slot and never replaces it. */
+  async compareAndSetAilyObservation(input: {row: ActionAttemptRow; principalId: string;
+    expected: AilyExecutorRun; observation: NonNullable<AilyExecutorRun['observation']>}): Promise<boolean> {
+    const {row, expected} = input;
+    if (!row.leaseToken || row.leaseOwner !== input.principalId || expected.post.state !== 'ACCEPTED' ||
+        expected.leaseGeneration !== row.leaseGeneration || expected.scope.principalId !== input.principalId ||
+        expected.scope.tenantId !== row.tenantId || expected.scope.workItemId !== row.workItemId)
+      throw new Error('AILY_OBSERVATION_BINDING_CHANGED');
+    const checked = serializeAilyExecutorRun({...expected, observation: input.observation});
+    return this.withAutomaticAttemptLease(row.attemptId, true, async database => {
+      const changed = await database.execute(sql`
+        UPDATE action_attempt SET executor_run_json=jsonb_set(executor_run_json,'{observation}',
+          ${checked}::jsonb->'observation',true),updated_at=clock_timestamp()
+        WHERE attempt_id=${row.attemptId} AND tenant_id=${row.tenantId} AND work_item_id=${row.workItemId}
+          AND operation_ref=${row.operationRef} AND task_input_hash=${row.taskInputHash}
+          AND task_envelope_json::jsonb#>>'{modelInput,executionMode}'='AILY_AGENT_V1'
+          AND lease_owner=${input.principalId} AND lease_token=${row.leaseToken} AND lease_generation=${row.leaseGeneration}
+          AND status='RUNNING' AND cancel_requested_at IS NULL
+          AND lease_expires_at>clock_timestamp() AND deadline_at>clock_timestamp()
+          AND (executor_run_json-'pending') IS NOT DISTINCT FROM
+            (${serializeAilyExecutorRun(expected)}::jsonb-'pending')
+        RETURNING attempt_id`);
+      return changed.length === 1;
+    });
+  }
+
+  /** Only the current candidate/SAVE slot changes; original dispatch facts stay sealed. */
+  async compareAndSetAilyDomainRun(input: {row: ActionAttemptRow; principalId: string;
+    expected: AilyExecutorRun; next: AilyExecutorRun; writePredicate: SQL}): Promise<boolean> {
+    const {row} = input;
+    if (!row.leaseToken || row.leaseOwner !== input.principalId || input.expected.leaseGeneration !== row.leaseGeneration ||
+        canonicalJson({...input.expected, pending: undefined}) !== canonicalJson({...input.next, pending: undefined}))
+      throw new Error('AILY_DOMAIN_RUN_BINDING_CHANGED');
+    const previous = input.expected.pending;
+    const next = input.next.pending;
+    if (!next || !previous&&next.phase!=='VALIDATED' || previous && !sameAilyPendingOperation(previous,next) &&
+        (previous.phase!=='READ'||next.phase!=='VALIDATED'||previous.candidateRef===next.candidateRef||
+          previous.saveRequestId===next.saveRequestId||next.expectedWorkRevision!==previous.workRevision||
+          next.previousWorkRevisionRef!==previous.workRevisionRef))
+      throw new Error('AILY_PENDING_SAVE_CONFLICT');
+    const phases = ['VALIDATED', 'SAVE_STARTED', 'SAVED', 'READ'];
+    if (previous?.candidateRef === next.candidateRef && phases.indexOf(next.phase) < phases.indexOf(previous.phase))
+      throw new Error('AILY_PENDING_SAVE_CONFLICT');
+    if(previous&&sameAilyPendingOperation(previous,next)&&previous.workRevisionRef&&
+        (next.workRevisionRef!==previous.workRevisionRef||next.workRevision!==previous.workRevision))
+      throw new Error('AILY_PENDING_SAVE_CONFLICT');
+    const changed = await this.db.execute(sql`
+      UPDATE action_attempt SET executor_run_json=${serializeAilyExecutorRun(input.next)}::jsonb,updated_at=clock_timestamp()
+      WHERE attempt_id=${row.attemptId} AND tenant_id=${row.tenantId} AND work_item_id=${row.workItemId}
+        AND task_input_hash=${row.taskInputHash} AND lease_owner=${input.principalId} AND lease_token=${row.leaseToken}
+        AND lease_generation=${row.leaseGeneration} AND status='RUNNING' AND cancel_requested_at IS NULL
+        AND lease_expires_at>clock_timestamp() AND deadline_at>clock_timestamp()
+        AND executor_run_json IS NOT DISTINCT FROM ${serializeAilyExecutorRun(input.expected)}::jsonb
+        AND (${input.writePredicate}) RETURNING attempt_id`);
+    return changed.length === 1;
+  }
 
   async readWorkItemBinding(input: {
     workItemId: string;
@@ -348,6 +468,7 @@ export class ActionAttemptRepository {
     attempt: typeof actionAttempt.$inferInsert,
     knowledge?: ReserveActionAttemptInput['initialKnowledgeSession'],
     cancelled?: CancelledInitialContinuationGuard,
+    aily?: ReserveActionAttemptInput['ailyExecution'],
   ): Promise<ActionAttemptReservation> {
     const hasInitialModel =
       [
@@ -373,6 +494,11 @@ export class ActionAttemptRepository {
             initialAilySessionId: workItem.initialAilySessionId,
             requestedByUserId: workItem.requestedByUserId,
             analysisModelJson: workItem.analysisModelJson,
+            requestId: workItem.requestId, documentId: workItem.documentId,
+            sourceArtifactId: workItem.sourceArtifactId, sourceFileSha256: workItem.sourceFileSha256,
+            sourceByteLength: workItem.sourceByteLength, actionType: workItem.actionType,
+            status: workItem.status, packageId: workItem.packageId,
+            projectionJson: workItem.projectionJson,
           })
           .from(workItem)
           .where(
@@ -407,12 +533,23 @@ export class ActionAttemptRepository {
         // selection changed while it was awaiting that preparation.
         const requestTask = JSON.parse(String(attempt.taskEnvelopeJson)) as OpenClawTaskEnvelope;
         const explicitProgram = isProgramAssessmentMode(requestTask.modelInput?.executionMode);
+        const explicitAily = requestTask.modelInput?.executionMode === 'AILY_AGENT_V1';
         if (explicitProgram && (attempt.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
             requestTask.modelInput.schemaVersion !== 'wiselink.3_1.initial_analysis_request.v1' ||
             requestTask.executionModel?.modelRef !== requestTask.modelInput.modelRef ||
             canonicalJson(requestTask.executionModel) !== canonicalJson(readStoredExecutionModel(attempt.executionModelJson))))
           throw new Error('ACTION_ATTEMPT_PROGRAM_MODEL_BINDING_INVALID');
-        if (hasInitialModel && !explicitProgram) {
+        if (explicitAily && (attempt.actionType !== 'OPENCLAW_DYNAMIC_EVALUATION' ||
+            requestTask.modelInput.schemaVersion !== INITIAL_ANALYSIS_REQUEST_SCHEMA ||
+            requestTask.executionModel?.modelRef !== requestTask.modelInput.modelRef ||
+            canonicalJson(requestTask.executionModel) !== canonicalJson(readStoredExecutionModel(attempt.executionModelJson))))
+          throw new Error('ACTION_ATTEMPT_AILY_MODEL_BINDING_INVALID');
+        if (explicitAily) {
+          if (!aily || aily.model.modelRef !== requestTask.executionModel?.modelRef)
+            throw new Error('INITIAL_CONTINUATION_AILY_SCOPE_CHANGED');
+          await this.guardAilyPredecessors(transaction as PostgresJsDatabase, attempt, owner, aily);
+        } else if (aily) throw new Error('INITIAL_CONTINUATION_AILY_SCOPE_CHANGED');
+        if (hasInitialModel && !explicitProgram && !explicitAily) {
           const current = readStoredExecutionModel(owner.analysisModelJson);
           const captured = readStoredExecutionModel(attempt.executionModelJson);
           if (
@@ -502,6 +639,144 @@ export class ActionAttemptRepository {
       });
     }
     return this.insertReservation(attempt, this.db);
+  }
+
+  /** WI is already locked. Grant then attempts share the SAVE/reconcile order. */
+  private async guardAilyPredecessors(database: PostgresJsDatabase, attempt: typeof actionAttempt.$inferInsert,
+    owner: Pick<typeof workItem.$inferSelect, 'revision' | 'documentVersionId' | 'requestedByUserId' |
+      'requestId' | 'documentId' | 'sourceArtifactId' | 'sourceFileSha256' | 'sourceByteLength' | 'actionType' | 'status' | 'packageId' | 'projectionJson'>,
+    aily: NonNullable<ReserveActionAttemptInput['ailyExecution']>): Promise<void> {
+    const tenantId = String(attempt.tenantId);
+    const workItemId = String(attempt.workItemId);
+    const actorUserId = String(attempt.actorUserId);
+    const requestTask = parseTaskEnvelope(String(attempt.taskEnvelopeJson));
+    const [grant] = await database.select().from(autoWorkItemAuthorization).where(and(
+      eq(autoWorkItemAuthorization.tenantId, tenantId), eq(autoWorkItemAuthorization.workItemId, workItemId),
+    )).limit(1).for('update');
+    if (!grant || grant.tenantId !== tenantId || grant.workItemId !== workItemId ||
+        owner.requestedByUserId !== actorUserId || owner.requestId !== aily.intakeRequestId ||
+        !/^service:[A-Za-z0-9:_-]{1,140}$/u.test(aily.principalId) ||
+        grant.actorUserId !== actorUserId || grant.requestId !== owner.requestId ||
+        grant.grantKind !== 'MIAODA_CANONICAL_PARSE_REQUEST' || !['WAITING', 'LEASED'].includes(grant.status) ||
+        grant.documentId !== owner.documentId || grant.documentVersionId !== owner.documentVersionId ||
+        grant.sourceArtifactId !== owner.sourceArtifactId || grant.sourceFileSha256 !== owner.sourceFileSha256 ||
+        Number(grant.sourceByteLength) !== Number(owner.sourceByteLength) ||
+        owner.actionType !== 'PARSE_PDF' || owner.status !== 'CANDIDATE_READBACK_VERIFIED' || !owner.packageId ||
+        !requestTask.sourceRefs.some(source => source.ref === owner.sourceArtifactId && source.sha256 === owner.sourceFileSha256))
+      throw new Error('INITIAL_CONTINUATION_AILY_SCOPE_CHANGED');
+    const prior = await database.select().from(actionAttempt).where(and(
+      eq(actionAttempt.tenantId, tenantId), eq(actionAttempt.workItemId, workItemId),
+      eq(actionAttempt.documentVersionId, owner.documentVersionId!),
+      eq(actionAttempt.requestOrigin, 'OPENCLAW_MCP_V1'), eq(actionAttempt.actionType, 'OPENCLAW_DYNAMIC_EVALUATION'),
+      sql`${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,executionMode}'='AILY_AGENT_V1'`,
+    )).orderBy(actionAttempt.attemptNo).for('update');
+    const scope = {tenantId, workItemId, actorUserId};
+    const controls = new InitialExpiredAttemptRepository(database);
+    const authorize = async (_database: PostgresJsDatabase, sources: readonly (typeof workItem.$inferSelect)[]): Promise<void> => {
+      if (!sources.length || sources.some(source => source.tenantId !== tenantId || source.requestedByUserId !== actorUserId) ||
+          !sources.some(source => source.workItemId === workItemId && source.requestId === aily.intakeRequestId &&
+            source.revision === owner.revision && source.documentVersionId === owner.documentVersionId &&
+            source.sourceArtifactId === owner.sourceArtifactId && source.sourceFileSha256 === owner.sourceFileSha256 &&
+            Number(source.sourceByteLength) === Number(owner.sourceByteLength)))
+        throw new Error('INITIAL_CONTINUATION_AILY_SCOPE_CHANGED');
+    };
+    for (const row of prior) {
+      if (row.status === 'COMMITTING') throw activeAttemptConflict();
+      const run = await new ActionAttemptRepository(database).readAilyExecutorRun({tenantId, workItemId, attemptId: row.attemptId});
+      if (!run || run.scope.intakeRequestId !== owner.requestId ||
+          (!['STARTED', 'UNKNOWN'].includes(run.post.state) && !run.pending)) continue;
+      const task = parseTaskEnvelope(row.taskEnvelopeJson);
+      const prefix = `openclaw-v2:dynamic:${workItemId}:${row.documentVersionId}:`;
+      if (run.scope.tenantId !== tenantId || run.scope.workItemId !== workItemId ||
+          (row.leaseOwner !== null && run.scope.principalId !== row.leaseOwner) ||
+          run.leaseGeneration !== row.leaseGeneration || task.inputHash !== row.taskInputHash || row.actorUserId !== actorUserId ||
+          run.modelEvidence.selectedModelRef !== task.executionModel?.modelRef ||
+          !row.idempotencyKey?.startsWith(prefix) || run.requestId !== row.idempotencyKey.slice(prefix.length))
+        throw initialAttemptConflict('BINDING_CHANGED');
+      const target = {attemptId: row.attemptId, attemptRef: row.operationRef!};
+      // The control helper merges known SAVE, unknown activity and projection
+      // references into one protection code. Prove the latter two separately.
+      let records: unknown;
+      try { records = JSON.parse(row.reviewActivityJson ?? '[]'); }
+      catch { throw initialAttemptConflict('ACTIVITY_UNKNOWN'); }
+      if (!Array.isArray(records)) throw initialAttemptConflict('ACTIVITY_UNKNOWN');
+      for (let offset = 0; offset < records.length; offset += JOBAID_ACTIVITY_WINDOW) {
+        const portion: unknown[] = records.slice(offset, offset + JOBAID_ACTIVITY_WINDOW);
+        const activity = projectJobAidActivity({attemptId: row.attemptId, attemptRef: row.operationRef,
+          status: row.status, activityJson: JSON.stringify(portion)}, []);
+        if (activity.error || activity.unknownRecordCount || activity.malformedRecordCount ||
+            portion.some(value => !value || typeof value !== 'object' || Array.isArray(value) || !('observedAt' in value) ||
+              typeof value.observedAt !== 'string' || !Number.isFinite(Date.parse(value.observedAt)) ||
+              ('kind' in value && value.kind === 'ASSESSMENT_SOURCES_READ' && !isReviewAssessmentReadActivity(value))))
+          throw initialAttemptConflict('ACTIVITY_UNKNOWN');
+      }
+      let projection: CanonicalWorkItemProjection;
+      try {
+        const parsed: unknown = JSON.parse(owner.projectionJson ?? 'null');
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error();
+        projection = parsed as CanonicalWorkItemProjection;
+      } catch { throw initialAttemptConflict('PROJECTION_UNKNOWN'); }
+      const integrated = projection.integratedAssessment;
+      const projectionReferencesAttempt = integrated?.baseRules?.actionAttemptId === row.attemptId ||
+          integrated?.overallSynthesis?.actionAttemptId === row.attemptId ||
+          integrated?.overallSynthesis?.sourceAssessment?.actionAttemptId === row.attemptId;
+      let facts = await controls.read(scope, target, authorize);
+      if (facts.reconciliation === 'ELIGIBLE') {
+        const reconciled = await controls.reconcile(scope, {...target, operation: 'RECONCILE_EXPIRED', expectedRevision: owner.revision,
+          stageRequestId: facts.stageRequestId, expectedLeaseGeneration: facts.leaseGeneration}, authorize);
+        facts = reconciled.attempt;
+      }
+      const [closed] = await database.select().from(actionAttempt).where(and(
+        eq(actionAttempt.attemptId, row.attemptId), eq(actionAttempt.tenantId, tenantId), eq(actionAttempt.workItemId, workItemId),
+      )).limit(1);
+      if (run.pending) {
+        const known = facts.savedWorks.find(item => item.saveRequestId === run.pending!.saveRequestId);
+        if (known) {
+          const [saved] = await database.select().from(assessmentWorkRevision).where(and(
+            eq(assessmentWorkRevision.tenantId,tenantId),eq(assessmentWorkRevision.workItemId,workItemId),
+            eq(assessmentWorkRevision.assessmentWorkRevisionId,known.workRevisionRef),
+          )).limit(1);
+          if (!saved || saved.actionAttemptId !== row.attemptId || saved.requestId !== run.pending.saveRequestId ||
+              saved.basedOnWorkItemRevision !== row.baseRevision || saved.workRevision !== run.pending.expectedWorkRevision+1 ||
+              saved.previousWorkRevisionId !== run.pending.previousWorkRevisionRef ||
+              saved.commandJson !== canonicalJson({expectedWorkRevision:run.pending.expectedWorkRevision,work:JSON.parse(run.pending.workJson) as unknown}))
+            throw initialAttemptConflict('SAVE_COVERAGE_UNKNOWN');
+        } else if (run.pending.phase === 'SAVED' || run.pending.phase === 'READ') throw initialAttemptConflict('SAVE_COVERAGE_UNKNOWN');
+      }
+      if (closed?.status === 'SUCCEEDED' && closed.projectionApplied && closed.completedAt && closed.commitStartedAt &&
+          closed.leaseOwner === null && closed.leaseToken === null && closed.leaseExpiresAt === null && closed.leaseSlot === null &&
+          closed.resultEnvelopeJson && closed.resultContentHash && owner.revision > task.baseRevision) {
+        const result = parseStoredResultEnvelope({value:closed.resultEnvelopeJson,task});
+        const output: unknown = JSON.parse(result.modelOutput ?? 'null');
+        const ref = output && typeof output === 'object' && !Array.isArray(output) && 'workRevisionRef' in output
+          ? output.workRevisionRef : null;
+        const stage = ailyStageOveralls(closed.reviewActivityJson).find(item => item.workRevisionRef === ref);
+        const saved = facts.savedWorks.find(item => item.workRevisionRef === ref);
+        const read = stage && (records as Record<string,unknown>[]).some(item => item.kind === 'ASSESSMENT_WORK_READ' &&
+          item.workRevisionRef === ref && item.workRevision === stage.workRevision &&
+          item.saveRequestId === stage.sourceAssessment.saveRequestId && item.observedAt === stage.sourceAssessment.readObservedAt);
+        if (result.status === 'SUCCEEDED' && result.contentHash === closed.resultContentHash && 'producer' in result &&
+            result.producer?.kind === 'AILY_AGENT_V1' && result.producer.agentId === run.agentId &&
+            result.producer.publicationRef === run.publicationRef && result.producer.selectedModelRef === run.modelEvidence.selectedModelRef &&
+            stage && saved && read && saved.workRevision === stage.workRevision && saved.saveRequestId === stage.sourceAssessment.saveRequestId &&
+            stage.sourceAssessment.actionAttemptId === closed.attemptId && result.outputArtifactRefs.some(artifact =>
+              artifact.ref === stage.artifact.ref && artifact.sha256 === stage.artifact.sha256) &&
+            run.pending?.phase === 'READ' && run.pending.workRevisionRef === ref &&
+            (!projectionReferencesAttempt || (integrated?.baseRules?.actionAttemptId === closed.attemptId &&
+              integrated.overallSynthesis?.sourceAssessment?.actionAttemptId === closed.attemptId &&
+              integrated.overallSynthesis.basedOnJobAidWorkRevisionRef === ref))) continue;
+        throw initialAttemptConflict('UNRECONCILED_AILY_DISPATCH');
+      }
+      if (projectionReferencesAttempt) throw initialAttemptConflict('UNRECONCILED_AILY_PROJECTION');
+      // A WAITING_INPUT result is not produced by this enterprise final path.
+      if (!closed || !['TIMED_OUT', 'CANCELLED', 'FAILED', 'CONFLICT', 'OBSOLETE'].includes(closed.status) ||
+          !closed.completedAt || closed.leaseOwner !== null || closed.leaseToken !== null || closed.leaseExpiresAt !== null ||
+          closed.leaseSlot !== null || closed.commitStartedAt !== null || closed.resultEnvelopeJson !== null || closed.resultContentHash !== null ||
+          facts.hasPersistedResult || facts.projectionApplied || facts.protectionCode === 'ACTIVITY_UNKNOWN')
+        throw initialAttemptConflict('UNRECONCILED_AILY_DISPATCH');
+      // Preserve remote UNKNOWN and every known saved revision. Exact coverage
+      // plus a closed Host fence permits the normal successor to read that work.
+    }
   }
 
   private async insertReservation(
@@ -699,6 +974,7 @@ export class ActionAttemptRepository {
     leaseSlot: number;
     now: Date;
     leaseMs: number;
+    ailyExecution?: true;
     /** Actor-bound callers use a savepoint to recover a slot collision. */
     propagateSlotConflict?: boolean;
   }): Promise<ActionAttemptRow | null> {
@@ -738,6 +1014,9 @@ export class ActionAttemptRepository {
               gt(actionAttempt.deadlineAt, input.now),
             ),
             isNull(actionAttempt.cancelRequestedAt),
+            input.ailyExecution
+              ? sql`${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,executionMode}'='AILY_AGENT_V1'`
+              : sql`COALESCE(${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,executionMode}','')<>'AILY_AGENT_V1'`,
           ),
         )
         .returning();
@@ -857,6 +1136,7 @@ export class ActionAttemptRepository {
     now: Date;
     leaseMs: number;
     reviewActivity?: ReviewRuntimeActivity;
+    writePredicate?: SQL;
   }): Promise<boolean> {
     return this.withAutomaticAttemptLease(input.attemptId, input.automaticLeaseRequired, async (database) => {
     const updated = await database
@@ -877,6 +1157,7 @@ export class ActionAttemptRepository {
           eq(actionAttempt.status, 'RUNNING'),
           eq(actionAttempt.leaseToken, input.leaseToken),
           eq(actionAttempt.leaseGeneration, input.leaseGeneration),
+          ...(input.writePredicate ? [input.writePredicate] : []),
           gt(actionAttempt.leaseExpiresAt, input.now),
           or(
             isNull(actionAttempt.deadlineAt),
@@ -899,8 +1180,36 @@ export class ActionAttemptRepository {
     now: Date;
     recoveryLeaseMs: number;
     expectedReviewActivityJson?: string | null;
+    writePredicate?: SQL;
+    ailyFinal?: AilyFinalCommitGuard;
   }): Promise<ActionAttemptRow | null> {
+    if ('executionKind' in input.result&&input.result.executionKind==='AILY_AGENT'&&!input.ailyFinal)throw new Error('AILY_FINAL_PENDING_REQUIRED');
+    if(input.ailyFinal) {
+      const selected:unknown=JSON.parse(input.result.modelOutput??'null');
+      if(input.ailyFinal.pending.phase!=='READ'||!selected||typeof selected!=='object'||!('workRevisionRef'in selected)||
+          selected.workRevisionRef!==input.ailyFinal.pending.workRevisionRef)
+        throw new Error('AILY_FINAL_PENDING_BINDING_CHANGED');
+    }
     return this.withAutomaticAttemptLease(input.attemptId, input.automaticLeaseRequired, async (database) => {
+    const pending=input.ailyFinal?.pending;
+    const finalPredicate=pending?sql`
+      ${actionAttempt.taskEnvelopeJson}::jsonb#>>'{modelInput,executionMode}'='AILY_AGENT_V1'
+      AND ${actionAttempt.actorUserId}=${input.ailyFinal!.actorUserId}
+      AND executor_run_json->'pending'=${canonicalJson(pending)}::jsonb
+      AND COALESCE(${actionAttempt.reviewActivityJson}::jsonb,'[]'::jsonb) @> ${canonicalJson([{kind:'ASSESSMENT_WORK_READ',
+        workRevisionRef:pending.workRevisionRef,workRevision:pending.workRevision,saveRequestId:pending.saveRequestId,observedAt:pending.readObservedAt}])}::jsonb
+      AND EXISTS (SELECT 1 FROM ${workItem} AS final_owner WHERE final_owner.tenant_id=${actionAttempt.tenantId}
+        AND final_owner.work_item_id=${actionAttempt.workItemId} AND final_owner.revision=${actionAttempt.baseRevision}
+        AND final_owner.document_version_id=${actionAttempt.documentVersionId} AND final_owner.requested_by_user_id=${input.ailyFinal!.actorUserId})
+      AND EXISTS (SELECT 1 FROM ${assessmentWorkRevision} AS final_work WHERE final_work.tenant_id=${actionAttempt.tenantId}
+        AND final_work.work_item_id=${actionAttempt.workItemId} AND final_work.action_attempt_id=${actionAttempt.attemptId}
+        AND final_work.assessment_work_revision_id=${pending.workRevisionRef} AND final_work.work_revision=${pending.workRevision}
+        AND final_work.request_id=${pending.saveRequestId} AND final_work.based_on_work_item_revision=${actionAttempt.baseRevision}
+        AND final_work.document_version_id=${actionAttempt.documentVersionId} AND final_work.created_by_user_id=${input.ailyFinal!.actorUserId}
+        AND final_work.previous_work_revision_id IS NOT DISTINCT FROM ${pending.previousWorkRevisionRef}::varchar
+        AND final_work.command_json=${canonicalJson({expectedWorkRevision:pending.expectedWorkRevision,work:JSON.parse(pending.workJson) as unknown})}
+        AND NOT EXISTS (SELECT 1 FROM ${assessmentWorkRevision} AS later_work WHERE later_work.tenant_id=final_work.tenant_id
+          AND later_work.work_item_id=final_work.work_item_id AND later_work.work_revision>final_work.work_revision))`:undefined;
     const [updated] = await database
       .update(actionAttempt)
       .set({
@@ -922,6 +1231,8 @@ export class ActionAttemptRepository {
           eq(actionAttempt.status, 'RUNNING'),
           ...(input.expectedReviewActivityJson===undefined?[]:[sql`COALESCE(${actionAttempt.reviewActivityJson}::jsonb,'[]'::jsonb)
             = COALESCE(${input.expectedReviewActivityJson}::jsonb,'[]'::jsonb)`]),
+          ...(input.writePredicate ? [input.writePredicate] : []),
+          ...(finalPredicate ? [finalPredicate] : []),
           eq(actionAttempt.leaseToken, input.leaseToken),
           eq(actionAttempt.leaseGeneration, input.leaseGeneration),
           gt(actionAttempt.leaseExpiresAt, input.now),

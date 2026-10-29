@@ -192,20 +192,34 @@ describe('review Aily queries', () => {
     expect(JSON.parse(init.body).stream).toBe(true);
   });
 
-  it('marks an abandoned stream UNKNOWN while preserving saved text', async () => {
+  it('marks an abandoned stream without a chat UNKNOWN while preserving saved text', async () => {
     const { service, execute } = harness();
     const queryRef = '22222222-2222-4222-8222-222222222222';
+    const abandoned = {
+      query_ref: queryRef,
+      request_key: 'request',
+      query_text: 'FMC',
+      session_id: actor.sessionId,
+      agent_id: 'agent_test',
+      status: 'RUNNING',
+      answer_text: '部分答复',
+      error_code: null,
+      chat_id: null,
+      _created_at: new Date(Date.now() - 361_000),
+    };
     execute
-      .mockResolvedValueOnce([
-        {
-          query_ref: queryRef,
-          status: 'RUNNING',
-          answer_text: '部分答复',
-          chat_id: '123',
-          _created_at: new Date(Date.now() - 361_000),
-        },
-      ])
-      .mockResolvedValueOnce([{ query_ref: queryRef }]);
+      .mockResolvedValueOnce([abandoned])
+      .mockResolvedValueOnce([abandoned])
+      .mockResolvedValueOnce([{
+        sealed: sealAilyUserGrant('test-only-user-token', 'hash:mapping'),
+        tokenHash: 'hash',
+        mappingId: 'mapping',
+      }])
+      .mockResolvedValueOnce([{
+        ...abandoned,
+        status: 'UNKNOWN',
+        error_code: 'AILY_STREAM_RESULT_UNCONFIRMED',
+      }]);
     globalThis.fetch = jest.fn();
     expect(await service.result(actor, 'ATTEMPT', queryRef)).toMatchObject({
       status: 'UNKNOWN',

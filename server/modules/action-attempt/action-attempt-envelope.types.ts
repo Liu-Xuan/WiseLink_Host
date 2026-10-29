@@ -175,7 +175,15 @@ export interface OpenClawSavedWorkReconciliationResultEnvelope extends Omit<
   sourceWork: { workRevisionRef: string; sourceActionAttemptId: string };
 }
 
-export type OpenClawResultEnvelope = OpenClawModelResultEnvelope | OpenClawSavedWorkReconciliationResultEnvelope;
+/** Host-created enterprise provenance, with unavailable provider facts explicit. */
+export interface AilyTaskResultEnvelope extends Omit<OpenClawModelResultEnvelope, 'executionKind' | 'modelVersion' | 'runMetrics'> {
+  executionKind: 'AILY_AGENT';
+  modelVersion: string | null;
+  runMetrics: {durationMs: number; inputUnits: number | null; outputUnits: number | null};
+  producer: {kind: 'AILY_AGENT_V1'; agentId: string; publicationRef: string;
+    selectedModelRef: string; actualModelRef: string | null; usage: null};
+}
+export type OpenClawResultEnvelope = OpenClawModelResultEnvelope | OpenClawSavedWorkReconciliationResultEnvelope | AilyTaskResultEnvelope;
 
 export interface OpenClawMatterResultEnvelope extends Omit<
   OpenClawResultEnvelope,

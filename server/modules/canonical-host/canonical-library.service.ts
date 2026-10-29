@@ -307,6 +307,7 @@ export class CanonicalLibraryService {
       const working = await this.jobAid.readBrowser(workItemId, actor);
       const current = working.current;
       if (!current) throw new Error('JOBAID_LIBRARY_WORK_READBACK_MISSING');
+      const stage = working.stageOverall?.receipt.workRevisionRef === current.workRevisionRef ? working.stageOverall : null;
       return {
         document: summary(document),
         result: {
@@ -314,12 +315,12 @@ export class CanonicalLibraryService {
           revision: current.workRevision,
           sourceResultId: current.workRevisionRef,
           engineeringSummary: null,
-          readingResult: jobAidReadingResult(current),
+          readingResult: stage?.readingResult ?? jobAidReadingResult(current),
           overallCandidate: current.content.understanding,
           missingInputs: current.content.issues.flatMap((issue) =>
             issue.openQuestions.map((question) => question.question),
           ),
-          gap: null,
+          gap: stage ? '同版阶段综合已读；任务最终收尾与自动处理完成状态另行核对。' : null,
           staleReason: null,
           sourceCount: current.content.evidence.filter(
             (item) => item.kind === 'DOCUMENT_PASSAGE',

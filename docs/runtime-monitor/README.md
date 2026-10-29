@@ -1,6 +1,6 @@
 # WiseLink 主线图入口
 
-## 现行主线：v1.11 结构＋Codex 原生职责修订
+## 现行目标：v1.11结构＋v2.6直接Goal职责
 
 - [轻量主线图](WiseLink_Mainline.html)：系统接线与一次评估流程、节点开发卡、搜索、复制和导出。
 - [图数据](mainline.graph.json)：主线图的唯一数据源。
@@ -9,9 +9,11 @@
 
 ## 来源与维护
 
-本地图沿用原v1.11布局、交互与[增量11来源](https://chatgpt.com/share/6ae2846a-f780-83e8-9234-684d77323ec6)，本轮实际合并用户《WiseLink Native：Codex原生能力复用、简化清单与图契约修订候选》（2026-10-29）的N01—N24及十条约束，并登记[新分享](https://chatgpt.com/share/6ae2adf4-b884-83e8-a07b-264a0eaa083d)。最新直接Goal保留Codex＋LiteLLM＋Host与完整Agent循环，Native只作最小可信业务接线；条件性DSH建议不采纳。不另立版本系列或第二图；未取得原增量11 Library附件完整字节，不冒称镜像。契约要求不等于尚未开发，也不证明已安装或真实运行。
+本地图沿用原v1.11布局与交互，现行职责本地按用户v2.6直接Goal语义修订：正式自动化由Aily企业智能体执行，团队仅获权只读问答／解释／进度／导航；交互复核即使不保存也须登录WiseLink后经企业链／Host显式受理，打开链接或登录不建任务，既有获权后台自动触发保留。两入口共享准确成果／版本，不复制完整聊天，群受众分别核权。GLM-5.3可用时优先，否则使用DeepSeek V4 Pro，不强制备用。本机原节点、view.f10、W1—W6及生成器保持，不按外部同号卡覆盖；历史v2.4文稿、[增量11](https://chatgpt.com/share/6ae2846a-f780-83e8-9234-684d77323ec6)与[Codex职责候选](https://chatgpt.com/share/6ae2adf4-b884-83e8-a07b-264a0eaa083d)保留来源身份，目标规则不证明迁移或业务已验。
 
-阶段候选seal／SAVE不等于任务final；原授权、期限和Host合同允许时可把准确回执交回同session继续，不强制每SAVE新请求／session。这是职责要求，当前中途保存接续能力仍按准确实现和消费者验证，不据图宣称已接通。
+“企业伙伴”是正式企业执行职责简称，具体对象与两入口的能力边界按[主契约当前定义](../WISELINK_MAINLINE_GRAPH_CONTRACT.md)读取。
+
+阶段seal／SAVE不等于任务final。B须消费A独立Host READ的实际正文、引用、revision及保存引用的获权full／view；原授权、期限和合同允许才可同session继续，不强制每SAVE新请求。A同版Overall不提前FINISH／ACK，B失败不抹A，旧UNKNOWN先查原操作，不重放或自动启动旧C。
 
 需要修改图数据时，编辑 [mainline.graph.json](mainline.graph.json)，再从仓库根目录执行：
 
@@ -20,6 +22,8 @@ python3 docs/runtime-monitor/sync_mainline_graph.py
 ```
 
 脚本只把合法 JSON 同步进本地 HTML 的唯一 `graph-data` 节点，不调用业务或网络；改变关系或边界时同时维护主契约与受影响目录。
+
+`WiseLink_Mainline.html` 的静态外壳、样式和 `drawWires()` 是本机渲染源，没有另一份模板；生成器保留这些内容，只同步图数据。调整连线几何时在该原外壳维护，再用同一脚本同步 JSON，不引入第二份页面源。
 
 ## 独立验证与历史
 

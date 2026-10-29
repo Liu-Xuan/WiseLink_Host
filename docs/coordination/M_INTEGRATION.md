@@ -1,5 +1,21 @@
 # Integration source record
 
+## 2026-10-30 v2.6 最终本地组合候选
+
+当前目标是企业智能体承接获权任务的完整 Agent Loop，沿准确任务与材料、Host validate/SAVE、独立 READ、同版阶段及最终 Overall、原正常收尾完成真实链。Host 保留身份、来源、版本、lease/fence、CAS、正式采用与审批决定；Team 入口只读，不能据聊天或平台 Completed 续办、保存或结束 Host 任务。
+
+本地 I 已依次接受 C `5156ad0a777711df8c53a275111bfb6af32859ab`、H 选择性集成 `7c35161e96189ee34e436869ec2416be99f3d689`，以及 D4 `7f92cbeda4cddd4ed16328925929ad1cd2d8b35b`。C 的可信 MCP、保存/读回/阶段与原子 final，H 的应用 token helper，以及 D4 的默认关闭配置、正式身份端口和一次 dispatch/GET/tick 消费者，均仅在已记录的本地合成、类型、lint、独审和正常提交 hooks 范围内接受；分轮失败与既有跳过保留。这些事实不等于正式后台自动化或真实工程已运行。
+
+数据库准备仅限用户批准的开发库两句：`action_attempt.executor_run_json` nullable JSONB、无默认值及原 COMMENT，均已分别执行并独立读回；对应生产只读回执仍未见该列，本批没有执行生产迁移。未生成或覆盖 `schema.ts`，既有历史结构差异独立保留。当前正式 caller/tenant/scopes、企业 MCP/JWT 实际主体映射、Persona/Skill、准确配置、触发器、租期候选和发布仍按各自准确批准包处理；不因 TAT helper 可用而视作已有业务授权，不改全局执行器或重放旧 UNKNOWN。
+
+本批选定 I 的 13 文件作为唯一最终组合候选，尚待一次标准完整构建及最后接收、提交。显式 MCP-only 只解耦原初始化与工具发现；Task 为空，正式 provider/background 拒绝，六个业务工具经真实 context/authorize，只读原任务/WI 定位后在任务准入拒绝，没有来源正文交付、pending 更新、保存、READ 记账、Overall 或 ACK 副作用。I 的配置、原协议及领域定向用例已分轮通过；H 独立选择性候选的 domain 15/15、组合类型与 lint 通过仅作证据，不另提交或再次集成。
+
+正常 owner 授权后继沿既有登录“开始评估”与 UUID 请求，先保存明确 QUEUED 意图，再在原 WI→grant→attempt 锁内核当前授权及完整前驱/保存覆盖，对符合条件的过期 legacy grant 正常前进一个代际。R4 合成执行为 execution 44/44、repository 87/87，共 131/131、零跳过。R3 的 11 个历史失败及原日志保留：共享合成 PROGRAM_AGENT_V1 FAILED 回执的 null 计量不符合原 parser，导致正例未达更新切点；改用明确合法的合成计量、以原 parser/helper 验证基线，并把重封存的 null 计量单列为拒绝反例后通过。六个产品源在 R4 保持原字节，没有修补真实历史数据或把未知实际用量填成零；这些结果仍受内存 DB/授权/来源/client 边界限制，不证明真实 PostgreSQL/RLS、平台或工程业务链已验。
+
+获权的新 FTD、SB、AD 可按正常准入选择，不把旧 SB 或 G2 个案设为迭代总前置；旧 UNKNOWN、key、结果及 Reading 记录保留。DocumentReading 不被人为设为工程初评前置，适用性 PENDING、合法 WAITING 和 V2 关闭分支保持。真实 MCP/JWT 主体、caller、平台 HTTPStreaming、准确配置/发布和首条单事项闭环仍待各自实证，完整 v2.6 目标尚未完成。
+
+以下 2026-10-25 及更早条目按当时事实作为历史保留，其中旧线上与执行器编号不代表当前运行版本。
+
 ## 2026-10-25 执行器切换优先级与首个新真实事项
 
 最新目标是新执行器消费既有Host接口与准确材料，沿生成→Host SAVE→独立READ→确定性同版Overall→页面/图→正常结束闭合首条新真实事项。c241整包安装、旧UNKNOWN救回或旧链复演不再是交付前置；下方E.35的技术切换、材料断点和当时下一步作为历史保留，本条更新当前方向，旧UNKNOWN/active claim不删除或重放。

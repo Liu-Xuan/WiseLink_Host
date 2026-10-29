@@ -1,4 +1,8 @@
-import { isProgramAssessmentMode } from './program-agent-policy';
+import { isProgramAssessmentMode, type ProgramAssessmentAdmission } from './program-agent-policy';
+import { AilyTaskAdmissionService, type AilyAssessmentAdmission } from './aily-task-admission';
+import { AilyTaskExecutionService } from './aily-task-execution.service';
+import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
+import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
 import type { Request } from 'express';
 import type { PostgresJsDatabase } from '@lark-apaas/fullstack-nestjs-core';
 import {
@@ -9,6 +13,7 @@ import {
   type CancelledInitialContinuationGuard,
   type CancelledInitialContinuationBinding,
   cancelledContinuationConflict,
+  matchesInitialContinuationOwner,
 } from '../action-attempt/cancelled-initial-continuation';
 import {
   ForbiddenException,
@@ -55,7 +60,7 @@ const command = z.strictObject({
   requestId: z.string().uuid(),
   expectedRevision: z.number().int().positive(),
   operation: z.enum(['TRANSLATE', 'EVALUATE_JOBAID', 'SYNTHESIZE_OVERALL']),
-  executionMode: z.enum(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1']).optional(),
+  executionMode: z.enum(['PROGRAM_CONTROLLED_V1', 'PROGRAM_AGENT_V1', 'AILY_AGENT_V1']).optional(),
   modelRef: z.string().min(1).max(160).optional(),
   retranslateBlockIds: z
     .array(z.string().min(1).max(200))
@@ -99,6 +104,9 @@ export class CanonicalInitialAnalysisContinuationService {
     @Optional()
     @Inject(AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION)
     private readonly sourceAuthorization?: AutomaticWorkItemSourceAuthorizationPort,
+    @Optional() private readonly ailyAdmission?: AilyTaskAdmissionService,
+    @Optional() private readonly ailyExecution?: AilyTaskExecutionService,
+    @Optional() private readonly automaticDispatch?: AutomaticWorkItemDispatchService,
   ) {}
 
   async request(
@@ -110,7 +118,8 @@ export class CanonicalInitialAnalysisContinuationService {
   ): Promise<CanonicalInitialAnalysisContinuationReceipt> {
     const input = command.parse(raw);
     if ((input.executionMode !== undefined || input.modelRef !== undefined) &&
-        (input.operation !== 'EVALUATE_JOBAID' || !isProgramAssessmentMode(input.executionMode) || !input.modelRef))
+        (input.operation !== 'EVALUATE_JOBAID' ||
+          (!isProgramAssessmentMode(input.executionMode) && input.executionMode !== 'AILY_AGENT_V1') || !input.modelRef))
       throw continuationConflict('PROGRAM_SCOPE_INVALID');
     if (input.executionMode === 'PROGRAM_AGENT_V1' && input.modelRef !== 'miaoda/glm-5.3')
       throw continuationConflict('PROGRAM_AGENT_MODEL_UNSUPPORTED');
@@ -147,6 +156,8 @@ export class CanonicalInitialAnalysisContinuationService {
       if (task.modelInput.executionMode !== input.executionMode ||
           (input.modelRef !== undefined && task.executionModel?.modelRef !== input.modelRef))
         throw continuationConflict('REQUEST_SCOPE_CHANGED');
+      if (input.executionMode === 'AILY_AGENT_V1')
+        return this.runAily(workItem, input, actor, permissionSnapshotVersion, session, existing, httpRequest);
       if (
         input.retranslateBlockIds &&
         JSON.stringify(task.modelInput.retranslateBlockIds ?? []) !==
@@ -172,6 +183,8 @@ export class CanonicalInitialAnalysisContinuationService {
         candidateOnly: true,
       };
     }
+    if (this.ailyAdmission?.matches(actor.tenantId, workItem) && input.operation === 'EVALUATE_JOBAID' &&
+        input.executionMode !== 'AILY_AGENT_V1') throw continuationConflict('AILY_MODE_REQUIRED');
     const cancelled =
       input.operation === 'EVALUATE_JOBAID' &&
       this.initial.cancelledContinuationBinding
@@ -226,6 +239,10 @@ export class CanonicalInitialAnalysisContinuationService {
       )
     )
       throw continuationConflict('PREREQUISITE_NOT_READY');
+    if (input.executionMode === 'AILY_AGENT_V1') {
+      if (cancelled) throw continuationConflict('AILY_CANCELLED_GRANT_NOT_ADOPTABLE');
+      return this.runAily(workItem, input, actor, permissionSnapshotVersion, session, undefined, httpRequest);
+    }
     let requestedBlocks = input.retranslateBlockIds;
     if (
       input.operation === 'TRANSLATE' &&
@@ -253,6 +270,8 @@ export class CanonicalInitialAnalysisContinuationService {
     const cancelledGuard = cancelled
       ? this.continuationGuard(cancelled, actor, workItem, permissionSnapshotVersion, httpRequest)
       : undefined;
+    const programControlled: ProgramAssessmentAdmission | undefined = isProgramAssessmentMode(input.executionMode) && input.modelRef
+      ? {modelRef: input.modelRef, executionMode: input.executionMode} : undefined;
     const reserve = () =>
       input.operation === 'TRANSLATE'
         ? this.translation.enqueueContinuation(
@@ -271,7 +290,7 @@ export class CanonicalInitialAnalysisContinuationService {
               authorizedKnowledgeSession,
               undefined,
               cancelledGuard,
-              input.executionMode ? {modelRef: input.modelRef!, executionMode: input.executionMode} : undefined,
+              programControlled,
             )
           : this.jobAid.enqueueContinuation(
               workItem,
@@ -282,7 +301,7 @@ export class CanonicalInitialAnalysisContinuationService {
                 ? 'INITIAL_PROBLEM_ASSESSMENT'
                 : 'OVERALL_CONSISTENCY',
               authorizedKnowledgeSession,
-              undefined, undefined, input.executionMode ? {modelRef: input.modelRef!, executionMode: input.executionMode} : undefined,
+              undefined, undefined, programControlled,
             );
     const reserved = cancelled
       ? await this.sessions!.withVerifiedReviewServiceSql(reserve, actor.userId)
@@ -296,6 +315,70 @@ export class CanonicalInitialAnalysisContinuationService {
     };
   }
 
+  private async runAily(workItem: CanonicalWorkItemProjection, input: z.infer<typeof command>,
+    actor: CanonicalHostActor, permissionSnapshotVersion: string, session?: ResolvedSession | null,
+    existing?: ActionAttemptRow, httpRequest?: Request): Promise<CanonicalInitialAnalysisContinuationReceipt> {
+    if (!this.ailyAdmission || !this.ailyExecution || !this.sessions || !session || input.operation !== 'EVALUATE_JOBAID')
+      throw continuationConflict('AILY_NOT_CONFIGURED');
+    if (session.actor.canonicalSubject.id !== actor.userId || session.actor.tenantId !== actor.tenantId ||
+        session.actor.applicationScopeId !== actor.appId)
+      throw new ForbiddenException('INITIAL_CONTINUATION_IDENTITY_MISMATCH');
+    const selected = existing ? null : this.ailyAdmission.require(actor.tenantId, workItem, input.modelRef);
+    if (existing) this.ailyAdmission.requireScope(actor.tenantId, workItem);
+    const reauthorize = async (): Promise<void> => {
+      const fresh = await authorizeAndLoadCanonicalWorkItem({authorization: this.authorization,
+        permissionSnapshots: this.permissions, registrar: this.registrar, actor, action: 'EVALUATE_JOB_AID',
+        workItemId: workItem.workItemId});
+      if (fresh.permissionSnapshotVersion !== permissionSnapshotVersion || fresh.workItem.revision !== workItem.revision ||
+          fresh.workItem.source.documentVersionId !== workItem.source.documentVersionId ||
+          !this.ailyAdmission!.matches(actor.tenantId, fresh.workItem) ||
+          !await this.initial.hasExactAutoProcessingGrant({tenantId: actor.tenantId, actorUserId: actor.userId, workItem: fresh.workItem}))
+        throw continuationConflict('AILY_SCOPE_CHANGED');
+    };
+    return this.sessions.withVerifiedReviewServiceSql(async () => {
+      await reauthorize();
+      const context = {workItem, actor, sessionId: session.session.id};
+      await this.ailyExecution!.preflight(context, input.modelRef!, !!existing);
+      if (!existing) {
+        const admission: AilyAssessmentAdmission = {...selected!, executionMode: 'AILY_AGENT_V1',
+          modelRef: selected!.model.modelRef, actorUserId: actor.userId};
+        await this.jobAid.enqueueContinuation(workItem, actor.tenantId, permissionSnapshotVersion, input.requestId,
+          'INITIAL_PROBLEM_ASSESSMENT', {sessionId: session.session.id, actorId: actor.userId, tenantId: actor.tenantId},
+          undefined, undefined, admission);
+      }
+      const key = `openclaw-v2:dynamic:${workItem.workItemId}:${workItem.source.documentVersionId}:${input.requestId}`;
+      const row = existing ?? await this.attempts.readRequest({tenantId: actor.tenantId, workItemId: workItem.workItemId,
+        taskType: 'OPENCLAW_DYNAMIC_EVALUATION', documentVersionId: workItem.source.documentVersionId, idempotencyKey: key});
+      if (!row) throw continuationConflict('AILY_REQUEST_NOT_FOUND');
+      if (row.status === 'QUEUED') {
+        if (!this.automaticDispatch || process.env.WL_JOBAID_PROBLEM_V2_ENABLED !== '1')
+          throw continuationConflict('AILY_NOT_CONFIGURED');
+        const progress=await this.initial.project({workItem,tenantId:actor.tenantId,browserActorUserId:actor.userId});
+        assertContinuationPrerequisites(input,workItem,progress.stages.jobAid.status);
+        if(progress.status==='NOT_READY'||!canContinueInitialStage(progress.stages,input.operation,true,workItem)||
+            Object.values(progress.stages).some(stage=>stage.attemptRef!==row.operationRef&&stage.attemptStatus&&
+              ['QUEUED','RUNNING','RETRY_SCHEDULED','COMMITTING'].includes(stage.attemptStatus)))
+          throw continuationConflict('PREREQUISITE_NOT_READY');
+        await this.ailyExecution!.preflight(context, parseTaskEnvelope(row.taskEnvelopeJson).executionModel!.modelRef);
+        const authorize = this.continuationAuthorization(actor, workItem, permissionSnapshotVersion, httpRequest,
+          () => continuationConflict('AILY_SCOPE_CHANGED'));
+        await this.automaticDispatch.authorizeAilyInitialSuccessor({tenantId:actor.tenantId,actorUserId:actor.userId,
+          workItem,request:row,stageRequestId:input.requestId,authorize:async(database,owners)=>{
+            if(owners.length!==1||!matchesInitialContinuationOwner(owners[0],{tenantId:actor.tenantId,actorUserId:actor.userId,workItem}))
+              throw continuationConflict('AILY_SCOPE_CHANGED');
+            await authorize(database);
+          }});
+      }
+      const ailyDispatch = await this.ailyExecution!.execute({...context, permissionSnapshotVersion,
+        requestId: input.requestId, row, reauthorize});
+      const current = await this.attempts.readRequest({tenantId: actor.tenantId, workItemId: workItem.workItemId,
+        taskType: 'OPENCLAW_DYNAMIC_EVALUATION', documentVersionId: workItem.source.documentVersionId, idempotencyKey: key});
+      if (!current) throw continuationConflict('AILY_REQUEST_NOT_FOUND');
+      return {requestId: input.requestId, operation: input.operation, status: current.status,
+        replayed: !!existing, candidateOnly: true, ailyDispatch};
+    }, actor.userId);
+  }
+
   private continuationGuard(
     binding: CancelledInitialContinuationBinding,
     actor: CanonicalHostActor,
@@ -304,64 +387,69 @@ export class CanonicalInitialAnalysisContinuationService {
     httpRequest?: Request,
   ): CancelledInitialContinuationGuard {
     if (!this.sessions || !httpRequest || !this.sourceAuthorization) throw cancelledContinuationConflict();
-    const workItemId = workItem.workItemId;
     return {
       binding,
-            authorize: async (database: PostgresJsDatabase) => {
-              if (!this.sessions || !httpRequest || !this.sourceAuthorization)
-                throw cancelledContinuationConflict();
-              const current = this.sessions.nativeBrowserIdentity(httpRequest);
-              if (
-                !current ||
-                current.actor.canonicalSubject.id !== actor.userId ||
-                current.actor.tenantId !== actor.tenantId ||
-                current.actor.applicationScopeId !== actor.appId
-              )
-                throw cancelledContinuationConflict();
-              const decision = await this.authorization.authorize(
-                { actor, action: 'EVALUATE_JOB_AID', workItemId },
-                database,
-              );
-              const fresh = await this.permissions.freshRead(
-                { actor, decision, workItemId },
-                database,
-              );
-              if (
-                !decision.allowed ||
-                decision.action !== 'EVALUATE_JOB_AID' ||
-                fresh.permissionSnapshotVersion !== permissionSnapshotVersion ||
-                decision.permissionSnapshotVersion !== permissionSnapshotVersion
-              )
-                throw cancelledContinuationConflict();
-              const source = workItem.source;
-              const permission =
-                await this.sourceAuthorization.authorizeSourceRead({
-                  tenantId: actor.tenantId,
-                  actorUserId: actor.userId,
-                  workItemId,
-                  requestId: workItem.requestId,
-                  documentId: source.documentId,
-                  documentVersionId: source.documentVersionId,
-                  sourceArtifactId: source.sourceArtifactId,
-                  sourceFileSha256: source.sourceFileSha256.replace(
-                    /^sha256:/u,
-                    '',
-                  ),
-                  sourceByteLength: source.sourceByteLength,
-                }, database);
-              if (
-                !permission.allowed || permission.action !== 'DOCUMENT_READ' || permission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
-                permission.tenantId !== actor.tenantId ||
-                permission.actorUserId !== actor.userId ||
-                permission.documentId !== source.documentId ||
-                permission.documentVersionId !== source.documentVersionId ||
-                permission.sourceArtifactId !== source.sourceArtifactId ||
-                permission.sourceFileSha256 !==
-                  source.sourceFileSha256.replace(/^sha256:/u, '') ||
-                permission.sourceByteLength !== source.sourceByteLength
-              )
-                throw cancelledContinuationConflict();
-            },
+      authorize: this.continuationAuthorization(actor,workItem,permissionSnapshotVersion,httpRequest),
+    };
+  }
+
+  private continuationAuthorization(actor:CanonicalHostActor,workItem:CanonicalWorkItemProjection,
+    permissionSnapshotVersion:string,httpRequest?:Request,reject:()=>Error=cancelledContinuationConflict) {
+    const workItemId = workItem.workItemId;
+    return async (database: PostgresJsDatabase):Promise<void> => {
+      if (!this.sessions || !httpRequest || !this.sourceAuthorization)
+        throw reject();
+      const current = this.sessions.nativeBrowserIdentity(httpRequest);
+      if (
+        !current ||
+        current.actor.canonicalSubject.id !== actor.userId ||
+        current.actor.tenantId !== actor.tenantId ||
+        current.actor.applicationScopeId !== actor.appId
+      )
+        throw reject();
+      const decision = await this.authorization.authorize(
+        { actor, action: 'EVALUATE_JOB_AID', workItemId },
+        database,
+      );
+      const fresh = await this.permissions.freshRead(
+        { actor, decision, workItemId },
+        database,
+      );
+      if (
+        !decision.allowed ||
+        decision.action !== 'EVALUATE_JOB_AID' ||
+        fresh.permissionSnapshotVersion !== permissionSnapshotVersion ||
+        decision.permissionSnapshotVersion !== permissionSnapshotVersion
+      )
+        throw reject();
+      const source = workItem.source;
+      const permission =
+        await this.sourceAuthorization.authorizeSourceRead({
+          tenantId: actor.tenantId,
+          actorUserId: actor.userId,
+          workItemId,
+          requestId: workItem.requestId,
+          documentId: source.documentId,
+          documentVersionId: source.documentVersionId,
+          sourceArtifactId: source.sourceArtifactId,
+          sourceFileSha256: source.sourceFileSha256.replace(
+            /^sha256:/u,
+            '',
+          ),
+          sourceByteLength: source.sourceByteLength,
+        }, database);
+      if (
+        !permission.allowed || permission.action !== 'DOCUMENT_READ' || permission.authorizationPolicy !== 'MIAODA_HOST_DOCUMENT_READ' ||
+        permission.tenantId !== actor.tenantId ||
+        permission.actorUserId !== actor.userId ||
+        permission.documentId !== source.documentId ||
+        permission.documentVersionId !== source.documentVersionId ||
+        permission.sourceArtifactId !== source.sourceArtifactId ||
+        permission.sourceFileSha256 !==
+          source.sourceFileSha256.replace(/^sha256:/u, '') ||
+        permission.sourceByteLength !== source.sourceByteLength
+      )
+        throw reject();
     };
   }
 

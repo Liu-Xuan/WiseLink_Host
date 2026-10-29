@@ -3,6 +3,8 @@ import type { CanonicalWorkItemProjection } from '@shared/api.interface';
 import { MiaodaWorkItemRepository } from '@server/modules/work-item/miaoda-work-item.repository';
 import { MiaodaCanonicalWorkItemRegistrarAdapter } from '@server/modules/work-item/miaoda-canonical-work-item-registrar.adapter';
 import { tdmsNativeEvidenceFixture } from './fixtures/tdms-native-evidence.fixture';
+import { sql,type SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 type CasInput = Parameters<MiaodaWorkItemRepository['compareAndSet']>[0];
 type Carrier = 'baseRules' | 'overallSynthesis' | 'stagedBaseRules';
@@ -37,15 +39,21 @@ function harness() {
   let stored: CanonicalWorkItemProjection | null = null;
   let pending: CanonicalWorkItemProjection | null = null;
   let onUpdate: (() => Promise<void>) | undefined;
+  let predicateAllowed: (() => boolean) | undefined;
+  const conditions:SQL[]=[];
   const returning = jest.fn(async () => {
     events.push('update');
     await onUpdate?.();
-    return [{ workItemId: 'WI-NATIVE-CAS' }];
+    return predicateAllowed && !predicateAllowed() ? [] : [{ workItemId: 'WI-NATIVE-CAS' }];
   });
   const update = jest.fn(() => ({
-    set: (value: { projectionJson: string }) => {
-      pending = JSON.parse(value.projectionJson) as CanonicalWorkItemProjection;
-      return { where: () => ({ returning }) };
+    set: (value: { projectionJson: SQL }) => {
+      const query=new PgDialect().sqlToQuery(value.projectionJson);
+      expect(query.sql).toContain("jsonb_exists");
+      expect(query.sql).toContain("modelConfigurationApplications");
+      expect(query.params).toHaveLength(1);
+      pending = JSON.parse(query.params[0] as string) as CanonicalWorkItemProjection;
+      return { where: (condition:SQL) => {conditions.push(condition);return { returning };} };
     },
   }));
   const database = {
@@ -113,6 +121,8 @@ function harness() {
     transaction,
     update,
     events,
+    conditions,
+    predicateAllowed:(check:()=>boolean)=>{predicateAllowed=check;},
     stored: () => stored,
     onUpdate: (callback: () => Promise<void>) => {
       onUpdate = callback;
@@ -121,6 +131,22 @@ function harness() {
 }
 
 describe('native projection transaction CAS guards', () => {
+  it('forwards a trusted enterprise identity predicate into the actual WI UPDATE and affects zero rows after the pre-read is revoked',async()=>{
+    const h=harness();let authorized=true;
+    h.input.next=projection();
+    h.input.nativeEvidenceGuard=async()=>{h.events.push('identity-pre-read');authorized=false;};
+    h.input.writePredicate=sql`EXISTS (SELECT 1 FROM identity_subject_mapping WHERE id=${'synthetic-mapping'}
+      AND status='ACTIVE') AND ${new Date('2099-01-01')}>clock_timestamp()`;
+    h.predicateAllowed(()=>{
+      const query=new PgDialect().sqlToQuery(h.conditions[0]);
+      expect(query.sql).toContain('identity_subject_mapping');expect(query.sql).toContain('clock_timestamp()');
+      expect(query.sql).toContain('"work_item"."revision"');expect(query.params).toContain('synthetic-mapping');
+      return authorized;
+    });
+    await expect(h.registrar.compareAndSet(h.input)).rejects.toThrow('WORK_ITEM_CAS_CONFLICT');
+    expect(h.conditions).toHaveLength(1);expect(h.stored()).toBeNull();expect(h.events).toContain('rollback');
+    expect(h.events).not.toContain('commit');
+  });
   it.each<Carrier>(['baseRules', 'overallSynthesis', 'stagedBaseRules'])(
     'denies %s native carrier without a native authorization guard before database I/O',
     async (carrier) => {
