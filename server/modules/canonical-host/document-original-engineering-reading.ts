@@ -19,6 +19,10 @@ export function documentOriginalEngineeringReading(
  * or authorization result: each subsequent request must load/authorize its own source.
  */
 export function prepareDocumentOriginalEngineeringReader(loaded: LoadedOriginal, semanticMap: SemanticMap | null = null) {
+  return prepareReadingScope(loaded, semanticMap).read;
+}
+
+function prepareReadingScope(loaded: LoadedOriginal, semanticMap: SemanticMap | null = null) {
   const { original, run } = loaded;
   const structuredSource = semanticMap ? semanticTranslationSource(original, semanticMap) : loaded.structuredSource;
   const artifact = run.manifestArtifact;
@@ -32,15 +36,20 @@ export function prepareDocumentOriginalEngineeringReader(loaded: LoadedOriginal,
   const refsByUnit = new Map<string, Set<string>>();
   const findingsByUnit = new Map<string, Set<string>>();
   const texts = new Map<string, string[]>();
+  const refOrder = new Map<string, number>();
   for (const anchor of plan.anchors) {
     const refs = refsByUnit.get(anchor.sourceUnitId) ?? new Set<string>();
     for (const ref of anchor.sourceRefIds) {
       refs.add(ref);
+      if (!refOrder.has(ref)) refOrder.set(ref, refOrder.size);
       const parts = texts.get(ref) ?? [];
       parts.push(anchor.sourceText); texts.set(ref, parts);
     }
     refsByUnit.set(anchor.sourceUnitId, refs);
   }
+  const orderedRefsByUnit = new Map([...refsByUnit].map(([unitId, refs]) => [unitId,
+    [...refs].sort((left, right) => refOrder.get(left)! - refOrder.get(right)!) ]));
+  const validatedUnits = new Set<string>();
   // A locator's complete quote includes all its anchors, regardless of page slice.
   const excerpts = new Map<string, string>();
   const locations = new Map(structuredSource.sourceLocators.map(location => [location.sourceRefId, location]));
@@ -52,23 +61,27 @@ export function prepareDocumentOriginalEngineeringReader(loaded: LoadedOriginal,
       findingsByUnit.set(unitId, findings);
     }
   }
-  return (offset: number, limit: number) => {
+  const evidenceForRef = (ref: string): Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }> => {
+    const parts = texts.get(ref);
+    if (!parts) throw new Error('DOCUMENT_ORIGINAL_SOURCE_TEXT_MISSING');
+    let text = excerpts.get(ref);
+    if (text === undefined) { text = parts.join('\n'); excerpts.set(ref, text); }
+    const location = locations.get(ref);
+    if (!location) throw new Error('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
+    const evidenceRef = `DOCUMENT_ORIGINAL:${run.documentVersionId}:${run.parseRunId}:${ref}`;
+    if (evidenceRef.length > 512) throw new Error('DOCUMENT_ORIGINAL_SOURCE_REF_TOO_LONG');
+    return { evidenceRef, kind: 'DOCUMENT_PASSAGE', workItemId: null, documentVersionId: run.documentVersionId,
+      sourceRefId: ref, title: `原文 · 解析修订 ${run.parseRevision}`, versionLabel: run.parseRunId,
+      excerpt: text, locator: JSON.stringify({ parseRunId: run.parseRunId, sourceRefId: ref,
+        pageStart: location.pageStart, normalizedPath: location.normalizedPath, xpath: location.xpath }) };
+  };
+  const read = (offset: number, limit: number) => {
     assertRange(offset, limit);
     const units = structuredSource.units.slice(offset, offset + limit);
     const selectedFindingIds = new Set(units.flatMap(unit => [...(findingsByUnit.get(unit.unitId) ?? [])]));
     const selectedRefs = new Set(units.flatMap(unit => [...(refsByUnit.get(unit.unitId) ?? [])]));
-    const evidence: Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }>[] = [...texts].filter(([ref]) => selectedRefs.has(ref)).map(([ref, parts]) => {
-      let text = excerpts.get(ref);
-      if (text === undefined) { text = parts.join('\n'); excerpts.set(ref, text); }
-      const location = locations.get(ref);
-      if (!location) throw new Error('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
-      const evidenceRef = `DOCUMENT_ORIGINAL:${run.documentVersionId}:${run.parseRunId}:${ref}`;
-      if (evidenceRef.length > 512) throw new Error('DOCUMENT_ORIGINAL_SOURCE_REF_TOO_LONG');
-      return { evidenceRef, kind: 'DOCUMENT_PASSAGE', workItemId: null, documentVersionId: run.documentVersionId,
-        sourceRefId: ref, title: `原文 · 解析修订 ${run.parseRevision}`, versionLabel: run.parseRunId,
-        excerpt: text, locator: JSON.stringify({ parseRunId: run.parseRunId, sourceRefId: ref,
-          pageStart: location.pageStart, normalizedPath: location.normalizedPath, xpath: location.xpath }) };
-    });
+    const evidence: Extract<AssessmentEvidence, { kind: 'DOCUMENT_PASSAGE' }>[] = [...texts]
+      .filter(([ref]) => selectedRefs.has(ref)).map(([ref]) => evidenceForRef(ref));
     return { documentVersionId: run.documentVersionId, binding: original.binding, artifactSha256: artifact.sha256,
       semanticMap: semanticMap ? { ...semanticMap, unresolvedRanges: structuredClone(coverage.unresolvedRanges) } : null,
       offset, units, evidence, sourceRefs: evidence.map(item => item.evidenceRef),
@@ -77,6 +90,16 @@ export function prepareDocumentOriginalEngineeringReader(loaded: LoadedOriginal,
       findings: structuredSource.findings.filter(finding => selectedFindingIds.has(String(finding.findingId))), producer: original.producer,
       nextOffset: offset + units.length < structuredSource.units.length ? offset + units.length : null };
   };
+  const evidenceForUnit = (ref: string, unitId: string) => {
+    // The old point path read the whole unit before testing membership. Retain
+    // its rejection of another malformed ref, in the original evidence order.
+    if (!validatedUnits.has(unitId)) {
+      for (const sibling of orderedRefsByUnit.get(unitId) ?? []) evidenceForRef(sibling);
+      validatedUnits.add(unitId);
+    }
+    return refsByUnit.get(unitId)?.has(ref) ? evidenceForRef(ref) : undefined;
+  };
+  return { read, evidenceForUnit };
 }
 
 function assertRange(offset: number, limit: number) {
@@ -103,15 +126,15 @@ export function prepareDocumentOriginalEvidenceFinder(loaded: LoadedOriginal) {
       offsetsByRef.set(ref, offsets);
     }
   });
-  let read: ReturnType<typeof prepareDocumentOriginalEngineeringReader> | undefined;
+  let scope: ReturnType<typeof prepareReadingScope> | undefined;
   return (sourceRefId: string) => {
     const offsets = offsetsByRef.get(sourceRefId);
     if (!offsets) throw new Error('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
-    read ??= prepareDocumentOriginalEngineeringReader(loaded);
+    scope ??= prepareReadingScope(loaded);
     // A structural container may own the ref without readable anchors. Its child
     // units use the same ref; the prepared reader preserves their complete quote.
     for (const offset of offsets) {
-      const evidence = read(offset, 1).evidence.find(item => item.sourceRefId === sourceRefId);
+      const evidence = scope.evidenceForUnit(sourceRefId, loaded.structuredSource.units[offset].unitId);
       if (evidence) return evidence;
     }
     throw new Error('DOCUMENT_ORIGINAL_SOURCE_TEXT_MISSING');

@@ -6,7 +6,7 @@
 
 已在本机读取准确0b33e8bf814d6b6eefebae70c956f556a4db3246（父94c24efa746984a7edbf8b76719e1ffcfa549bed）的README、VALIDATION和机器证据，范围仅为openclaw/codex-evaluator/新增13文件的可选执行器；现有默认执行路线未变。原验证有真实Codex+GLM，使用虚构材料及内存Host，明确realHostCalled=false、hostMcpConfigured=false、readyForBusinessExecution=false，重启后的持久恢复未接。它是有界执行器/协议验证，不是正式Host授权、持久保存、真实工程成果或页面业务验收；本次未重跑fixture/模型。
 
-当前线上a65/c240和原binding实现名/源码引用保持事实身份，未假装已换执行器。P0/P7下一步转为真实运行身份与Host权限接线、准确任务/材料、生成和Host保存回读、同版确定性Overall、页面/图与结束；复用已有材料/SAVE/READ/Overall/消费者中仍有用的部分，不新建状态体系。新fixture不填生产缺口，旧链救回不前置。准确代码去留与首条新事项验收见主控负责的[执行器切换说明](WISELINK_EXECUTOR_TRANSITION_20261025.md)；M1见[E.36](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e36-执行器切换优先级与首个新真实事项2026-10-25)。旧386证据完整对象/顺序保持，只追加一条source_review/inconclusive、scenarioIds空的范围记录；此docs后继未commit/push，也没有外部操作。
+当前线上a65/c240和原binding实现名/源码引用保持事实身份，未假装已换执行器。P0/P7下一步转为真实运行身份与Host权限接线、准确任务/材料、生成和Host保存回读、同版确定性Overall、页面/图与结束；复用已有材料/SAVE/READ/Overall/消费者中仍有用的部分，不新建状态体系。新fixture不填生产缺口，旧链救回不前置。准确代码去留与首条新事项验收见主控负责的[执行器切换说明](WISELINK_EXECUTOR_TRANSITION_20261025.md)；M1见[E.36](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e36-执行器切换优先级与首个新真实事项2026-10-25)。旧386证据完整对象/顺序保持，只追加一条source_review/inconclusive、scenarioIds空的范围记录；此docs后继未commit/push，也没有外部操作。
 
 ## 2026-10-25 程序控制评估技术切换与受理观察
 
@@ -26,13 +26,13 @@ C136按原 enabled=true 只执行一次正常 enable；调用07:22:02.407484Z—
 
 本条与恢复的 E.34 是不同历史窗口。既有378条证据的完整对象和顺序保留，新追加7条限定证据，scenarioIds均空；P7和对应接线更新技术交付及剩余业务范围，P0只澄清当前批次与旧失败后继的关系。契约版本仍1.7，目录/选择数组和用户样式不变；digest、snapshot、HTML通过既有生成器从同源记录生成，不手填节点完成状态。准确公开/Host/Native源码身份、实现/测试、技术切换和真实业务分别保留，当前材料核验断点尚未修复；新材料/全文工程质量、独立READ、同版Overall、正常收尾仍待同一请求结果。原件以受限逻辑引用 `private:program-assessment-20261025` 关联，本后继文档不触发产品变更、远端同步、发布或新业务动作。
 
-M1见[E.35](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25)。下方E.34同名历史条目按原文补回，只恢复历史入口，不把本批状态倒填旧回执。
+M1见[E.35](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25)。下方E.34同名历史条目按原文补回，只恢复历史入口，不把本批状态倒填旧回执。
 
 **本批后续只读取证与当前本地修复。** 2026-10-25T07:31:55.316508Z—07:32:12.516031Z的同请求固定快照确认：封存任务已交付115条原文证据，对应目录身份齐全；deliveredEvidence正文投影缺顶层documentVersionId/sourceRefId，Native筛选primaryCount=0，故在材料准备阶段停止。versionLabel/原解析绑定正确，missingRefsCount=0表示不需新增来源READ，不能再把材料快照未ready写成原文未交付。完整封存模型对象与Host一致，观察脚本扁平键比较false已单独纠正，不是模型选择不一致。
 
 真正provider started/result、program-model-input、完整响应、SAVE/独立READ/提交均无检查点；准确调用顺序支持本请求实际模型派发0、响应0、SAVE0。外层model.started/modelRound/modelCallCount不作HTTP派发证明。Native UNKNOWN/REQUIRES_ATTENTION与generation12 stopped、completionReady=false的active claim完整保留，先前Host RUNNING只保留其观察时点；无重放、checkpoint改写或第二请求。旧385证据对象/顺序及原疑因时点不变，只追加一条runtime/inconclusive、scenarioIds空的取证事实。
 
-当前两端本地修复进入联合审查，尚未新发布、安装或恢复执行；原线上a65/c240和C136已恢复状态保持。P7/current绑定/selection下一步更新，V55—V58与真实工程正文→SAVE→独立READ→同版Overall→正常收尾链仍未闭合。本次仅本地docs生成及不变式核对，无产品build/test或远端动作。准确取证见 `private:program-assessment-20261025:original-evidence-identity-readonly`，公开不展开UUID、WI、请求/租约身份或token；M1追加说明见[E.35](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25)。
+当前两端本地修复进入联合审查，尚未新发布、安装或恢复执行；原线上a65/c240和C136已恢复状态保持。P7/current绑定/selection下一步更新，V55—V58与真实工程正文→SAVE→独立READ→同版Overall→正常收尾链仍未闭合。本次仅本地docs生成及不变式核对，无产品build/test或远端动作。准确取证见 `private:program-assessment-20261025:original-evidence-identity-readonly`，公开不展开UUID、WI、请求/租约身份或token；M1追加说明见[E.35](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e35-程序控制评估技术切换与受理观察2026-10-25)。
 
 ## 2026-10-25 Host联合发布与普通用户有限读回
 
@@ -48,7 +48,7 @@ P1 UPDATE-only、P2 checker2.3及已知2.2文本强制新检查、原Wiki保存�
 
 原356条证据完整对象/顺序保留，追加技术deployment、普通用户版本/环境和有限Wiki/评估入口三条，scenarioIds空；P1/P2/P5当前交付与缺口及直接证据引用更新，P0/P3/P4/P6、12bindings/source mappings、选择保持，13/47/54/10和HTML数据外字节保持。比较目标更新为已实际读回的fa14/online。实际运行对象仍为已完成发布的fa14；本条仅为本地docs后继，尚未另行同步或发布。
 
-M1见[E.34](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e34-host联合发布与普通用户有限读回2026-10-25)。07—28发布原件与22份AX及最终观察包见private:host-identity-quality-delivery；本地生成/提交回执见private:host-identity-quality-release-records-20261025。
+M1见[E.34](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e34-host联合发布与普通用户有限读回2026-10-25)。07—28发布原件与22份AX及最终观察包见private:host-identity-quality-delivery；本地生成/提交回执见private:host-identity-quality-release-records-20261025。
 
 ## 2026-10-25 P3存储元数据与准确迁移依赖
 
@@ -58,7 +58,7 @@ Astra已窄审接受四份官方原件。01/02均成功，03的not_found/exit1�
 
 下一步先取得官方机制对“仅online已有、dev缺失的准确Source父对象”的对象级迁移覆盖与依赖依据，明确两表增量如何引用既有父对象；如必须先补dev父对象，应先解决其必要结构及准确依赖范围。本次回执未给出这样的计划，原两表回滚演练不能直接在dev执行，不重放九表、不绕到online建空表或新造coordinator。真实producer/RETAIN authority、Source/grant及完整record/relation/approval、family/cohort/roster/currentness输入仍需取得，既有save/CAS/runtime READ保持；仅建表不关闭P3。
 
-M1见[E.33](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e33-p3存储元数据与准确迁移依赖2026-10-25)。原354证据对象/顺序保留，只追加两条技术元数据（deployment/inconclusive、scenarioIds空），仅P3 remaining/nextAction及其证据引用改变；source bindings/产品revision、其他六包、选择数组、13/47/54/10目录、12binding与图样式保持。无DDL/策略/角色变更、业务行、模型/SAVE、Native指令或产品测试/build；未增加业务runtime/测试通过或新发布。
+M1见[E.33](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e33-p3存储元数据与准确迁移依赖2026-10-25)。原354证据对象/顺序保留，只追加两条技术元数据（deployment/inconclusive、scenarioIds空），仅P3 remaining/nextAction及其证据引用改变；source bindings/产品revision、其他六包、选择数组、13/47/54/10目录、12binding与图样式保持。无DDL/策略/角色变更、业务行、模型/SAVE、Native指令或产品测试/build；未增加业务runtime/测试通过或新发布。
 
 ## 2026-10-25 P1/P2独立Host候选与现有消费者
 
@@ -74,7 +74,7 @@ P2准确产品`43d417d7085bce01d8833e8958b027be59de2d9f`（父同8f54，tree`eed
 
 当前线上仍b8/c238，reader待验；原AD ATT5 TIMED_OUT/外层BLOCK、该attempt SAVE0、Overall空与Native可信上下文缺口保持。真实SEM/Reference/CMCF/OPS质量、受控方法版次和后果/暴露/控制资料仍未验收，既有保存文本未更正、取消选用、重检或清理，旧数据处置及真实内容验收仍待原授权。本批无模型、SAVE、真实业务请求或新部署/runtime；本地合成PG与源码/测试/构建分列，不替代内容完成。
 
-原348条evidence完整对象/顺序保留，新增P1三条与P2两条源码/局部验证及第六条准确联合完整build，scenarioIds均空。只更新现有research.overall、document.assessment-reading、translation.reading消费者及P1/P2工作包，其他工作包、13/47/54/10目录、12binding、选择数组和HTML数据外字节保持。M1见[E.32](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e32-p1p2独立host候选与现有消费者2026-10-25)，私有原件见`private:p1-p2-host-isolation-20261025`。本次记录生成未重复产品检查；本记录为本地提交，未同步或发布。
+原348条evidence完整对象/顺序保留，新增P1三条与P2两条源码/局部验证及第六条准确联合完整build，scenarioIds均空。只更新现有research.overall、document.assessment-reading、translation.reading消费者及P1/P2工作包，其他工作包、13/47/54/10目录、12binding、选择数组和HTML数据外字节保持。M1见[E.32](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e32-p1p2独立host候选与现有消费者2026-10-25)，私有原件见`private:p1-p2-host-isolation-20261025`。本次记录生成未重复产品检查；本记录为本地提交，未同步或发布。
 
 ## 2026-10-25 Wiki保存头导航与成员预览的联合候选
 
@@ -90,7 +90,7 @@ P2准确产品`43d417d7085bce01d8833e8958b027be59de2d9f`（父同8f54，tree`eed
 
 当前线上仍准确b8/c238、环境PASS、reader待验；原AD ATT5 TIMED_OUT/外层BLOCK、该attempt SAVE0及Overall两指针空保持，不据此清除Native UNKNOWN。联合候选未同步/发布，待批准准确交付；无新增部署或业务runtime，原生config核查仍待授权。P5三类影响/更新/下游覆盖、历史切换/撤权和完整P5/M3仍未验。P1仅移除过期5d/8d31待批现状，改记b8/c238、625未交付及SEM真实内容缺口，不改变其未验范围。
 
-原345条evidence完整对象/顺序保留；本批新增准确4a的source_review、联合Jest/typecheck与唯一完整build三条，scenarioIds均空。wiki.saved-reading的sourceRevision更新为4a、previousReviewedRevision保留cc22，历史证据不改；P5改为准确联合候选交付说明，除P1的nextAction纠正外其他包不改。selection.reason纠正当前事实，三组选择数组、13/47/54/10目录、12binding与HTML数据外字节保持。M1见[E.31](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e31-wiki保存头导航与成员预览的联合候选2026-10-25)，私有原件见`private:wiki-reading-integration-20261025`。本次记录生成未重复产品测试或构建，未执行同步、发布或新业务动作。
+原345条evidence完整对象/顺序保留；本批新增准确4a的source_review、联合Jest/typecheck与唯一完整build三条，scenarioIds均空。wiki.saved-reading的sourceRevision更新为4a、previousReviewedRevision保留cc22，历史证据不改；P5改为准确联合候选交付说明，除P1的nextAction纠正外其他包不改。selection.reason纠正当前事实，三组选择数组、13/47/54/10目录、12binding与HTML数据外字节保持。M1见[E.31](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e31-wiki保存头导航与成员预览的联合候选2026-10-25)，私有原件见`private:wiki-reading-integration-20261025`。本次记录生成未重复产品测试或构建，未执行同步、发布或新业务动作。
 
 ## 2026-10-25 Wiki引用预览显示修复的本地交付
 
@@ -102,7 +102,7 @@ P2准确产品`43d417d7085bce01d8833e8958b027be59de2d9f`（父同8f54，tree`eed
 
 这只关闭独立候选的局部表达修复与本地验证；未同步/发布，不与cc22保存头候选声称组合交付。线上仍b8/c238，原AD终态、Native配置和待授权读取保持；无新业务runtime/部署、模型、SAVE或业务数据操作。本地组件测试及完整构建不替代线上预览改善、三类变化、历史切换/撤权或完整P5/M3通过，不重复此前root/child有限读链。
 
-M2原342条evidence完整对象/顺序保留，只追加163a的source_review、局部test、标准完整build三条，scenarioIds均空；wiki.saved-reading只补独立候选消费者与局部修复，cc22 sourceRevision和历史证据保持。只补P5本地进度，其他六工作包逐值保持；13/47/54/10目录、12条binding、selection和HTML数据外字节保持。M1见[E.30](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e30-wiki引用预览显示修复的本地交付2026-10-25)。
+M2原342条evidence完整对象/顺序保留，只追加163a的source_review、局部test、标准完整build三条，scenarioIds均空；wiki.saved-reading只补独立候选消费者与局部修复，cc22 sourceRevision和历史证据保持。只补P5本地进度，其他六工作包逐值保持；13/47/54/10目录、12条binding、selection和HTML数据外字节保持。M1见[E.30](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e30-wiki引用预览显示修复的本地交付2026-10-25)。
 
 ## 2026-10-25 P5既有保存Wiki的有限两层阅读
 
@@ -114,7 +114,7 @@ M2原342条evidence完整对象/顺序保留，只追加163a的source_review、�
 
 `2026-10-24T17:17:36.663Z`（北京时间10-25 01:17:36.663）仅为该有限UI序列结束后的记录归档，非源观察、HTTP/server读回或具体保存时点；准确执行起止未知。样本身份、原正文、机型、业务ID及具体保存时间只留`private:p5-current-reading-20261025`与私有复核原件。本次未触发新模型、SAVE或其他业务写；未做数据库前后比较，不扩大为零全局副作用。
 
-M2原341条evidence完整对象及顺序保留，仅追加`p5.b8.exact-root-child-reading.runtime`，kind runtime/status inconclusive/scenarioIds空，挂既有wiki.saved-reading；同binding补实际入口与有限范围，P5下一步不再重复这次读链，其他六工作包逐值保持。13/47/54/10目录、12条binding、selection和HTML数据外样式保持；M3完整图及三类变化、历史切换、撤权仍未验。M1见[E.29](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e29-p5既有保存wiki的有限两层阅读2026-10-25)。本次只收口已有本地私有原件和文档/数据，不新增远端查询、模型、产品构建/测试、发布或业务操作。
+M2原341条evidence完整对象及顺序保留，仅追加`p5.b8.exact-root-child-reading.runtime`，kind runtime/status inconclusive/scenarioIds空，挂既有wiki.saved-reading；同binding补实际入口与有限范围，P5下一步不再重复这次读链，其他六工作包逐值保持。13/47/54/10目录、12条binding、selection和HTML数据外样式保持；M3完整图及三类变化、历史切换、撤权仍未验。M1见[E.29](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e29-p5既有保存wiki的有限两层阅读2026-10-25)。本次只收口已有本地私有原件和文档/数据，不新增远端查询、模型、产品构建/测试、发布或业务操作。
 
 ## 2026-10-25 原生目录错误分类与Aily读取边界
 
@@ -132,11 +132,11 @@ M2原341条evidence完整对象及顺序保留，仅追加`p5.b8.exact-root-chil
 
 本次归档时点2026-10-24T16:20:48.276Z（北京时间10-25 00:20:48.276）为本次浏览器UI捕获/归档，非新源观察或server读取；紧随元数据展开重核原准确快照/父读取集，状态日、Host接收、未知来源/生效时钟保持。未借上轮15:51诊断读取冒充本轮新服务器读回，未新增业务写/模型/导入。
 
-本有限表未见未知非空原值，不扩大为其他来源不存在；飞机列筛选不作授权反例。复用既有未知/NO_RECORD/撤权隔离证据，不记新runtime或完整V31通过；V31/V37/V41仍未全。P4下一步按真实来源可得范围和必要实际消费者推进，不为凑第四值盲搜；新证据仅configuration.reading/inconclusive、scenarioIds空，不升级AEO/实时安装/全P4。P0/P2/P6及其他工作包保持。M1见[E.27](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e27-p4有限原值语义对照2026-10-25)。
+本有限表未见未知非空原值，不扩大为其他来源不存在；飞机列筛选不作授权反例。复用既有未知/NO_RECORD/撤权隔离证据，不记新runtime或完整V31通过；V31/V37/V41仍未全。P4下一步按真实来源可得范围和必要实际消费者推进，不为凑第四值盲搜；新证据仅configuration.reading/inconclusive、scenarioIds空，不升级AEO/实时安装/全P4。P0/P2/P6及其他工作包保持。M1见[E.27](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e27-p4有限原值语义对照2026-10-25)。
 
 只读消费者复核未见本轮确定性分类故障，不建议产品补丁；折叠摘要“—”需展开准确条目/详情判读，属表达限制。空白、非空未知与NO_RECORD保持不同语义；当前授权按scope/tenant/owner/SourceInstance整来源及快照，列选择不是逐机grant或撤权测试。既有未知/NO_RECORD/撤权隔离验证连同原告警按历史版本复用，未在本轮重跑，不当新runtime或V31全通过；后续收窄为真实来源可得范围与必要消费者。
 
-另记获准固定目录核查：输出观察16:28:38.450481Z（北京时间10-25 00:28:38.450481），外层Python/help exit0，rpcCount1仅为一次目录CLI尝试，内部catalog CLI exit1、stdout0/stderr88 bytes、status UNKNOWN，不证Gateway收到/执行RPC。stderr未回传，原因不补推；可见代码未调用AD/检查点写，但无前后读回，不能称其完全无变化。完整首消息页仅一工具结果，原轮completed/is_streaming=false/queue0，无重试或补查；不添runtime证据或场景通过。同版本通用hook能阻断/改写参数，agent/session/run标识可选，但配置型MCP必经hook及可信AQ/lease/saveKey注入仍未证；版本标签不替代现场核心/加载证据，不提出新插件/API/框架或发布计划。M1见[E.28](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e28-固定目录与同版本hook的有限核查2026-10-25)。
+另记获准固定目录核查：输出观察16:28:38.450481Z（北京时间10-25 00:28:38.450481），外层Python/help exit0，rpcCount1仅为一次目录CLI尝试，内部catalog CLI exit1、stdout0/stderr88 bytes、status UNKNOWN，不证Gateway收到/执行RPC。stderr未回传，原因不补推；可见代码未调用AD/检查点写，但无前后读回，不能称其完全无变化。完整首消息页仅一工具结果，原轮completed/is_streaming=false/queue0，无重试或补查；不添runtime证据或场景通过。同版本通用hook能阻断/改写参数，agent/session/run标识可选，但配置型MCP必经hook及可信AQ/lease/saveKey注入仍未证；版本标签不替代现场核心/加载证据，不提出新插件/API/框架或发布计划。M1见[E.28](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e28-固定目录与同版本hook的有限核查2026-10-25)。
 
 ## 2026-10-25 P4有限读取与ATT5期限终态
 
@@ -146,7 +146,7 @@ M2原341条evidence完整对象及顺序保留，仅追加`p5.b8.exact-root-chil
 
 40在15:57:41.720386Z（10-24 23:57:41.720386+08）读回原ATT5 TIMED_OUT/ACTION_ATTEMPT_DEADLINE_EXCEEDED，完成15:48:04.804Z、deadline15:46:33.962Z、claim1、attempt lease空、该attempt SAVE0、心跳15:07:36.453Z。41在16:00:20.708486Z（10-25 00:00:20.708486+08）另证Host原grant gen9 BLOCKED/blockedAt15:48:06.467Z，owner/token/expiry空、同动作后续尝试0、Overall两指针空、grant completedAt空；原gen8/RUNNING观察保持原时点。根只SELECT，未主动强停/收尾/恢复/重跑；Host原外层正常BLOCK收尾不证明Native进程/检查点、调度回执或UNKNOWN已清，不再等待原ATT5继续产出，不新起模型或切执行器。
 
-可信上下文可复用现存`problemAssessmentHooks(begin, callTool)`真实attempt/lease闭包、consumer固定WorkItem及保存路径的稳定saveKey/准确revision；Host三工具与scope/封存attempt校验已存在。原生桥是否能接收该可信上下文、阻止模型覆盖并保持准确选择/读回仍未证；handler不会仅凭session自动补AQ/lease/saveKey，静态include不证目标实际加载或可信注入。无需预设新Host context API/插件/框架，复用职责不要求保留64轮循环；本段只记准确入口/缺口，不新增实现或发布计划。P3及其他未触及工作包保持。M1见[E.26](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e26-p4有限读取与att5期限终态2026-10-25)。
+可信上下文可复用现存`problemAssessmentHooks(begin, callTool)`真实attempt/lease闭包、consumer固定WorkItem及保存路径的稳定saveKey/准确revision；Host三工具与scope/封存attempt校验已存在。原生桥是否能接收该可信上下文、阻止模型覆盖并保持准确选择/读回仍未证；handler不会仅凭session自动补AQ/lease/saveKey，静态include不证目标实际加载或可信注入。无需预设新Host context API/插件/框架，复用职责不要求保留64轮循环；本段只记准确入口/缺口，不新增实现或发布计划。P3及其他未触及工作包保持。M1见[E.26](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e26-p4有限读取与att5期限终态2026-10-25)。
 
 ## 2026-10-24 ATT5只读推进与原生loop边界
 
@@ -158,7 +158,7 @@ M2原341条evidence完整对象及顺序保留，仅追加`p5.b8.exact-root-chil
 
 只读边界复核已撤回“凭URL/64轮可认定绕过原生、必缺插件”的过度推断：原生Gateway agent run已有真实日志，客户端官方形状tools/tool_calls及部分tool_call_id续传、应用意图解释和成功读取后换段同时存在。历史安装代码支持客户端tools进入原生agent路径；今日同版本help不保证当前核心字节或工具注册清单。当前profile真实可用工具/权限仍UNKNOWN，Host身份、来源/版本、journal、双fence、SAVE幂等/CAS、原key读回、准确workRef/Overall和正式采用边界保持；不保证缩减/替换loop能治愈M3 UNKNOWN。
 
-9次READ/121 refs不替代真实保存、Overall、完整阅读/语义或存量质量验收。后续原生可行性判断与旧数据迁移/新版重生成/清理分别按准确范围推进，未决先对账；本批没有产品代码、构建、发布或业务操作。M1见[E.25](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e25-att5只读推进与原生loop边界2026-10-24)。
+9次READ/121 refs不替代真实保存、Overall、完整阅读/语义或存量质量验收。后续原生可行性判断与旧数据迁移/新版重生成/清理分别按准确范围推进，未决先对账；本批没有产品代码、构建、发布或业务操作。M1见[E.25](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e25-att5只读推进与原生loop边界2026-10-24)。
 
 既有21/22/23/27的PAGE有限实测报告已接受：前5轮各4 seeds→32/18/13/11/13返回，20 seeds全部包含、共87不同原文/额外67，同DVI/parse/真实页范围内无可见混入。仅第1—4轮Native cache/Host refs完整逐项相等，第5轮仅数量/状态；已见两条未单选Except/unless除外条件，缺完整未过滤catalog不证全页或脚注全集。23为7 READ/120=115原文+5方法，27为9/121=115+6，旧120 basis保持，第9次为既有页2的11 refs重读；两份SQL都未查询SAVE，不推新保存/完成/停止，也不把封存excerpt或purpose替代完整实收正文/理解、独立RLS证明或真实错误回执。
 
@@ -174,7 +174,7 @@ PAGE产品`b7b6598c08ecc1b6c2f7abeee668fbf2d7e3eac1`（父d8、tree4177cd8）仅
 
 PAGE批16在14:46:29.746Z正常UI继续一次；17正式DB14:47:33.485551Z见新ATT5 RUNNING/claim1/retry0、revision3/Task v3、grant gen8 LEASED、新SAVE0及无JobAid/Overall当前成果。准确新后继不是重放旧UNKNOWN，当前只证准入/运行；真实PAGE READ、SAVE、Overall及同版阅读/语义随后另验，不等待本次图记录。79在14:31:58.248Z原AD页仍显示读取13/保存0及运行中，虽Native已attention停止；同请求并列Native停止待核与Host权威状态/期限的投影窄修尚未实现，不在b7/b8发布内容中，不要求重复登录/重复运行，也不改只读GET为写终态。
 
-P0/P2/P6只关闭各自已证明范围；技术发布不宣称解决Gateway原因、SEM或已选存量质量。旧数据按§4.5迁移/新版重生成/清理追踪，未决请求先对账，本批未清理。M1见[E.24](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e24-ad第14轮异常收尾与page修复交付2026-10-24)。
+P0/P2/P6只关闭各自已证明范围；技术发布不宣称解决Gateway原因、SEM或已选存量质量。旧数据按§4.5迁移/新版重生成/清理追踪，未决请求先对账，本批未清理。M1见[E.24](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e24-ad第14轮异常收尾与page修复交付2026-10-24)。
 
 ## 2026-10-24 Host70 与 c238 技术切换
 
@@ -182,11 +182,11 @@ P0/P2/P6只关闭各自已证明范围；技术发布不宣称解决Gateway原�
 
 Native c238一次官方安装真实exit0、141包文件逐项匹配、source-origin准确且单列，安装前后同22 checkpoint集合/字节不变。下载bytes/hash成立但curl子退出码UNKNOWN；两次安装前校验脚本错误已纠正，独立安装退出码0有实际subprocess回执，原失败保持。C136一次enable已读回enabled=true、nextRun13:29:03.256Z，恢复前静态字段与phase1零漂移。
 
-技术切换与调度恢复已完成；原失败占用由首个自然tick实测BLOCKED_CLAIM_FINALIZED，Host BLOCKED/gen5/lease空，outer精确归档、activeclaim=null，旧ATT3 FAILED/claim0/SAVE0及两个begin UNKNOWN字节保持，次tick IDLE/ok。这个具体断点已闭合；47后段私有汇总脚本/路径错误不代表重复业务收尾。随后45正常UI单击、46初读ATT4排队，48已RUNNING/claim1、Task v3及rev3/actor/文档/parse绑定一致；Task有8页输入覆盖与解析限制。54—56 Native实际READ_SOURCES页段推进，并有round1—8成功chat completion，已超出配置/claim事实；选定M3 Probe Large与响应alias openclaw/wiselink-engineering分开记录。此前13:39:10Z阶段观察为round9仍在途，当时尚无SAVE/Overall/成果阅读完成证据；旧请求和新后继分开，不改UNKNOWN。存量质量/SEM及旧数据处置仍按各自准确范围验收。M1见[E.23](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e23-host70-与-c238-技术切换2026-10-24)。
+技术切换与调度恢复已完成；原失败占用由首个自然tick实测BLOCKED_CLAIM_FINALIZED，Host BLOCKED/gen5/lease空，outer精确归档、activeclaim=null，旧ATT3 FAILED/claim0/SAVE0及两个begin UNKNOWN字节保持，次tick IDLE/ok。这个具体断点已闭合；47后段私有汇总脚本/路径错误不代表重复业务收尾。随后45正常UI单击、46初读ATT4排队，48已RUNNING/claim1、Task v3及rev3/actor/文档/parse绑定一致；Task有8页输入覆盖与解析限制。54—56 Native实际READ_SOURCES页段推进，并有round1—8成功chat completion，已超出配置/claim事实；选定M3 Probe Large与响应alias openclaw/wiselink-engineering分开记录。此前13:39:10Z阶段观察为round9仍在途，当时尚无SAVE/Overall/成果阅读完成证据；旧请求和新后继分开，不改UNKNOWN。存量质量/SEM及旧数据处置仍按各自准确范围验收。M1见[E.23](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e23-host70-与-c238-技术切换2026-10-24)。
 
 ## 2026-10-24 8d／31技术发布与AD准备失败后续
 
-系统性修复按[契约§6.5矩阵](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#65-故障修复与关闭矩阵)落实到六类真实消费者、必要正反验收和关闭条件；§4.4已单列“begin已发出但Host明确首次执行前FAILED”，不混入未发请求或已保存恢复。Native c238准确d8已本地审查且标准包就绪，实际技术交付和业务结果仍待核；这是开发与验收指引的补齐，不增加运行通过，不要求先登记47条关系。P0/P2/P6的节点详情共用work-packages里的当前动作及验收。 用户允许旧版数据按新版重生成或清理；契约§4.5已明确每次升级的影响范围、迁移/重生成/清理选择、引用/当前指针/索引/缓存/下游处理及读回，不要求永久兼容。当前未知结果先对账，本次未清理数据。
+系统性修复按[契约§6.5矩阵](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#65-故障修复与关闭矩阵)落实到六类真实消费者、必要正反验收和关闭条件；§4.4已单列“begin已发出但Host明确首次执行前FAILED”，不混入未发请求或已保存恢复。Native c238准确d8已本地审查且标准包就绪，实际技术交付和业务结果仍待核；这是开发与验收指引的补齐，不增加运行通过，不要求先登记47条关系。P0/P2/P6的节点详情共用work-packages里的当前动作及验收。 用户允许旧版数据按新版重生成或清理；契约§4.5已明确每次升级的影响范围、迁移/重生成/清理选择、引用/当前指针/索引/缓存/下游处理及读回，不要求永久兼容。当前未知结果先对账，本次未清理数据。
 
 准确公开8d5bc3f/私有Host31b9514已获批完成三条同名分支同步并逐端读回；唯一release `7700199770447350805` finished、准确31、error_logs空，原用户前后端均31，环境PASS、reader仍VERIFICATION_PENDING。该阶段线上比较目标为31；以下旧5d/8d31待批措辞描述各自当时阶段。最新Host70/c238切换见顶部。
 
@@ -196,7 +196,7 @@ Native c238一次官方安装真实exit0、141包文件逐项匹配、source-ori
 
 一次获批Native只读诊断已完成有限回报：浏览器请求及一次auto-retry的两次begin只有started无result，4次consumer-failure中后两次UNKNOWN，此后无更多request；原队列active-claim仍在，所查tick无在途、调度enabled/15分钟错误退避，未finish/park，无原始SQLSTATE。Host于12:09:57Z读回LEASED generation4、到期12:57:12.555Z，不推永久阻塞。精确比较已确认c237不适用于此次UNKNOWN，c238已由369（父95）集成、d8仅测试后继完成本地审查，两次已配置.githooks的实际precommit通过。首轮标准包1890pass/1fail的旧/c235$/构造负例no-op保留；改为显式c234并先断言不等，仅改测试，33/33通过，独立runner argv误触CLI问题另已纠正。准确d8的标准API第二次包于12:53:07.625571Z exit0，c238必需全Skill suite及versionClaims通过，141文件/1054964bytes，仅本地就绪，未push/install/release。它保留begin原UNKNOWN与result文件，另记外层收尾，不误拦其他通用UUID终态。本次未执行线上恢复。
 
-0082/83 online迁移及大ea906/5ed3/c237均未纳入本次发布；P0/P2/P6当前动作按§6.5转为95f/c238准确交付准备、保留UNKNOWN原身份及正常恢复核对，P2已选存量仍需明确更正/重检。旧305条证据对象/原时点保留，新增有限技术/失败/诊断及95f本地验证记录，无完整业务场景通过；12binding、13/47/54/10目录、selection、HTML数据外样式及M3代码保持。M1见[E.22](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e22-8d31实际技术发布与ad准备失败的后续2026-10-24)。
+0082/83 online迁移及大ea906/5ed3/c237均未纳入本次发布；P0/P2/P6当前动作按§6.5转为95f/c238准确交付准备、保留UNKNOWN原身份及正常恢复核对，P2已选存量仍需明确更正/重检。旧305条证据对象/原时点保留，新增有限技术/失败/诊断及95f本地验证记录，无完整业务场景通过；12binding、13/47/54/10目录、selection、HTML数据外样式及M3代码保持。M1见[E.22](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e22-8d31实际技术发布与ad准备失败的后续2026-10-24)。
 
 ## 2026-10-24 开发库 CHAT 迁移安装与正式计划覆盖待证
 
@@ -204,7 +204,7 @@ Native c238一次官方安装真实exit0、141包文件逐项匹配、source-ori
 
 纠正预览来源：08是 `+db-env-diff` shortcut，旧01完整API发生在安装前；安装后完整CLI data来自11于 `2026-10-24T06:32:11.973752Z`—`06:32:13.819088Z` 的官方API `dry_run:true`，准确返回 `{"changes":[],"from":"dev","to":"main"}`。12/13平台表详情另证 `dialogue_thread` 的dev有3个新文档绑定列、新唯一索引及FK，online均无；FK列序语义仍以catalog为准。08/09原时间不改，后续读回另列。空diff/history不能证明结构一致或内部跟踪机制；历史真实顶层ALTER同样有遗漏，正常发布也曾未补齐遗漏，不能只归因DO。所见管理界面未识别独立正式计划入口，不等于不存在其他受支持路径。
 
-保留正确dev，仅解决本批正式交付内容和顺序的准确路径，不重放DDL、no-op或盲发。本节原dev批次未执行online迁移；8d/31后来已独立技术发布，最新AD结果见顶部后续节，0082/83与较大候选未随之上线。M1见[E.21](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e21-开发库-chat-迁移安装与正式计划覆盖待证2026-10-24)。M2更正303条中的08来源，再补两条有限后续记录至305；不增加场景通过，12binding、13/47/54/10目录、selection、用户HTML样式及M3代码保持。
+保留正确dev，仅解决本批正式交付内容和顺序的准确路径，不重放DDL、no-op或盲发。本节原dev批次未执行online迁移；8d/31后来已独立技术发布，最新AD结果见顶部后续节，0082/83与较大候选未随之上线。M1见[E.21](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e21-开发库-chat-迁移安装与正式计划覆盖待证2026-10-24)。M2更正303条中的08来源，再补两条有限后续记录至305；不增加场景通过，12binding、13/47/54/10目录、selection、用户HTML样式及M3代码保持。
 
 P2后续只读审查确认当前默认Hosted链已有目标完整结构、上下文与术语输入，未找到值得另开主线代码批次的未修窄缺陷。旧兼容STEP缺口不能冒充此次历史误报根因。下一步应真实更正/重检存量：两块已选可读措施须明确纳入受控重译/更正范围，普通继续会跳过它们；Reference准确修订也须新检查与读回。未改候选、检查或selected，未调用模型；本地2.3、页面可读与旧REVIEW均不替代质量通过。
 
@@ -218,7 +218,7 @@ P2后续只读审查确认当前默认Hosted链已有目标完整结构、上下
 
 主控对准确clean9e5只执行一次标准完整 `npm run build`，`2026-10-24T06:00:07.219142Z`—`06:00:49.830873Z`，原单调42.61307654099801秒、exit0；前后clean、四份子日志均本次fresh。Native subtree未改，准确c237包继续复用，不重打、不追加package pass。上述P2本地修补阶段未执行DDL；随后获批dev动作见本页“开发库 CHAT 迁移安装与正式计划覆盖待证”新节。该P2阶段未发布、安装、调用真实模型、翻译SAVE、重新选用或正式采用；CMCF/OPS及Reference存量问题仍需处理，P2质量未通过。
 
-M1见[E.20](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e20-已保存译文质量核对与否定检查本地修补2026-10-24)。M2原296证据完整对象/原序、12binding和13/47/54/10目录不变，仅挂translation.reading新增3条inconclusive质量runtime、1条local validation及1条准确build至301；scenarioIds全部为空。只更新P2 nextAction与delivered/remaining/evidenceIds，其他6包/selection及线上5d、8d/31准确待批、AD优先保持。M3及图样式不改，未声称M2视觉复验或完整业务场景完成。
+M1见[E.20](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e20-已保存译文质量核对与否定检查本地修补2026-10-24)。M2原296证据完整对象/原序、12binding和13/47/54/10目录不变，仅挂translation.reading新增3条inconclusive质量runtime、1条local validation及1条准确build至301；scenarioIds全部为空。只更新P2 nextAction与delivered/remaining/evidenceIds，其他6包/selection及线上5d、8d/31准确待批、AD优先保持。M3及图样式不改，未声称M2视觉复验或完整业务场景完成。
 
 ## 2026-10-24 P2 实际阅读、原件恢复与翻译质量
 
@@ -232,7 +232,7 @@ Native标准buildPublishLitePackage已对准确df17/c237通过必需全suite与�
 
 准确df17的前序完整build曾在插件安装阶段DNS ENOTFOUND失败，四份子日志均旧，不计通过。主控随后在准确clean b907执行标准完整 `npm run build`，`2026-10-24T05:28:42.713321Z`—`05:29:27.991487Z`，原单调计时45.278220417秒、exit0，前后clean，四份子日志全部本次fresh。本批DDL、默认质量/选用、Host最低兼容门槛及模型权限不变，历史保存译文/原文未变，无自动重译或真实模型/SAVE。合成投影缺陷与此次历史表格BLOCK因果仍未证明。
 
-M1见[E.19](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e19-同版本原文与部分中英对照的实际阅读2026-10-24)。M2原289证据/12binding完整对象保留，追加4条局部runtime、1条局部测试、1条标准包及1条准确构建证据至296，scenarioIds全部为空。只更新P2局部进度/下一动作，P2、reader、SEM及模型/SAVE/Overall整体不升完成；线上5d、8d/31准确待批及AD优先保持，其他6包/selection不变。M3不改，未声称M2视觉复验；本批候选和包仍未发布/安装或开展真实内容验收。
+M1见[E.19](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e19-同版本原文与部分中英对照的实际阅读2026-10-24)。M2原289证据/12binding完整对象保留，追加4条局部runtime、1条局部测试、1条标准包及1条准确构建证据至296，scenarioIds全部为空。只更新P2局部进度/下一动作，P2、reader、SEM及模型/SAVE/Overall整体不升完成；线上5d、8d/31准确待批及AD优先保持，其他6包/selection不变。M3不改，未声称M2视觉复验；本批候选和包仍未发布/安装或开展真实内容验收。
 
 ## 2026-10-24 原生 WorkItem 更新评估入口本地修复
 
@@ -242,7 +242,7 @@ M1见[E.19](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e19-同版本原文与部分�
 
 最终工作树随后提交为625；三文件与停写交接逐字节一致，并非在clean625重跑测试。服务Jest33/33，真实受限PG3/3（1主链、2子场景，0skip），server typecheck与定向ESLint exit0。PG使用真实authenticated浏览器写者、非owner/非BYPASSRLS runtime与实际RLS，经过claim、allowlisted Source READ、1次新合成工作SAVE、准确读回、原sealed重复commit及版本/配置变化后的原请求恢复；重放不新增turn/attempt/SAVE，0模型/0远端。撤销mapping产生的WARN为预期拒绝。初轮sandbox listen EPERM，以及随后真实C1 trigger SQL身份断点和legacy测试输入错误原件保留；最终窄修复未放宽RLS，不称首次全过。局部测试没有权威UTC起止，保持unknown，不以提交或文件时间倒填。
 
-主控在准确clean625只执行一次标准完整 `npm run build`，`2026-10-24T04:34:58.485584Z`—`04:35:44.725430Z`，原单调计时46.239031秒、exit0，前后clean，Host/client及四份本次fresh子日志成立。本批Native/DDL未改，复用原c236包不重打。尚未push、发布或运行线上模型；本地合成SAVE不证明真实SEM问题正文、Overall消费或同版重读完成。原线上5d、8d/31准确待批及AD优先保持，M2视觉仍因工具策略未验。M1见[E.18](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e18-原生-workitem-更新评估入口本地修复2026-10-24)；原284证据和12binding完整对象保留，只追加本批局部证据并更新P1关键下一动作，不新增场景通过。
+主控在准确clean625只执行一次标准完整 `npm run build`，`2026-10-24T04:34:58.485584Z`—`04:35:44.725430Z`，原单调计时46.239031秒、exit0，前后clean，Host/client及四份本次fresh子日志成立。本批Native/DDL未改，复用原c236包不重打。尚未push、发布或运行线上模型；本地合成SAVE不证明真实SEM问题正文、Overall消费或同版重读完成。原线上5d、8d/31准确待批及AD优先保持，M2视觉仍因工具策略未验。M1见[E.18](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e18-原生-workitem-更新评估入口本地修复2026-10-24)；原284证据和12binding完整对象保留，只追加本批局部证据并更新P1关键下一动作，不新增场景通过。
 
 ## 2026-10-24 独立文档原生 CHAT 本地接线
 
@@ -329,7 +329,7 @@ M1只新增展示维护约定，文件指纹变化不改写历史证据的契约
 
 实际用户页面在 `13:49:05.201Z` 读到前端787、buildTime `13:41:00.992Z`，`13:49:25.131Z` 读到Host787及环境PASS；UI未提供release/API合同，candidate reading仍为VERIFICATION_PENDING。三条lock-only policy在正式online目录的实际定义、角色、USING/CHECK及RLS已读回，与已接受dev定义一致；不是待执行DDL。Native原c235包未改字节或重打包，实际安装141文件的bytes/SHA/mode一致，安装目录原1852项测试全部通过，原c234完整备份保留。原C136在 `13:52:08.212Z`—`13:52:11.879Z` 正常入口一次恢复enabled，其余15项保持disabled；没有手工触发新业务模型、Native READ、SAVE或正式采用。恢复后自然运行不充作本批业务smoke，也未证明全Host队列空或历史UNKNOWN清零。
 
-主线当前先闭合准确原文、保存工作、综合消费和同版阅读。787的一次正常用户有限UI链在 `15:35:53.433Z` 导航后，`15:36:44.350Z` 前工具观察到正文：既有准确原文/保存引用目标一致，保存工作修订1的四个问题可读，Overall消费同一保存工作，同DVI综合与问题正文相符。这是既有成果的阅读核对，没有新生成，也未证明本轮特定原文语义已进入实际模型输入或SEM内容验收。原调查输入/交付与READ、SAVE权威行、Overall previousWork/finish/artifact及页面消费者的准确接线见[M1 E.12](../WISELINK_MAINLINE_GRAPH_CONTRACT.md#e12-787-技术交付与主线有限读回2026-10-24)和M2，引用相同不代替正文级消费证明。
+主线当前先闭合准确原文、保存工作、综合消费和同版阅读。787的一次正常用户有限UI链在 `15:35:53.433Z` 导航后，`15:36:44.350Z` 前工具观察到正文：既有准确原文/保存引用目标一致，保存工作修订1的四个问题可读，Overall消费同一保存工作，同DVI综合与问题正文相符。这是既有成果的阅读核对，没有新生成，也未证明本轮特定原文语义已进入实际模型输入或SEM内容验收。原调查输入/交付与READ、SAVE权威行、Overall previousWork/finish/artifact及页面消费者的准确接线见[M1 E.12](../history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md#e12-787-技术交付与主线有限读回2026-10-24)和M2，引用相同不代替正文级消费证明。
 
 本次初导航实际 `GET /api/canonical-host/work-items/:workItemId/integrated-assessment/review-overall-projections/eligibility` 在 `15:36:34.944Z` 返回HTTP401 / `REVIEW_OVERALL_LOGIN_REQUIRED`，官方Trace和同请求日志已确认，后续诊断覆盖 `15:35:50Z`—`15:43:10Z`。页面原生飞书身份已成立，但ReviewOverall专用服务仍只认Host OAuth，读取、更新与结果核对的身份路径不一致；这是已有接口的身份接线缺陷。客户端把它显示为“暂时无法核对已保存评估，请刷新后重试。”，刷新不是修复。该诊断时修复尚未提交或部署；后继准确候选已提交并完成本地测试/构建，当前状态见顶部；不能以追加OAuth提示或要求用户再次授权作为完成。适用性/构型子区自动GET同属本地状态读取，已纳入7455原生身份候选；实际外部Source取数所需委托另按真实调用处理，当前installationEvents未配置。更早public-safe摘要的NOT_ESTABLISHED及空查询仅保留其原观察窗口，不覆盖本次已定位401。
 
@@ -417,7 +417,7 @@ Scoped read-only M3 on the same previously authorized item rendered the existing
 
 The original ff0 19 PostgreSQL/244 unit checks and exact 81 build retain their actual source identities; no product tests or build were repeated for these records. This release includes the Estimated mapping but does not prove a real TDMS intake/refresh or content-level model/SAVE/adoption. It does not include subsequent local ACK browser-readmodel or Review candidates. Overall attempts, TDMS latestness/coverage and Ready/first-readable/browser ACK fields remain unavailable. Zero checkable saved native evidence does not prove no earlier read.
 
-Only public-safe technical summaries and exact technical release identities are recorded here. Private business text, object IDs, source locators and private development ancestors remain excluded. See the [current first-batch record](WISELINK_FIRST_BATCH_20261022.md) and [verification page](../runtime-monitor/WiseLink_Wiring_Verification.html).
+Only public-safe technical summaries and exact technical release identities are recorded here. Private business text, object IDs, source locators and private development ancestors remain excluded. See the [current first-batch record](WISELINK_FIRST_BATCH_20261022.md) and [historical verification page](../history/mainline-graph/20261029-retired-verification/WiseLink_Wiring_Verification.html).
 
 ## Earlier reviewed source projection
 

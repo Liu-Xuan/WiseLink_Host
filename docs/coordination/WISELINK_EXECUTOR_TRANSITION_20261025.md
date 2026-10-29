@@ -1,14 +1,16 @@
 # 执行器切换与 Host 配合（2026-10-25）
 
+本文保留2026-10-25阶段方案及其当时回执，仅作历史定位；其中“当前”“本批”“待补”均指原观察时点。现行任务内控制权、接缝和首链顺序见[当前实施计划](../WISELINK_R10_EXECUTION_PLAN.md)与[新版图契约](../WISELINK_MAINLINE_GRAPH_CONTRACT.md)。先核现版实现和原接收结果，不从本历史方案重复派发、恢复旧请求或重建已有能力。
+
 状态：本地任务已重排，准确代码及调用点已盘点。没有部署新载荷、清库、停生产调度、改 Goal 或运行新模型。已完成的技术事实与旧 UNKNOWN 保留；它们不再是新执行器上线必须逐个救回的对象。
 
-## 当前接续：94c54 程序恢复与图契约 v1.8
+## 历史接续：94c54 程序恢复与图契约 v1.8
 
 先更新[图契约2.3/3.6](../WISELINK_MAINLINE_GRAPH_CONTRACT.md)，再在4e8a39b1上吸收准确94c54de（父fc132）27文件增量。程序恢复已具原runner闭合回执、完整解析后SSE事件、codexReceipt与原SAVE/READ绑定；不再把这些列为全部缺失。仍需执行器owner补实际prompt、最终bridge payload及父检查点启动前预定run定位，不把hash或转换后的response冒充完整上游字节。
 
 本地保留固定codex-*队列路由，修复COMMITTING消费者许可表漏READ的真实阻断，并在定位后按原SAVE key核对完整修订。首批CODEX显式拒绝仍封存旧运行app身份的Applicability/Review及关联入口；新app/principal/准确scope与旧合法wire名分开。完整42↔45工具、路由、Task/Result和配置差异只维护在[现有接口包](host-codex-interface-20261025/CLIENT_DELTA.md)。
 
-官方dev/online只读catalog确认三活动partial index与四槽CHECK正确，schema.ts缺WHERE是声明漂移，本轮没有DDL。新消费者实际持续唤起、异常重启、checkpointRoot/runRoot持久卷及跨重启读回仍未证；配置与切换方案不得冒充现场已设置。旧目录图保留，当前[实施树图](../runtime-monitor/WiseLink_Wiring_Verification.html)及[阅读指向说明](../runtime-monitor/README.md)已更新。新增代码测试、源码导出和实际业务验收继续分开。
+官方dev/online只读catalog确认三活动partial index与四槽CHECK正确，schema.ts缺WHERE是声明漂移，本轮没有DDL。新消费者实际持续唤起、异常重启、checkpointRoot/runRoot持久卷及跨重启读回仍未证；配置与切换方案不得冒充现场已设置。旧目录图保留，当时[实施树图（历史快照）](../history/mainline-graph/20261029-retired-verification/WiseLink_Wiring_Verification.html)及[阅读指向说明](../runtime-monitor/README.md)已更新。新增代码测试、源码导出和实际业务验收继续分开。
 
 ## 历史接续记录：1155 / fc132291
 
@@ -26,7 +28,7 @@ dev/online仅查到原WL_OPENCLAW配置名称，没有WL_CODEX或WL_MODEL_EXECUT
 
 本批不修改原任务清单或工程知识主文，不改Goal、不公开推送、不部署、不改凭据/调度、不清库、不调用真实模型。新业务验收仍只记实际Host保存、同版阅读和正常终态。
 
-## 当前准确来源与撤下的任务
+## 当时准确来源与撤下的任务
 
 - 已发布 Host 对应公开源 `f821bfe3447367e4d4bc9e140723c92230fc82ed`、私有 Host `a65a80925073e4b88aba6d84413a77aa3c814ff6`。本次只继承已有准确发布回执，不声称重新查询了生产状态。
 - 新执行器准确源 `0b33e8bf814d6b6eefebae70c956f556a4db3246`，父 `94c24efa746984a7edbf8b76719e1ffcfa549bed`；已实际 fetch 并核对 GitHub 同名分支 `codex/miaoda-codex-evaluation-loop-20261025`。只新增 `openclaw/codex-evaluator/` 13 文件，旧父分支不能整树覆盖当前 Host。

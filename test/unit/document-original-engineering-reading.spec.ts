@@ -249,6 +249,76 @@ it('reuses one exact finder plan across refs without sharing source state or mut
   } finally { plan.mockRestore(); coverage.mockRestore(); }
 });
 
+it('keeps point evidence identical to range evidence with reversed and repeated refs', () => {
+  const loaded = fixture();
+  loaded.structuredSource.units[0].sourceRefIds = ['SR-TEST-P2', 'SR-TEST-P1', 'SR-TEST-P2'];
+  const read = prepareDocumentOriginalEngineeringReader(loaded);
+  const range = read(0, 1);
+  const find = prepareDocumentOriginalEvidenceFinder(loaded);
+  expect(range.evidence.map(item => item.sourceRefId)).toEqual(['SR-TEST-P2', 'SR-TEST-P1']);
+  expect(range.sourceLocators.map(item => item.sourceRefId)).toEqual(['SR-TEST-P1', 'SR-TEST-P2']);
+  for (const evidence of range.evidence) expect(find(evidence.sourceRefId)).toEqual(evidence);
+  expect(find('SR-TEST-P2').excerpt).toBe([
+    loaded.structuredSource.units[0].payload.text,
+    loaded.structuredSource.units[0].payload.text,
+    'Pressure', '12 kPa', 'Only when X',
+  ].join('\n'));
+  expect(read(1, 1).evidence[0]).toEqual(find('SR-TEST-P2'));
+  expect(() => find('SR-UNKNOWN')).toThrow('DOCUMENT_ORIGINAL_SOURCE_LOCATOR_MISSING');
+});
+
+it('retains range rejection when another ref in the first matching unit is invalid', () => {
+  const loaded = fixture();
+  const longRef = 'R'.repeat(513);
+  loaded.structuredSource.units[0].sourceRefIds = [longRef];
+  loaded.structuredSource.units[0].payload.metadata = { sourceRefIds: ['SR-TEST-P1'] };
+  loaded.structuredSource.units.push({ ...loaded.structuredSource.units[0], unitId: 'u3', order: 2,
+    sourceRefIds: ['SR-TEST-P1'], payload: { text: 'Readable child with the requested ref.' } });
+  loaded.structuredSource.sourceLocators.push({ ...loaded.structuredSource.sourceLocators[0], sourceRefId: longRef });
+  loaded.original.locations.push({ ...loaded.original.locations[0], sourceRefId: longRef });
+  expect(() => documentOriginalEngineeringReading(loaded, 0, 1)).toThrow('DOCUMENT_ORIGINAL_SOURCE_REF_TOO_LONG');
+  expect(() => prepareDocumentOriginalEvidenceFinder(loaded)('SR-TEST-P1'))
+    .toThrow('DOCUMENT_ORIGINAL_SOURCE_REF_TOO_LONG');
+});
+
+it('keeps the missing anchor locator error in point and range reads', () => {
+  const loaded = fixture();
+  loaded.structuredSource.sourceLocators.shift();
+  expect(() => documentOriginalEngineeringReading(loaded, 0, 1))
+    .toThrow('TRANSLATION_PLAN_SOURCE_LOCATOR_MISSING');
+  expect(() => prepareDocumentOriginalEvidenceFinder(loaded)('SR-TEST-P1'))
+    .toThrow('TRANSLATION_PLAN_SOURCE_LOCATOR_MISSING');
+});
+
+it('finds 6483 exact refs without re-filtering every locator or finding for each ref', () => {
+  const loaded = fixture();
+  const sample = loaded.structuredSource.units[0];
+  const location = loaded.structuredSource.sourceLocators[0];
+  const count = 6483;
+  const refs = Array.from({ length: count }, (_, index) => `SR-SYNTHETIC-${index}`);
+  loaded.structuredSource.units = refs.map((ref, index) => ({ ...sample,
+    unitId: `synthetic-${index}`, kind: 'heading', order: index,
+    sourceRefIds: [ref], sourceSegmentIds: [`segment-${index}`],
+    payload: { text: `Synthetic heading ${index}`, level: 1 },
+  }));
+  loaded.structuredSource.sourceLocators = refs.map(ref => ({ ...location, sourceRefId: ref }));
+  loaded.structuredSource.findings = [];
+  loaded.original.locations = refs.map(ref => ({ ...loaded.original.locations[0], sourceRefId: ref }));
+  loaded.original.coverage = { knownPageCount: 1, readPageIndexes: [0], unresolvedRanges: [] };
+  const find = prepareDocumentOriginalEvidenceFinder(loaded);
+  expect(find(refs[0])).toEqual(prepareDocumentOriginalEngineeringReader(loaded)(0, 1).evidence[0]);
+  const locatorFilter = jest.spyOn(loaded.structuredSource.sourceLocators, 'filter');
+  const findingFilter = jest.spyOn(loaded.structuredSource.findings, 'filter');
+  try {
+    const evidence = refs.map(find);
+    expect(evidence).toHaveLength(count);
+    expect(evidence[count - 1].sourceRefId).toBe(refs[count - 1]);
+    expect(new Set(evidence.map(item => item.evidenceRef)).size).toBe(count);
+    expect(locatorFilter).not.toHaveBeenCalled();
+    expect(findingFilter).not.toHaveBeenCalled();
+  } finally { locatorFilter.mockRestore(); findingFilter.mockRestore(); }
+});
+
 it('keeps semantic revisions scoped to their prepared reader and rejects a foreign source binding', () => {
   const loaded = fixture();
   const firstMap = buildDocumentSemanticMap({ original: loaded.original, profile: GENERIC_SEMANTIC_PROFILE, semanticRevision: 1 });

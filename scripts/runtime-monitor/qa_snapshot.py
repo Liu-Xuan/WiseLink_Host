@@ -1,4 +1,4 @@
-"""Exercise snapshot parsing and import boundaries using temporary inputs only."""
+"""Exercise the historical v1.9.1 verification format using temporary inputs only."""
 import copy
 import hashlib
 import json
@@ -12,7 +12,10 @@ sys.dont_write_bytecode = True
 from build_verification import validate  # noqa: E402
 
 root = Path(__file__).resolve().parent
-contract = Path(sys.argv[1]) if len(sys.argv) > 1 else root.parents[1] / "docs/WISELINK_MAINLINE_GRAPH_CONTRACT.md"
+contract = (
+    Path(sys.argv[1]) if len(sys.argv) > 1
+    else root.parents[1] / "docs/history/mainline-graph/20261029-before-author-alignment/WISELINK_MAINLINE_GRAPH_CONTRACT.md"
+)
 source = contract.read_text(encoding="utf-8-sig")
 checks = []
 

@@ -1,5 +1,7 @@
 # 第一批实施与隔离验证 — 2026-10-22
 
+**历史执行记录。** 本文“当前”和命令均指原观察时点，旧命令不用于生成现行主图。现行主线：v1.11 结构＋增量11 本地接续，入口见[主线图说明](../runtime-monitor/README.md)。
+
 当前状态（2026-10-24，Asia/Shanghai）：公开306已双远端同步，准确Host5d仅origin并经唯一release7699934157774441777 finished/error_logs=[]；原用户双端5d、runtime PASS，reader仍VERIFICATION_PENDING。一次正常AD接续POST最终Host HTTP500，客户端与服务端耗时分别为300675/469819.62ms；500后一次准确范围对账新ATT为空、SAVE0、grant仍BLOCKED且无lease，前后字段未变。新模型/SAVE/Overall闭环未完成；不从已记录SQL缺口断言死锁或根因。当前主线优先完成来源授权事务executor透传修复及验证；修复独立收口、未发布；其余工作包维持各自缺口可并行。原241条证据保留，新增6条有限记录；详细事实见末节，历史记录保留其原时点。
 
 ## 实施结果

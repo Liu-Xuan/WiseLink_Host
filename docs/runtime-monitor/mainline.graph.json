@@ -1,0 +1,1338 @@
+{
+  "meta": {
+    "title": "WiseLink · 主线接线与开发指引",
+    "version": "v1.11结构 · Codex原生职责修订",
+    "date": "2026-10-29",
+    "semanticBaseline": "v1.10业务边界＋v1.11结构／增量11＋用户Codex原生职责候选与最新Goal",
+    "snapshotDate": "增量11来源：2026-10-27；用户职责候选：2026-10-29",
+    "subtitle": "先看主线，点开一处，再看它的输入、输出和边界。",
+    "notice": "本页实际合并用户提供候选的N01—N24与十条约束，登记本次分享并服从最新直接Goal：保留Codex＋LiteLLM＋Host与完整Agent循环，DSH条件建议不采纳。原增量11来源保留，未取得其Library附件完整原字节。契约要求不表示尚未开发，也不证明安装或真实业务运行。"
+  },
+  "overview": {
+    "conclusion": "Codex管任务内自主规划与模型／工具循环；LiteLLM作通用模型适配；Host管业务事实、授权和事务；Native作可信任务接入、受限领域工具、运行控制与保存恢复接线。",
+    "focus": "准确版本Codex原生能力复用为最高优先级；已有循环直接复用，首链实际断点与N15交接去重按此原则推进。",
+    "next": "第一批不换exec，优先候选直接交接并复用既有循环／诊断 → 第二批逐接缝验证session／context／stream → 第三批有净收益才替换SDK或App Server。",
+    "independentRead": "原文、解读/译文、已保存工作、公司与构型事实均可独立阅读；工作阅读不等待 Overall。"
+  },
+  "statusLayers": [],
+  "nodes": [
+    {
+      "id": "flow.input",
+      "title": "受理与备料",
+      "subtitle": "绑定准确任务与来源",
+      "owner": "Host",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "固定目标、主来源、检查单和已有工作基线；按本轮问题提供获准材料。",
+      "originalNodeIds": [
+        "source.register",
+        "source.original"
+      ],
+      "input": [
+        "真实请求、来源版本与目标范围",
+        "已有工作、方法和 RC1 定义"
+      ],
+      "output": [
+        "封存任务基线",
+        "可定位原文与真实读取观察"
+      ],
+      "condition": "必需输入、当前权限与资源各自成立；元数据可见不等于原件已取得。",
+      "next": "核对请求、来源、权限和准确版本；必要参考在原目标与授权范围内追加并记录实际读取。",
+      "details": [
+        {
+          "title": "基线与新材料",
+          "body": "Host固定任务基线与可信绑定；原目标内新增参考登记真实身份、版本和交付观察，不改taskBaselineHash。Native只关联获权请求、有效owner与所选执行入口，不产生授权；主来源换版或扩大目标走既有合法后继。"
+        },
+        {
+          "title": "必须保留的原文",
+          "body": "跨页/跨表保留条件、否定、例外、期限、表头、单位、脚注和原始映射。接口单批数量不限制工程阅读范围；容量不足披露限制。"
+        },
+        {
+          "title": "指令与最小权限",
+          "body": "稳定操作规范优先复用实际可读的Codex指令／Skill，动态目标、必要条件与输出合同进入任务输入；材料按需查询，不重复注入整图与旧日志。MCP采用最小工具集合，平台高权限凭据留在可信侧；allowlist、readOnlyHint及本地沙箱不替代Host服务端授权。"
+        }
+      ],
+      "ruleIds": [
+        "R02",
+        "R04",
+        "R07"
+      ],
+      "boundary": ""
+    },
+    {
+      "id": "flow.analyse",
+      "title": "分析与修订",
+      "subtitle": "按问题需要多轮读取",
+      "owner": "Codex 核心 / LiteLLM / Native / Host",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "理解工程问题、核对适用条件、比较证据与方法，形成连贯候选。",
+      "originalNodeIds": [
+        "assessment.research",
+        "assessment.applicability"
+      ],
+      "input": [
+        "准确任务与材料",
+        "必要的公司、AEO、LCM 事实",
+        "同源校验反馈"
+      ],
+      "output": [
+        "工程分析与未决问题",
+        "checklistResults 与 methodUsage",
+        "实际使用的证据引用"
+      ],
+      "condition": "原Codex任务未明确final，目标、权限、原期限和已获准实际资源约束有效；修订针对当前未seal候选，阶段seal／SAVE不终结任务或session，不新增人为模型／工具次数上限。",
+      "next": "在同一获权任务内自主规划、按需取证、吸收真实工具反馈并修订；已符合的Codex循环直接复用，不由Native另调模型修答案。",
+      "details": [
+        {
+          "title": "执行目标与循环控制权",
+          "body": "Codex持任务内规划、模型／工具调用、结果吸收和下一步选择；LiteLLM只作通用模型协议适配。Native保留任务启动、身份和会话关联、受限领域工具、运行控制及原保存恢复接线，不自建通用Agent核心或消息循环。确定性阶段、分页、心跳和领域工具内部处理保留，不按session／gateway／while名称删除。"
+        },
+        {
+          "title": "方法如何记录",
+          "body": "methodUsage 区分 REFERENCE_ONLY / APPLIED / UNDETERMINED；引用某方法不等于已经应用，更不自动产生处置义务。VERSION_UNCONFIRMED 如实保留。"
+        },
+        {
+          "title": "结果与范围",
+          "body": "checklistResults 是工作级结果；resultRefs 解析最终合并候选，不能指向已退役或重排前结构；明确全量替换与省略保持含义。"
+        },
+        {
+          "title": "未知怎样表达",
+          "body": "未知、冲突、待补条件和影响范围进入正文。ANSWERED 表示分析已有回答，不表示措施实施或批准；DEFERRED 不用于掩盖已经能够完成的本轮分析。"
+        },
+        {
+          "title": "Review 的完整工作与模型投影",
+          "body": "可信 full、模型 view、候选与 Host 物化分别保持原边界。模型 view 不携带 full、租户、lease 等可信控制字段；同一 ref 或 revision 不使不同投影自动等价。普通/isolated 与内部 hook 沿原合同核对传播。"
+        },
+        {
+          "title": "正式接口与原生上下文",
+          "body": "沿已用exec --json选择一个清楚的正式控制入口；SDK／App Server只有能替换对应封装时采用，不叠加为首链前置。会话、MCP、结构化输出、上下文压缩与中断按准确Codex＋LiteLLM＋GLM组合验证后复用；不假定网关支持压缩或套用其他模型参数，摘要不代替原文。高级多Agent只在确有需求且授权继承成立时启用。"
+        },
+        {
+          "title": "结束、事件与运行控制",
+          "body": "进程退出、turn.completed、阶段候选seal、SAVE／READ与任务final分别成立。seal只锁定该revision，不暗改它或同key payload；原授权、期限和Host合同允许时，同session可吸收准确回执继续下一阶段。任务明确final后才不得暗起修补模型。原生结构化事件不代替业务回执；取消传播模型／工具，心跳独立文本，各层重试明确，原期限／实际资源不重置，无新轮数帽。"
+        }
+      ],
+      "ruleIds": [
+        "R02",
+        "R04",
+        "R05",
+        "R09"
+      ],
+      "boundary": "工具可发现不等于业务来源已获权，Host 始终保有主体与租户、来源与版本、期限与执行权、SAVE/CAS、正式采用和业务恢复的决定权。"
+    },
+    {
+      "id": "flow.check",
+      "title": "同源预检",
+      "subtitle": "权威规则及时反馈",
+      "owner": "Host 校验 / Native 反馈",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "准确候选按同源明确规则获得无写诊断；原任务未明确final时，可修问题回到当前未seal候选的Codex调查与修订。",
+      "originalNodeIds": [
+        "assessment.research"
+      ],
+      "input": [
+        "候选及 candidateDigest",
+        "准确规则版本与只读授权上下文"
+      ],
+      "output": [
+        "checkPhase / findings",
+        "持久化工具观察",
+        "接受或具体拒绝原因"
+      ],
+      "condition": "预检无业务试写，不预留写权；真正保存仍重核可变权限、期限、fence 和版本。",
+      "next": "先核 Review 共用校验闭包；已有无写校验可达则复用，必要时最小抽取，仅在运输确缺时定接缝。",
+      "details": [
+        {
+          "title": "活跃阶段",
+          "body": "真实可修诊断以工具结果回原任务，由Codex决定补查和修订；传输失败、取消、超时及撤权不能伪装成功观察。预检关联准确候选内容／hash与规则版本，候选改变后重新校验。"
+        },
+        {
+          "title": "任务明确final后",
+          "body": "任务明确终结后，只对原候选新鲜校验并接受或阻断，不暗起修补模型。阶段候选seal本身不等于任务final；该revision不可变，原合同允许且任务未终结时可合法形成下一阶段候选，不能伪造工具观察或暗改旧结果。"
+        },
+        {
+          "title": "预检权限",
+          "body": "复用同源明确规则与真实 DI；核实际调用闭包、锁/请求缓存和授权分支。不能以 SAVE 试写代替预检，也不能为去副作用而删授权。"
+        },
+        {
+          "title": "INITIAL 与 Review",
+          "body": "INITIAL 的预检与 Native 本地检查不替代 Host Review 的共享无写校验。复用准确服务闭包，不能以 SAVE、试写回滚或授权/CAS 预留冒充预检。"
+        },
+        {
+          "title": "同源schema与语义边界",
+          "body": "模型输出定义、客户端预检与Host最终校验的明确字段规则尽量同源，复用已有检查单成果；权威binding／full不进入模型。output-schema仅在准确组合验证后采用，结构接受不替代Host授权、事务或NOT_MACHINE_ASSESSED的工程语义。"
+        }
+      ],
+      "ruleIds": [
+        "R04",
+        "R05",
+        "R08",
+        "R09"
+      ],
+      "boundary": "当前候选未seal才可原位修订；阶段seal只锁定该revision。原任务未明确final且合同允许时可继续新阶段；任务final后只接受／阻断和原结果恢复，不暗起模型。"
+    },
+    {
+      "id": "flow.save",
+      "title": "原 SAVE",
+      "subtitle": "程序完成正式工作保存",
+      "owner": "Native 程序 / Host 原事务",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "新路径直接交接类型明确的候选，保留可信绑定、封存完整性与原幂等身份，通过原入口保存。",
+      "originalNodeIds": [
+        "assessment.research"
+      ],
+      "input": [
+        "通过最终检查的准确候选",
+        "原 payload、SAVE key、CAS / fence"
+      ],
+      "output": [
+        "权威保存回执",
+        "准确 work revision"
+      ],
+      "condition": "正式保存重新核身份、权限、来源、期限和版本；不新增保存通道。",
+      "next": "沿原 payload、SAVE key 和 expectedRevision 保存；结果未知时先核原请求并恢复原封存结果。",
+      "details": [
+        {
+          "title": "保存不等于其他阶段",
+          "body": "阶段SAVE不代表工程任务final或session结束，也不自动证明READ、Overall、终态／ACK、采用或实施。原授权、期限和Host合同允许时，准确SAVE／READ回执可交回同session继续下一阶段；是否需要新Host请求取决于合同与目标变化。COMPLETE_WITH_OPEN_QUESTIONS不自动隔离提交／投影，枚举沿原合同。"
+        },
+        {
+          "title": "保存不确定",
+          "body": "UNKNOWN／COMMITTING或回执丢失时先查原requestId／SAVE key，保留已seal payload；不换key、不暗改或重生成该封存结果，不清空旧pending。该结果核清后能否继续下一阶段仍按原授权和Host合同判断，不以恢复取得新写权。"
+        },
+        {
+          "title": "可信绑定与修订",
+          "body": "三个准确 ref 与五个 revision 按原合同核对；全空与部分缺失不同。显式 []、body-only、methodUsage 和 issuePatches 保持各自原语义，旧保存修订不回填当前定义。"
+        },
+        {
+          "title": "候选直接交接与旧reader",
+          "body": "优先移除final→合成chat.completion/tool_calls→candidate往返，同时核交付端与INITIAL／Review真实消费者；候选通道不强制改文本。模型只产领域内容，外封身份与可信binding由可信层提供，既有hash、原Provider字节和封存语义保留，不全局删除raw／hash；旧reader只读恢复原结果、不生成，内部包装不冒称厂商原响应。"
+        },
+        {
+          "title": "阶段继续与当前实现",
+          "body": "阶段A的seal／SAVE固定A，合同允许的阶段B按其合法幂等身份和CAS提交，不以恢复暗改A。READ结果已知、任务未final且当前授权／来源／有效owner-fence／原期限成立，才可同session接续。现有最终候选后接程序保存尾部不证明中途SAVE已接通，也不是永久禁止连续工作的规范。"
+        }
+      ],
+      "ruleIds": [
+        "R03",
+        "R08",
+        "R09"
+      ],
+      "boundary": ""
+    },
+    {
+      "id": "flow.read",
+      "title": "独立 READ",
+      "subtitle": "读取刚才保存的同一修订",
+      "owner": "Native 调用 / Host 历史 reader",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "独立读回原保存结果，核正文、三扩展和引用都与保存修订相符。",
+      "originalNodeIds": [
+        "assessment.research"
+      ],
+      "input": [
+        "原 SAVE key",
+        "准确 work revision"
+      ],
+      "output": [
+        "完整工作和读取观察",
+        "可直接阅读的工程成果"
+      ],
+      "condition": "不能用 SAVE 响应、latest 或旧基线替代独立 READ。",
+      "next": "按原 key 和准确 revision 独立 READ，核完整工作及原扩展；模型 view 不代替可信 full。",
+      "details": [
+        {
+          "title": "已保存工作立即可用",
+          "body": "工作阅读不等待 Overall。若综合失败，保留准确工作供工程师阅读，后续只恢复投影或收尾。"
+        },
+        {
+          "title": "历史修订",
+          "body": "历史 reader 按原修订的实际语义读回，不用新版默认值改写旧记录；工作级字段不能绕过原 Review scope。"
+        },
+        {
+          "title": "Review 采用哪个旧工作",
+          "body": "Review 以原合同规定的完整可信工作及准确修订为依据；模型可见投影与可信 full 各守边界。核对准确 ref/revision 与内容传播，不能用删减投影或当前内置定义重写旧修订。"
+        }
+      ],
+      "ruleIds": [
+        "R01",
+        "R03",
+        "R04",
+        "R08"
+      ],
+      "boundary": ""
+    },
+    {
+      "id": "flow.overall",
+      "title": "综合与收尾",
+      "subtitle": "同版投影，分别确认终态",
+      "owner": "Host / Native 消费者",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "用独立 READ 的准确工作形成确定性 Overall，再核原提交、attempt 与队列 ACK。",
+      "originalNodeIds": [
+        "assessment.overall"
+      ],
+      "input": [
+        "独立 READ 的准确修订",
+        "原请求、外层 fence 与收尾条件"
+      ],
+      "output": [
+        "同版 Overall",
+        "attempt 终态和 queue ACK 各自回执"
+      ],
+      "condition": "Program 链 Overall 不再调用模型；终态、ACK 与业务成功分别核对。",
+      "next": "用准确 READ 修订恢复同版综合，再分别处理原终态和外层 ACK。",
+      "details": [
+        {
+          "title": "失败后恢复哪里",
+          "body": "已 READ 未 Overall：恢复同版确定性投影；Overall 完成而 ACK 未完：只恢复原收尾。不能借 Review 专用入口制造新复核。"
+        },
+        {
+          "title": "新工作与旧综合",
+          "body": "旧 Overall 标出实际采用的修订及未纳入差额。晚到旧基线不能凭较晚保存时间覆盖新有效判断。"
+        }
+      ],
+      "ruleIds": [
+        "R03",
+        "R06",
+        "R08",
+        "R09"
+      ],
+      "boundary": ""
+    },
+    {
+      "id": "flow.surface",
+      "title": "阅读与工程师处理",
+      "subtitle": "展示成果、依据和下一步",
+      "owner": "页面 / 既有业务角色",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "工程师看到准确结果与限制，核对依据，并通过既有业务入口处理正式采用。",
+      "originalNodeIds": [
+        "surface.reading",
+        "knowledge.wiki"
+      ],
+      "input": [
+        "各自已保存的正文与事实",
+        "准确版本、范围、观察时间"
+      ],
+      "output": [
+        "同版可读成果",
+        "具体待补项与下一步"
+      ],
+      "condition": "页面刷新和图展开均只读；正式动作必须走既有受权入口。",
+      "next": "核工作、Overall 与来源跳转同版；未知、冲突和更新在途分别可见。",
+      "details": [
+        {
+          "title": "分列四种状态",
+          "body": "执行在做什么、成果哪些可读、依据覆盖多少、正式业务什么状态分别表达。不生成无定义的系统总完成率。"
+        },
+        {
+          "title": "知识复用",
+          "body": "知识库消费确切已保存成员和根来源；按真实归属组织 ATA4 / ATA2 / 机型，不强制每次三级模型综合。"
+        },
+        {
+          "title": "Wiki 维护",
+          "body": "读取不触发调度维护；已有显式入口需覆盖同一到期未领取预约从 due 筛选到 reconcile 的路径。"
+        },
+        {
+          "title": "搜索边界",
+          "body": "发现资格、exact 授权释放和索引时效分开；依法可读、撤权、准确版本和跨页合法命中分别验证。"
+        },
+        {
+          "title": "原生事件与同源进度",
+          "body": "从所选正式接口的结构化事件保留原标识、顺序和类型，只加必要任务关联；未知事件可诊断，进度文本、completed或进程退出不当作业务成功。页面由同一记录投影，刷新不派任务、不额外调用解释用模型，不要求或伪造隐藏推理。"
+        }
+      ],
+      "ruleIds": [
+        "R01",
+        "R03",
+        "R05",
+        "R10"
+      ],
+      "boundary": ""
+    }
+  ],
+  "edges": [
+    {
+      "id": "view.f01",
+      "from": "flow.input",
+      "to": "flow.analyse",
+      "label": "获准材料",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "original.research",
+        "reference.research"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f02",
+      "from": "flow.analyse",
+      "to": "flow.check",
+      "label": "提交候选",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [],
+      "note": "assessment.research 内部阶段，不新增业务 edgeId。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f03",
+      "from": "flow.check",
+      "to": "flow.analyse",
+      "label": "活跃阶段修订",
+      "kind": "feedback",
+      "status": "design",
+      "originalEdgeIds": [],
+      "note": "原任务未明确final，当前未seal候选可吸收真实诊断并修订；已seal revision不可暗改，任务final后只接受或阻断。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f04",
+      "from": "flow.check",
+      "to": "flow.save",
+      "label": "本阶段检查后保存",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [],
+      "note": "本阶段候选的新鲜检查与执行守卫成立；seal固定该revision，不要求每次SAVE都终结任务，预检不预留写权。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f05",
+      "from": "flow.save",
+      "to": "flow.read",
+      "label": "原 key / revision",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [],
+      "note": "使用原 SAVE key 和准确 work revision；未知结果先核原请求，不换 key 重生成。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f06",
+      "from": "flow.read",
+      "to": "flow.overall",
+      "label": "准确工作修订",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "research.overall"
+      ],
+      "note": "按原综合与收尾合同消费准确READ修订，不由READ自动宣布工程任务final或session结束。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f07",
+      "from": "flow.overall",
+      "to": "flow.surface",
+      "label": "同版综合",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading",
+        "execution.reading"
+      ],
+      "note": "已保存 Overall 可独立阅读，不等待 attempt 终态或 queue ACK。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f08",
+      "from": "flow.read",
+      "to": "flow.surface",
+      "label": "工作独立可读",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading",
+        "research.wiki"
+      ],
+      "note": "工作阅读不等待 Overall。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f09",
+      "from": "flow.input",
+      "to": "flow.surface",
+      "label": "原文直读",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading"
+      ],
+      "note": "原文无需先经过翻译、评估或审批。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.f10",
+      "from": "flow.read",
+      "to": "flow.analyse",
+      "label": "同上下文下一阶段",
+      "kind": "feedback",
+      "status": "design",
+      "originalEdgeIds": [],
+      "note": "assessment.research内部阶段展示，不增业务edgeId。仅原Host合同允许后续阶段、任务未明确final、SAVE结果已知且独立READ完成，当前授权／来源／有效owner-fence／原期限成立时继续；A封存不可改，B按其阶段合法幂等身份与CAS，不以恢复暗改A。此设计不声明中途SAVE已实现。",
+      "statusLabel": "合同允许的阶段接续"
+    }
+  ],
+  "systemNodes": [
+    {
+      "id": "system.source",
+      "title": "来源与原文",
+      "subtitle": "全部分析的准确依据",
+      "owner": "Host / 来源系统",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "登记原生身份和准确版本，提供可定位的原文、结构与引用。",
+      "originalNodeIds": [
+        "source.register",
+        "source.original"
+      ],
+      "input": "厂家/TDMS 文件、附件及原生记录",
+      "output": "DocumentVersion、解析修订、原文范围",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "先核实际原件与版本，再核真实消费者使用的内容。",
+      "details": [],
+      "ruleIds": [],
+      "boundary": ""
+    },
+    {
+      "id": "system.reading",
+      "title": "解读与翻译",
+      "subtitle": "帮助阅读，独立交付",
+      "owner": "文档处理程序 / 模型",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "解读概括主旨、条件和变化；翻译按语义块处理、检查并选用。",
+      "originalNodeIds": [
+        "document.reading",
+        "document.translation"
+      ],
+      "input": "准确原文与本次目标范围",
+      "output": "解读、可读译文与剩余限制",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "按需开展；全文翻译不作为工程分析前置，输入就绪时可独立或并行处理。",
+      "details": [],
+      "ruleIds": [],
+      "boundary": ""
+    },
+    {
+      "id": "system.applicability",
+      "title": "适用性",
+      "subtitle": "条件与目标匹配",
+      "owner": "Host 提供事实 / CLI 分析",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "明确适用、非适用、条件性结果或未知；缺构型只限制相关判断。",
+      "originalNodeIds": [
+        "assessment.applicability"
+      ],
+      "input": "文件条件、目标范围、必要构型事实",
+      "output": "适用性结论、理由、例外和待核条件",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "只在具体判断依赖它时接入，不形成全部分析的统一阻塞。",
+      "details": [],
+      "ruleIds": [],
+      "boundary": ""
+    },
+    {
+      "id": "system.analysis",
+      "title": "工程分析",
+      "subtitle": "分析、预检、保存与读回",
+      "owner": "Codex 核心 / LiteLLM / Native / Host",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "Codex围绕工程问题自主规划、读取、比较和修订；LiteLLM通用适配，Native最小可信接线，Host原SAVE与独立READ形成可接续工作。",
+      "originalNodeIds": [
+        "assessment.research"
+      ],
+      "input": "原文、方法、相关事实和既有工作",
+      "output": "有依据的工作、检查结果、方法用途与未决问题",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "按原获权任务推进分析；在同源诊断、原保存和独立读回中保留准确绑定。",
+      "details": [
+        {
+          "title": "任务内控制",
+          "body": "Codex持任务内模型／工具循环、会话、经实际组合验证的上下文与原生事件；LiteLLM作通用模型协议转换并沿既定妙搭GLM／官方Hosted profile。Native只管获权启动、受限领域工具、运行控制和原业务尾部。Host保有任务、主体／租户、来源／版本、SAVE/CAS/fence、READ、确定性Overall与正式采用权威。"
+        },
+        {
+          "title": "Review 分支",
+          "body": "已由Codex驱动的新INITIAL／Review循环直接复用；INITIAL、Review、CHAT/UPDATE与ordinary／isolated业务语义保留，不将耦合INITIAL输入的整套session当Review接口，不按文件名整删领域工具，不暗退旧生成核心。契约不声称所有旧Matter或其他域已经迁移。"
+        }
+      ],
+      "ruleIds": [],
+      "boundary": "会话、工具发现与协议适配不授业务权。阶段seal／SAVE不等于任务final；合同允许时同session可继续，任务明确终结后才禁止暗起修补模型，旧revision及同key payload不变。"
+    },
+    {
+      "id": "system.facts",
+      "title": "公司与机队事实",
+      "subtitle": "批准、落实、实际观察",
+      "owner": "TDMS / AEO / LCM",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "保留原系统身份、版本、时间和状态；事实既可直接阅读，也可按问题用于分析。",
+      "originalNodeIds": [
+        "business.company_records",
+        "business.aeo_execution",
+        "business.software_configuration"
+      ],
+      "input": "批准记录、工程文件、单机反馈、LCM 观察",
+      "output": "公司安排、落实状态、单机表与构型矩阵",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "区分允许、要求、计划、观察、反馈和落实，不互相替代。",
+      "details": [],
+      "ruleIds": [],
+      "boundary": ""
+    },
+    {
+      "id": "system.overall",
+      "title": "综合建议",
+      "subtitle": "同版确定性投影",
+      "owner": "Host",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "Program 链消费独立 READ 的准确工作修订，整理共同前提、冲突、措施和限制。",
+      "originalNodeIds": [
+        "assessment.overall"
+      ],
+      "input": "准确工作修订及实际采用事实",
+      "output": "Overall 及其准确输入集合",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "消费独立 READ 的准确工作修订，分别核对综合、原终态和外层 ACK。",
+      "details": [],
+      "ruleIds": [],
+      "boundary": ""
+    },
+    {
+      "id": "system.surface",
+      "title": "成果阅读与知识",
+      "subtitle": "工程师先看结果和依据",
+      "owner": "页面 / 知识处理",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "原文、解读、工作、综合、知识和事实分别可读；知识按真实成员关系组织。",
+      "originalNodeIds": [
+        "surface.reading",
+        "knowledge.wiki"
+      ],
+      "input": "已保存成果、事实与执行投影",
+      "output": "同版阅读、来源跳转、具体限制与下一步",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "工作不等 Overall；图和页面只读，不自动派发或采用。",
+      "details": [
+        {
+          "title": "Wiki 显式维护",
+          "body": "页面读取不触发调度维护；复用已有显式入口，核同一到期未领取 active 预约能否经过 due 筛选进入 reconcile，并保持原身份、锁后重读、已存结果优先和 backoff。"
+        },
+        {
+          "title": "搜索资格与释放",
+          "body": "可发现资格、exact 授权释放和索引时效分别判断。当前主体依法可读的其他创建者工作可进入 exact 核权；无权或撤权不释放，准确版本与跨页合法命中分别核对。"
+        }
+      ],
+      "ruleIds": [],
+      "boundary": ""
+    },
+    {
+      "id": "system.adoption",
+      "title": "正式业务动作",
+      "subtitle": "既有受权入口",
+      "owner": "有权业务角色 / 原系统",
+      "status": "design",
+      "statusLabel": "契约要求",
+      "summary": "工程师按既有流程采用或提交；批准、发布和实施由真实业务记录确认。",
+      "originalNodeIds": [
+        "business.adoption"
+      ],
+      "input": "准确候选、业务对象与原有前置",
+      "output": "原动作回执及正式记录",
+      "condition": "只连接本轮实际需要、获权且已有足够输入的消费者。",
+      "next": "保留现有流程；不因候选通过或 SAVE 成功自动批准。",
+      "details": [],
+      "ruleIds": [],
+      "boundary": ""
+    }
+  ],
+  "systemEdges": [
+    {
+      "id": "view.s01",
+      "from": "system.source",
+      "to": "system.reading",
+      "label": "原文",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "original.reading",
+        "original.translation"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s02",
+      "from": "system.source",
+      "to": "system.analysis",
+      "label": "直接分析",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "original.research"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s03",
+      "from": "system.source",
+      "to": "system.applicability",
+      "label": "文件条件",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "original.applicability"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s04",
+      "from": "system.applicability",
+      "to": "system.analysis",
+      "label": "按需采用",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "applicability.research"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s05",
+      "from": "system.facts",
+      "to": "system.analysis",
+      "label": "按需事实",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "company.research",
+        "feedback.research",
+        "configuration.research"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s06",
+      "from": "system.analysis",
+      "to": "system.overall",
+      "label": "SAVE → 独立 READ",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "research.overall"
+      ],
+      "note": "沿原 SAVE key 和准确 revision 独立 READ；保存不代替读取或综合。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s07",
+      "from": "system.analysis",
+      "to": "system.surface",
+      "label": "工作独立阅读",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading",
+        "research.wiki"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s08",
+      "from": "system.overall",
+      "to": "system.surface",
+      "label": "综合阅读",
+      "kind": "main",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading",
+        "overall.wiki"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s09",
+      "from": "system.reading",
+      "to": "system.surface",
+      "label": "读译成果",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading",
+        "reading.wiki"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s10",
+      "from": "system.source",
+      "to": "system.surface",
+      "label": "原文直读",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s11",
+      "from": "system.facts",
+      "to": "system.surface",
+      "label": "事实直读",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "artifact.reading"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s12",
+      "from": "system.analysis",
+      "to": "system.adoption",
+      "label": "显式受权动作",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "candidate.adoption"
+      ],
+      "note": "可使用原动作要求的工作或综合候选；不是保存后自动执行。",
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "view.s13",
+      "from": "system.adoption",
+      "to": "system.facts",
+      "label": "真实批准/发布记录",
+      "kind": "branch",
+      "status": "design",
+      "originalEdgeIds": [
+        "adoption.company"
+      ],
+      "note": "",
+      "statusLabel": "契约要求"
+    }
+  ],
+  "work": [
+    {
+      "id": "W1",
+      "title": "执行核心：复用Codex循环与最小可信接线",
+      "status": "design",
+      "statusLabel": "复用既有循环，核真实差额",
+      "owner": "原唯一 Native 作者；原主控接收并按现有文件归属协调",
+      "deliverable": "保留Codex＋LiteLLM＋Host与完整Agent循环；已符合的新INITIAL／Review路径直接复用。Codex管规划、模型／工具往返、上下文和原生事件；LiteLLM作通用协议适配；Native保留任务接入、领域工具、运行控制和原保存恢复接线。Host授权和业务权威不外移，不重建第二Agent核心。",
+      "doneWhen": [
+        "N01／N02／N14：准确调用链证明新任务由同一Codex核心推进并吸收工具反馈；当前沿exec --json选择单一正式接口，SDK／App Server仅替换对应封装。INITIAL、Review、CHAT/UPDATE、ordinary／isolated及领域查询／交付／引用资格保留，旧新任务入口与隐藏fallback按可达性退出，不按session文件名删业务。",
+        "N04／N13／N23：稳定指令／Skill、动态必要输入与按需材料分层；标准MCP优先原生客户端与既有SDK，可信身份注入、Host ACL和最小工具范围保留。平台密钥不进模型可读目录，沙箱与软件审批不替代正式业务授权，不新增重复人工确认。",
+        "N03／N06／N07／N08：持久session／thread显式绑定Host请求、attempt、有效owner和已验证隔离目录；长上下文压缩、合法接续及必要Skill只在固定模型组合验证后采用。无恢复需求可ephemeral，会话缺失不静默新建、不用--last猜目标、不假定不存在的turn字段；高级多Agent按需，不是首链前置。当前单Worker准入与每请求单owner保持，子任务无独立SAVE／FINISH权，不默认开启全部内置工具或子Agent。会话接续不授新写权、不清空旧pending；阶段SAVE不终结session，原授权／期限／Host合同允许才可吸收准确回执继续，不能把未实现能力写成已接通。",
+        "N11：保留所选接口原生事件的标识、顺序和类型，只加任务关联；工具开始／结果／错误／取消可追溯，未知事件可诊断。自然语言、退出码或completed不当机器业务状态，页面读取不派任务、不另调解释模型，也不伪造隐藏推理。",
+        "N19／N20：通用模型协议由LiteLLM负责，Native仅保留已证需要的鉴权、身份、期限和准确版本兼容保护；保护有回归证据才退出。流式第二批分段验证进度、完整工具数据、背压／取消及断流；半截JSON不执行，未核终态不封存成功，必要缓冲可保留。",
+        "N21／N22：原生取消传播到实际模型／MCP／LiteLLM，心跳独立文本，进程监管只作兜底；绝对期限、租约、请求／流空闲超时分别配置。明确各层重试，避免相乘；逻辑步骤、模型请求、HTTP尝试与usage分别记录，未知不填0；不重置原期限／实际资源约束，不新增人为模型／工具次数帽。取消不代表外部在途写入已回滚，仍核原结果并承担对账义务。"
+      ],
+      "next": "先核首链真实BEGIN／SAVE断点与准确新路径，复用既有Codex循环和标准事件；原Native唯一作者只补真实差额。session／context／stream逐接缝验证；有明确净删减收益才替换正式入口，不叠加SDK／App Server或另起平行框架。",
+      "refs": [
+        "flow.analyse",
+        "system.analysis",
+        "R08",
+        "R09"
+      ]
+    },
+    {
+      "id": "W2",
+      "title": "Review 诊断：共享无写校验",
+      "status": "design",
+      "statusLabel": "核心迁移内部接缝",
+      "owner": "原 Host 作者定共享校验合同；原 Native 作者接回活跃核心",
+      "deliverable": "复用准确Review共享无写闭包与同源检查单；明确字段schema、客户端预检和Host最终校验尽量同源。缺运输才最小接线，原任务未明确final时，真实可修诊断回当前未seal候选；阶段seal不自动结束任务。",
+      "doneWhen": [
+        "N05：真实DI／调用闭包与受影响验证证明无业务写；不以SAVE、试写回滚、授权或CAS预留冒充预检。INITIAL的validate_assessment_work与Native本地validateCandidate不替代Host Review共享校验；fatal、取消和撤权不伪装成可继续成功观察。",
+        "N16：模型输出schema、客户端预检与Host校验去掉手写副本并消费同源明确规则；可信binding／full、身份、权限、来源与事务仍独立核验。结构接受不等于工程正确，任意语义保持NOT_MACHINE_ASSESSED。",
+        "N17：诊断绑定准确候选内容／hash与校验版本，A变B须重验；seal只锁定该revision，不暗规范化或同key换payload。原任务未final且合同允许时可形成下一阶段候选；任务明确final后的拒绝不复活模型。SAVE仍在原事务重核可变条件。"
+      ],
+      "next": "只补共享无写校验与真实反馈中的差额，核未seal候选修订、同候选复验、阶段不可变和任务final阻断；已有实现复用，不另起架构改造或首链总门槛。",
+      "refs": [
+        "flow.check",
+        "flow.analyse",
+        "flow.save",
+        "R01",
+        "R04",
+        "R09"
+      ]
+    },
+    {
+      "id": "W3",
+      "title": "候选与可信full：直接交接、原结果恢复",
+      "status": "design",
+      "statusLabel": "复用原接收结果",
+      "owner": "原 Native 交付链及原接收者；Host 物化仍由原 Host 作者维护",
+      "deliverable": "第一批优先评估类型明确候选直接交接，去掉新路径合成Chat Completion往返，同时核交付端与INITIAL／Review两消费者。可信full、模型view、控制binding、既有hash和封存语义各守原边界；旧封存结果继续原reader，原准确接收结果直接复用，不重复首修。",
+      "doneWhen": [
+        "N15：新结果不再final→合成chat.completion/tool_calls→candidate，现有候选通道可保留。模型只产领域候选，外封身份／来源／期限／完整性由可信层提供；原Provider响应字节及未知结果记录保留，不全局删raw／hash。旧reader只读恢复原封存结果、零新生成，内部包装不冒称厂商原响应；output-schema须经准确Codex＋LiteLLM＋GLM组合验证，仍不替代Host校验。",
+        "三个准确ref与五个revision沿原合同逐项核同；全空与部分缺失不混同，旧任务／保存修订不回填当前内置定义。",
+        "ordinary／isolated、内部hook、body-only保留、显式[]覆盖、methodUsage和issuePatches在输入、投影、patch、保存和读取间贯通；模型view不带full／租户／lease，模型改动不覆盖权威binding。",
+        "N09／N10：先核Host原请求和结果，再判准确session合法接续；不授新写权、不清空旧pending，传输UNKNOWN与写入UNKNOWN分开对账。阶段SAVE／READ不等于任务final，原授权／期限／合同允许时同session继续下一阶段；阶段A不可暗改，B按其合法幂等身份／CAS。任务明确final才禁止暗起修补模型，旧reader只恢复原结果、不重生成该结果。",
+        "N12／N18：Codex轨迹、必要输入绑定／工具交付／候选／提交回执各有用途，去重不删恢复必需写前记录。SDK拒绝、Host拒绝、取消、超时、未知结果及诊断落盘失败分别保留；BEGIN未完整返回可关联原请求但不伪造attempt，不凭时间形态猜根因。取消不等于外部在途写入已回滚，仍核原结果。"
+      ],
+      "next": "首链实际断点优先；第一批由原Native作者同时核候选交付端与两消费者，保留可信完整性、原业务尾部和安全诊断。按准确接收与受影响恢复证据核差额，交付声明不当作源码已接收、安装或业务通过。",
+      "refs": [
+        "flow.input",
+        "flow.analyse",
+        "flow.save",
+        "flow.read",
+        "R04",
+        "R08"
+      ]
+    },
+    {
+      "id": "W4",
+      "title": "Wiki：读取与显式维护分开",
+      "status": "design",
+      "statusLabel": "保留 R01",
+      "owner": "原 Wiki / Host 生命周期唯一作者，主控沿既有文件归属绑定",
+      "deliverable": "页面 GET 退出调度维护，维护回到已有显式入口。先核同一到期、未领取的 active 预约是否在 reconcile 之前被 due 候选过滤掉；覆盖成立便复用，不足只补原显式路径中的同一维护闭包。",
+      "doneWhen": [
+        "页面读取无调度维护写；自动把 GET 换成 POST 仍不能满足只读边界。",
+        "同一预约能经过既有显式入口的 due 筛选到达 reconcile，并正确收敛；源码存在 next 维护不自动证明该覆盖或生产触发已成立。",
+        "owner/request/principal、锁后重读、已保存结果优先、active 换代和 backoff 保持；不新增扫描器、队列或调度器，不因此启用 C136。"
+      ],
+      "next": "核原显式链的候选可达性与同一维护闭包，只补实际缺口；按本接缝依赖接续，不成为首条 RC1 业务的总前置。",
+      "refs": [
+        "system.surface",
+        "flow.surface",
+        "R01",
+        "R06",
+        "R08"
+      ]
+    },
+    {
+      "id": "W5",
+      "title": "搜索：发现、授权与时效分层",
+      "status": "design",
+      "statusLabel": "准确授权释放",
+      "owner": "原搜索 / 共享读取唯一作者，主控沿既有文件归属绑定",
+      "deliverable": "fallback 允许他人创建但当前主体依法可读的工作进入后续 exact 核权。发现资格、结果授权释放和索引时效分别判断，保留 tenant、RLS、来源 ACL、准确 revision 与撤权保护。",
+      "doneWhen": [
+        "两条搜索路径以同一已入索引语料、同一主体及权限时点和等价过滤条件比较合法发现资格与结果释放。",
+        "双主体合法发现；无权和撤权不释放；exact 版本正确；跨页后合法命中不被隐藏总量上限截断。",
+        "排序、分页边界和索引迟到另列，不要求任意时刻响应字节相同。安全开关可用于定位运行影响，不是静态修订前置，也不能掩盖差异。"
+      ],
+      "next": "只核发现资格和 exact 授权释放的实际差额，复用共享读取保护；索引维护按原路径处理，不将本项自动前置于首条 RC1 业务。",
+      "refs": [
+        "system.surface",
+        "flow.surface",
+        "R01",
+        "R04",
+        "R09"
+      ]
+    },
+    {
+      "id": "W6",
+      "title": "交付：按接缝和准确组合接续",
+      "status": "design",
+      "statusLabel": "统一顺序与范围",
+      "owner": "原主控、各接缝唯一作者及原接收者；工程师判断成果内容与采用",
+      "deliverable": "准确Codex原生能力复用为最高优先级，首链实际BEGIN／SAVE断点优先处理。第一批不换exec接口，优先N15候选包装去重并核新CODEX可达路径，复用既有循环、同源预检、原生事件和安全诊断；第二批逐一验证持久session／合法恢复、原合同允许的同session阶段保存接续、context与stream；第三批仅有明确净删减收益才以SDK或App Server替换对应封装。此卡组织原五处接缝，不新增框架或派工数量。",
+      "doneWhen": [
+        "N24：所选接口及准确Codex／LiteLLM／SDK／模型Profile／Native／Host组合、删除对象、保留职责、最小缺口和退出条件复用原开发记录。实现、离线验证、目标部署和真实业务验收分别有范围与回执；源码已符合的条款不重写，文稿交付不升格安装，未启用能力不伪称已运行。",
+        "同一新获权任务的材料、候选、原 SAVE、独立 READ、同版 Overall、终态/ACK 及原页面阅读对应；准确引用仍需正文真正吸收材料与方法，未知和冲突可复核。",
+        "只补本次 diff 受影响的正反例；Wiki/search、展示语义、构型事件及后置接入按真实依赖，不作为首条 RC1 的总门槛；不重开全范围审查、不恢复暂停/取消项。"
+      ],
+      "next": "由原唯一作者最小diff、原接收者验证准确组合，再按既有授权接续对应部署／业务；高级多Agent、SDK／App Server和其他支线不前置。新增权限、凭据、业务对象、不可恢复删除或超范围运行才核原批准，不新增普通去重审批层。",
+      "refs": [
+        "flow.input",
+        "flow.save",
+        "flow.read",
+        "flow.overall",
+        "flow.surface",
+        "R03",
+        "R05",
+        "R10"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "id": "R01",
+      "title": "成果独立可读",
+      "body": "原文、译文、工作、综合、知识和事实分别交付；页面与图仅只读展示，不触发领取、生成或采用。"
+    },
+    {
+      "id": "R02",
+      "title": "工程判断使用准确原文",
+      "body": "分析使用准确原文和原始记录；翻译、摘要、Skill、目录可见和计划读取不替代真实取证或授予引用资格。方法引用、实际应用与处置义务分别表达。"
+    },
+    {
+      "id": "R03",
+      "title": "分支保存、阶段分验",
+      "body": "阶段候选seal、SAVE、READ、turn结束、任务明确final、Overall、终态／ACK、采用与实施分别成立。阶段seal只锁定该revision，合同允许时同session可继续；局部失败保留有效成果，进程或HTTP成功不代业务回执。"
+    },
+    {
+      "id": "R04",
+      "title": "固定基线，按需取证",
+      "body": "Host封存任务基线；原目标与权限内可补查并登记真实交付、读取和引用。工具及明确字段schema同源，预检绑定准确候选与规则版本，候选变化后重验；保存仍核可变权限、来源与事务条件。"
+    },
+    {
+      "id": "R05",
+      "title": "机器接受与工程质量分开",
+      "body": "机器核明确字段、身份和事务规则；结构化输出、沙箱和schema不替代Host授权与工程语义。任意语义充分性为NOT_MACHINE_ASSESSED，执行、成果、依据覆盖与正式业务分列。"
+    },
+    {
+      "id": "R06",
+      "title": "按实际影响更新",
+      "body": "匹配已消费引用与已登记待补条件，只处理受影响判断；普通事实刷新不自动重跑模型。"
+    },
+    {
+      "id": "R07",
+      "title": "就绪与资源分开",
+      "body": "必需输入、权限、资源分别判断。独立工作可并行；共享写入用既有短事务/CAS；首单可靠前不扩 worker。"
+    },
+    {
+      "id": "R08",
+      "title": "复用原结果恢复",
+      "body": "先核Host原请求、有效owner、权限／来源和原结果，再合法接续显式session，不用--last猜身份。已存先READ，UNKNOWN／COMMITTING先对账，不换key或暗改已seal payload，不清pending、不授新写权；合同允许的阶段继续不等于重生成旧结果，任务明确final后不暗起修补模型。"
+    },
+    {
+      "id": "R09",
+      "title": "每个请求责任明确",
+      "body": "Codex持任务内自主规划、模型／工具循环、会话与原生事件；LiteLLM作通用适配，Native作可信任务／领域工具／运行与原结果接线，Host持业务真值，每请求一个有效owner。优先原生正式接口，不建第二核心；取消与各层重试责任明确，原期限、租约和已获准实际资源策略不重置，不新增人为模型／工具次数上限。"
+    },
+    {
+      "id": "R10",
+      "title": "图、契约与证据同源",
+      "body": "图只投影既有职责，不持第二业务状态。所选接口／准确版本、缺口／最小适配及退出条件复用原开发记录；设计、实现、离线、部署与业务回执分层，来源保留原时点，编号／测试数／删减行数不作完成率。"
+    }
+  ],
+  "branches": [
+    {
+      "id": "topic.source",
+      "title": "TDMS 原文与来源",
+      "summary": "原件、元数据与批准记录分别接入。",
+      "status": "design",
+      "details": "PDF 元数据或下载链接可见，不等于原件已取得。保留原生记录、附件版本、有效性及获取回执；文件改版、同版更正、解析修复和位置移动分别处理。原文可直接阅读，不需要先有评估或批准。",
+      "originalNodeIds": [
+        "source.register",
+        "source.original"
+      ],
+      "ruleIds": [
+        "R01",
+        "R02",
+        "R04"
+      ],
+      "scenarioIds": [
+        "V15",
+        "V17",
+        "V43",
+        "V44"
+      ],
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "topic.translation",
+      "title": "解读与翻译",
+      "summary": "先交付可用范围，已存块优先复用。",
+      "status": "design",
+      "details": "按语义块计划生成、保存、检查和选用，数字、单位、引用和遗漏可确定性检查；不强制每块第二次模型调用。未决原请求先核对，失败只处理相关范围。文字覆盖、图表处理与可读范围分别表达。全文翻译不是工程分析前置。",
+      "originalNodeIds": [
+        "document.reading",
+        "document.translation"
+      ],
+      "ruleIds": [
+        "R01",
+        "R02",
+        "R03",
+        "R08"
+      ],
+      "scenarioIds": [
+        "V01",
+        "V02",
+        "V04",
+        "V05",
+        "V06",
+        "V07",
+        "V49"
+      ],
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "topic.applicability",
+      "title": "适用性与未决问题",
+      "summary": "未知只限制它实际影响的判断。",
+      "status": "design",
+      "details": "文件条件和目标匹配分开，缺构型不等于不适用。未决项保留稳定引用、影响范围和等待条件，条件到达后续接有关判断；执行结束不自动关闭工程问题。",
+      "originalNodeIds": [
+        "assessment.applicability",
+        "assessment.research"
+      ],
+      "ruleIds": [
+        "R04",
+        "R05",
+        "R06"
+      ],
+      "scenarioIds": [
+        "V03",
+        "V14",
+        "V34",
+        "V45",
+        "V48"
+      ],
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "topic.company",
+      "title": "公司批准意见",
+      "summary": "采用原系统准确状态与专业范围。",
+      "status": "design",
+      "details": "沿用 ENGINEER_ASSESSMENT 的 isEstimatedState：rawName=Estimated，且 rawCode=Estimated 或未暴露；缺状态、Estimating 或冲突 rawCode 保持未知。引用真实 sourceRevisionRef。多专业、条件、多个有效评估单及修订关系保留；草稿不覆盖旧批准意见，不增加第三方有效性证明。",
+      "originalNodeIds": [
+        "business.company_records"
+      ],
+      "ruleIds": [
+        "R04",
+        "R05",
+        "R09"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V53"
+      ],
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "topic.aeo",
+      "title": "AEO 落实",
+      "summary": "按原要求、版本和单机范围统计。",
+      "status": "design",
+      "details": "区分缺反馈、未完成、完成和冲突。一条单机反馈不代表所有要求完成；更正和取代按原生关系处理。执行、反馈、同步时间分别保留。分母未知不造全量百分比；普通反馈刷新统计，实际异常才影响相关调查。LCM 符合不代替执行反馈。",
+      "originalNodeIds": [
+        "business.aeo_execution"
+      ],
+      "ruleIds": [
+        "R05",
+        "R06",
+        "R09"
+      ],
+      "scenarioIds": [
+        "V21",
+        "V22",
+        "V23",
+        "V35",
+        "V36",
+        "V42",
+        "V54"
+      ],
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "topic.lcm",
+      "title": "LCM 软件构型",
+      "summary": "单机表 + 软件构型矩阵。",
+      "status": "design",
+      "details": "按正式软件名称和原生标识归组，展开 PN 与单机/位置，按飞机去重，不增加构型全景或快照差异页。允许、要求、计划、观察、反馈和落实分别表达。空白/未导出不是未装；晚导入旧观察不覆盖新事实。保留准确位置、时点、原值、覆盖和冲突。",
+      "originalNodeIds": [
+        "business.software_configuration"
+      ],
+      "ruleIds": [
+        "R04",
+        "R05",
+        "R06"
+      ],
+      "scenarioIds": [
+        "V31",
+        "V32",
+        "V33",
+        "V34",
+        "V35",
+        "V36",
+        "V37",
+        "V38",
+        "V39",
+        "V40",
+        "V41",
+        "V42"
+      ],
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "topic.knowledge",
+      "title": "分层知识库",
+      "summary": "复用已存成果，按实际价值综合。",
+      "status": "design",
+      "details": "文档/事项、ATA4、ATA2、机型按真实归属组织；父层消费准确子层和根来源。同源材料不重复计权；不强制每次三级模型生成。缺一项依赖不隐藏其他可读内容；相同缺项不循环生成，产物含义没变则停止无价值传播。 页面读取不调度维护；到期未领取预约沿已有显式入口由 due 筛选进入 reconcile。搜索的发现资格、授权释放与索引时效分别判断。",
+      "originalNodeIds": [
+        "knowledge.wiki",
+        "surface.reading"
+      ],
+      "ruleIds": [
+        "R01",
+        "R03",
+        "R06"
+      ],
+      "scenarioIds": [
+        "V12",
+        "V13",
+        "V18",
+        "V19",
+        "V20",
+        "V26",
+        "V28",
+        "V57"
+      ],
+      "statusLabel": "契约要求"
+    },
+    {
+      "id": "topic.adoption",
+      "title": "正式采用与实施",
+      "summary": "沿既有业务入口，由真实记录确认。",
+      "status": "design",
+      "details": "读取候选不产生正式动作；提交、批准、颁发和实施分别按原系统回执确认。不增加技术性审批步骤。保存工作、Overall 或 ANSWERED 不证明现实措施已经落实；模型建议不能制造批准事实。",
+      "originalNodeIds": [
+        "business.adoption"
+      ],
+      "ruleIds": [
+        "R03",
+        "R05",
+        "R09"
+      ],
+      "scenarioIds": [
+        "V24",
+        "V25",
+        "V53",
+        "V54"
+      ],
+      "statusLabel": "契约要求"
+    }
+  ],
+  "sources": [
+    {
+      "id": "user-native-codex-candidate",
+      "name": "用户附件 · Codex原生能力复用与图契约修订候选",
+      "date": "2026-10-29",
+      "note": "N01—N24及十条约束的直接来源，已合入原章节与W1／W2／W3／W6。性质为设计候选，经本轮合并形成现行职责要求，不代表产品已实现／安装。",
+      "locator": "WiseLink_Native_Codex复用与图契约修订候选_20261029.md §1—§10"
+    },
+    {
+      "id": "current-agent-share",
+      "name": "本次分享与最新直接Goal",
+      "date": "2026-10-29",
+      "note": "保留Codex＋LiteLLM＋Host与完整Agent循环；条件性DSH替换建议不采纳。分享本身不是N01—N24原文，24项来自用户附件。",
+      "locator": "https://chatgpt.com/share/6ae2adf4-b884-83e8-a07b-264a0eaa083d"
+    },
+    {
+      "id": "author-share",
+      "name": "原作者分享 · 增量11正文",
+      "date": "2026-10-27",
+      "note": "本地维护采用已核作者正文；尚未取得该次 Library 附件完整原字节。"
+    },
+    {
+      "id": "v111-layout",
+      "name": "原 v1.11 轻量图结构",
+      "date": "2026-10-27",
+      "note": "复用本地留存页面的布局、两张图及交互；其旧运行状态不作为当前事实。"
+    },
+    {
+      "id": "v110-reference",
+      "name": "v1.10 规范目录",
+      "date": "2026-10-27",
+      "note": "13 个节点、47 条关系、58 场景和10条规则按需读取；数量不是完成率。"
+    },
+    {
+      "id": "historical-verification",
+      "name": "独立历史验证入口",
+      "note": "原验证页及证据保留原观察时点，不因新图生成而改变。"
+    }
+  ],
+  "history": [],
+  "changelog": [
+    "页面沿用原 v1.11 轻量图的布局、导航、节点和连线交互。",
+    "本地依据已核增量11正文接续五处接缝；六张方案卡为本地整理，非原附件逐字卡。",
+    "原 v1.10 规范目录与历史验证记录分别保留，图中的契约要求不推断当前实现状态。"
+  ],
+  "ruleGroups": [
+    {
+      "title": "成果独立交付，阶段分别成立",
+      "ruleIds": [
+        "R01",
+        "R03"
+      ]
+    },
+    {
+      "title": "准确原文与真实取证",
+      "ruleIds": [
+        "R02",
+        "R04"
+      ]
+    },
+    {
+      "title": "工程质量与机器规则分开",
+      "ruleIds": [
+        "R05"
+      ]
+    },
+    {
+      "title": "只更新实际影响范围",
+      "ruleIds": [
+        "R06"
+      ]
+    },
+    {
+      "title": "就绪与资源分开",
+      "ruleIds": [
+        "R07"
+      ]
+    },
+    {
+      "title": "恢复复用原结果",
+      "ruleIds": [
+        "R08"
+      ]
+    },
+    {
+      "title": "请求责任与运行边界明确",
+      "ruleIds": [
+        "R09"
+      ]
+    },
+    {
+      "title": "图与证据同源",
+      "ruleIds": [
+        "R10"
+      ]
+    }
+  ],
+  "statePolicy": {
+    "authority": "设计图不持有任务状态、业务真值或正式采用权。",
+    "principle": "设计、实现、离线验证、目标部署与真实业务验收分层；复用准确原证据，不把未启用的原生能力、交付声明或契约要求写成运行事实。"
+  },
+  "catalogCounts": {
+    "nodes": 13,
+    "edges": 47,
+    "scenarios": 58,
+    "rules": 10,
+    "rc1Seams": 8
+  },
+  "formatVersion": "wiselink.graph-navigation/1"
+}

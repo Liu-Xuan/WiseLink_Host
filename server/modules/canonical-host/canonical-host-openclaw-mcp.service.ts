@@ -954,7 +954,7 @@ export class CanonicalHostOpenClawMcpService {
       {
         title: '提交评审轮次候选响应',
         description:
-          '仅接收 bundled validator 生成的 canonical resultJson，并按 exact attempt、lease token/generation 与完整 versioned ResultEnvelope fail-closed 校验 provenance/SourceRef/item allowlists。外层 ResultEnvelope.sourceRefs 只能是 TaskEnvelope.sourceRefs 中的 artifact {ref,sha256}；已读取的 sourceRefId 只能放在 modelOutput 内层 Review candidate.sourceRefs，严禁混用。只追加 ReviewTurn assistant response、candidateEvidence 与 ReviewActionDraft 候选；绝不执行 ReviewAction 或修改 WorkItem revision/current/STALE。',
+          '仅接收 bundled validator 生成的 canonical resultJson，并按 exact attempt、lease token/generation 与完整 versioned ResultEnvelope fail-closed 校验 provenance/SourceRef/item allowlists。外层 ResultEnvelope.sourceRefs 只能是 TaskEnvelope.sourceRefs 中的 artifact {ref,sha256}；已读取的 sourceRefId 只能放在 modelOutput 内层 Review candidate.sourceRefs，严禁混用。保存 ReviewTurn 助手响应及允许的候选；CHAT 不写评估工作。获准 UPDATE_ASSESSMENT 可保存 JobAid 或事项工作修订；JobAid 合法无变更更新保留原修订，新修订按既有条件将旧 Overall 标记 STALE 并清除相关 AEO 候选投影。提交成功不等于工作已更新，分别核对提交状态、工作更新回执与失效标记；错误或未知结果按原请求核查。不执行 ReviewAction，不正式采用工程结论或批准放行。',
         inputSchema: reviewCommitInput,
         annotations: commitAnnotations,
       },
