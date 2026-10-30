@@ -365,6 +365,35 @@ export async function createDevelopmentWorkItem(
   }
 }
 
+/** Explicit native-browser intake; Host owns canonical identities and model choices. */
+export async function createCanonicalWorkItem(
+  input: { documentVersionId: string },
+  signal?: AbortSignal,
+): Promise<CanonicalOrdinaryWorkItemRunResponse> {
+  const requestGeneration = clientSessionGeneration;
+  try {
+    const response = await axiosForBackend<CanonicalOrdinaryWorkItemRunResponse>({
+      url: '/api/canonical-host/work-items/parse-pdf',
+      method: 'POST',
+      data: { documentVersionId: input.documentVersionId },
+      signal,
+    });
+    if (response.status === 401)
+      throw Object.assign(clientLoginRequired('CANONICAL_WORK_ITEM_CREATE_LOGIN_REQUIRED', requestGeneration),
+        { statusCode: 401 });
+    if (response.status === 403 || response.status === 404)
+      throw canonicalObjectAccessError(response.data, response.status);
+    if (response.status < 200 || response.status >= 300)
+      throw backendResponseError(response.data, 'CANONICAL_WORK_ITEM_CREATE_UNCONFIRMED', response.status);
+    return response.data;
+  } catch (reason: unknown) {
+    if (responseStatus(reason) === 401)
+      throw Object.assign(clientLoginRequired('CANONICAL_WORK_ITEM_CREATE_LOGIN_REQUIRED', requestGeneration),
+        { statusCode: 401 });
+    throw normalizedDirectObjectError(reason, requestGeneration);
+  }
+}
+
 export interface ExistingDevelopmentPdfPage {
   schemaVersion: 'wiselink.3_1.oauth_session_existing_pdf_page.v1';
   items: Array<{

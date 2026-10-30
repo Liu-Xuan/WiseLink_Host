@@ -28,6 +28,7 @@ import {
   confirmIntegratedOverallForAeo,
   createOrResumeReviewConversation,
   createDevelopmentWorkItem,
+  createCanonicalWorkItem,
   generateAeoCandidate,
   getApplicabilitySelection,
   getApplicabilitySelectionReviewAvailability,
@@ -72,6 +73,35 @@ import { isRevokedMatterError } from '@client/src/features/matter/matter-read-er
 import documentParsingPlatformError from './fixtures/document-parsing-platform-error.json';
 
 describe('canonical host assessment client', () => {
+  it('explicit canonical intake uses the original native axios route and only the exact DV body', async () => {
+    const reply = { workItemCreated: true, actionAttemptId: 'synthetic-attempt' };
+    request.mockResolvedValue({ status: 200, data: reply });
+    const signal = new AbortController().signal;
+    const input = { documentVersionId: 'DV/synthetic', actor: 'must-not-send', tenantId: 'must-not-send',
+      modelRef: 'must-not-send', developmentRunToken: 'must-not-send' };
+    await expect(createCanonicalWorkItem(input, signal)).resolves.toBe(reply);
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).toHaveBeenCalledWith({ url: '/api/canonical-host/work-items/parse-pdf', method: 'POST',
+      data: { documentVersionId: 'DV/synthetic' }, signal });
+  });
+
+  it.each(['resolved-401', 'resolved-403', 'resolved-404', 'rejected-401', 'rejected-403', 'rejected-404'])(
+    'explicit canonical intake preserves native access rejection without retry (%s)', async mode => {
+      const status = Number(mode.slice(-3));
+      if (mode.startsWith('resolved')) request.mockResolvedValue({ status, data: {} });
+      else request.mockRejectedValue({ response: { status, data: {} } });
+      await expect(createCanonicalWorkItem({ documentVersionId: 'DV-test' })).rejects.toMatchObject({ statusCode: status });
+      expect(request).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('canonical intake keeps transport uncertainty and never retries or obtains a separate identity', async () => {
+    const failure = Object.assign(new Error('synthetic response lost'), { code: 'ECONNABORTED' });
+    request.mockRejectedValue(failure);
+    await expect(createCanonicalWorkItem({ documentVersionId: 'DV-test' })).rejects.toBe(failure);
+    expect(request).toHaveBeenCalledTimes(1);
+  });
+
   it.each(['resolved-401', 'resolved-403', 'resolved-404', 'rejected-401', 'rejected-403', 'rejected-404'])(
     'saved-read identity error classifier treats actual %s as an access rejection', async failure => {
       const status = Number(failure.slice(-3));
@@ -355,7 +385,14 @@ describe('canonical host assessment client', () => {
     request.mockResolvedValue({ status: 200, data: {} });
     const params = { search: 'condition', normalizedFamily: 'SB', ata: '__UNKNOWN__', aircraftModel: '737', cursor: 'opaque', limit: 24 };
     await getCanonicalLibraryDocuments(params);
-    expect(request).toHaveBeenCalledWith({ url: '/api/canonical-host/library/documents', method: 'GET', params, signal: undefined });
+    expect(request).toHaveBeenCalledTimes(1);
+    const sent = request.mock.calls[0][0];
+    expect(sent).toEqual({ url: expect.any(String), method: 'GET', signal: undefined });
+    const url = new URL(sent.url, 'https://synthetic.test');
+    expect(url.pathname).toBe('/api/canonical-host/library/documents');
+    expect(url.searchParams.size).toBe(Object.keys(params).length);
+    for (const [key, value] of Object.entries(params))
+      expect(url.searchParams.getAll(key)).toEqual([String(value)]);
   });
   beforeEach(() => {
     invalidateCanonicalHostClientSession();
@@ -425,16 +462,14 @@ describe('canonical host assessment client', () => {
     await expect(
       getCanonicalLibraryDocuments(params, controller.signal),
     ).resolves.toBe(data);
-    expect(request.mock.calls).toEqual([
-      [
-        {
-          url: '/api/canonical-host/library/documents',
-          method: 'GET',
-          params,
-          signal: controller.signal,
-        },
-      ],
-    ]);
+    expect(request).toHaveBeenCalledTimes(1);
+    const sent = request.mock.calls[0][0];
+    expect(sent).toEqual({ url: expect.any(String), method: 'GET', signal: controller.signal });
+    const url = new URL(sent.url, 'https://synthetic.test');
+    expect(url.pathname).toBe('/api/canonical-host/library/documents');
+    expect(url.searchParams.size).toBe(Object.keys(params).length);
+    for (const [key, value] of Object.entries(params))
+      expect(url.searchParams.getAll(key)).toEqual([String(value)]);
   });
 
   it('reads a selected saved quicklook without issuing a source or parsing request', async () => {

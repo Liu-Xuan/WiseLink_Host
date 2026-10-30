@@ -4,15 +4,31 @@ import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import DocumentVersionReadingPage from '../../client/src/pages/DocumentParsingPage/DocumentVersionReadingPage';
 import DocumentWikiReading from '../../client/src/pages/DocumentParsingPage/DocumentWikiReading';
 import type { DocumentParseRunSummary } from '@shared/document-parsing.interface';
+import type { CanonicalDocumentParsingPageResponse, CanonicalOrdinaryWorkItemRunResponse } from '@shared/api.interface';
+import { assessmentPageFixture, assessmentAssociationFixture } from './fixtures/document-assessment-workspace';
+import type { DocumentTranslationContinuationPreparation } from '@shared/document-translation-browser.interface';
 import type { DocumentOriginalCoverage } from '@shared/document-original.interface';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 import { savedDocumentReadingFixture } from './fixtures/saved-document-reading';
 
 const { JSDOM } = require('jsdom');
 
+const mockCanonicalHttp = jest.fn();
+jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({ axiosForBackend: (...args: unknown[]) => mockCanonicalHttp(...args) }));
+jest.mock('@lark-apaas/client-toolkit/utils/resolveAppUrl', () => ({ resolveAppUrl: (value: string) => value }));
+jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn() } }));
+jest.mock('@client/src/pages/DocumentParsingPage/DocumentAssessmentWorkspace', () => ({
+  __esModule: true, default: ({ association }: { association: { document: { workItemId: string } } }) =>
+    createElement('section', { 'data-assessment-work': association.document.workItemId }, 'existing assessment child'),
+}));
+
 jest.mock('@client/src/pages/DocumentParsingPage/document-version-reading.css', () => ({}), { virtual: true });
 // Saved-panel behavior has its own full consumer/retention suite.
 jest.mock('@client/src/pages/DocumentParsingPage/DocumentSavedWorkPanels', () => ({ __esModule: true, default: () => null }));
+// The browser custom-element presentation is tested in its own diagnostic suite.
+jest.mock('@client/src/pages/DocumentParsingPage/runtime-monitor/DocumentTranslationRuntimeDiagnostic', () => ({
+  __esModule: true, default: () => null,
+}));
 jest.mock('@client/src/components/ui/button', () => ({
   Button: ({ children, onClick, disabled }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) =>
     createElement('button', { onClick, disabled }, children),
@@ -58,7 +74,11 @@ const mockStatus = jest.fn();
 const mockReading = jest.fn();
 const mockTranslation = jest.fn();
 const mockStart = jest.fn();
-const mockSessionCallbacks: Array<() => void> = [];
+const mockCatalogue = jest.fn();
+const mockQuicklook = jest.fn();
+const mockSessionCallbacks = jest.requireMock<{ __testSessionCallbacks: Array<() => void> }>(
+  '@client/src/api/canonical-host',
+).__testSessionCallbacks;
 const mockWiki=jest.fn();
 const mockReadIdentityRefetch = jest.fn(async () => ({ error: null }));
 jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({
@@ -69,20 +89,35 @@ jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({
 }));
 jest.mock('@client/src/api/document-wiki',()=>({readDocumentWiki:(...args:unknown[])=>mockWiki(...args)}));
 jest.mock('@client/src/app/providers/CurrentUserSessionProvider',()=>({useCurrentUserSession:()=>({sessionGeneration:1,authenticationRequired:false})}));
-jest.mock('@client/src/api/canonical-host', () => ({
+jest.mock('@client/src/api/canonical-host', () => {
+  // review-draft-store subscribes during module import, before this test module's const initializers.
+  const sessionCallbacks: Array<() => void> = [];
+  return {
+  __testSessionCallbacks: sessionCallbacks,
+  createCanonicalWorkItem: jest.requireActual<typeof import('@client/src/api/canonical-host')>('@client/src/api/canonical-host').createCanonicalWorkItem,
+  getDocumentParsingPage: jest.requireActual<typeof import('@client/src/api/canonical-host')>('@client/src/api/canonical-host').getDocumentParsingPage,
+  isCanonicalHostClientSessionAuthenticationRequired: () => false,
+  prepareDocumentTranslationContinuation: jest.fn(async (documentVersionId: string, parseRunId: string): Promise<DocumentTranslationContinuationPreparation> => ({
+    documentVersionId, parseRunId, supportedScope: 'OWNED_UPLOAD_ZH_FULL', state: 'UNSUPPORTED',
+    reason: 'OWN_UPLOAD_TRANSLATION_REQUIRED', attempt: null, action: null,
+  })),
+  continueDocumentTranslation: jest.fn(async () => { throw new Error('Unexpected translation write during reading/create test'); }),
   getCanonicalHostClientSessionGeneration:()=>1,
-  getCanonicalLibraryDocuments: async () => ({ items: [{ familyId: 'FAM-1', versions: [
-    { documentVersionId: 'DV1', readerWorkItemId: '' }, { documentVersionId: 'DV2', readerWorkItemId: '' },
-  ] }], nextCursor: null }),
+  getCanonicalLibraryDocuments: (...args: unknown[]) => mockCatalogue(...args),
+  getCanonicalLibraryQuicklook: (...args: unknown[]) => mockQuicklook(...args),
+  // This suite supplies no saved knowledge revision; an unexpected read stays explicitly unavailable.
+  readEngineeringKnowledgeWork: jest.fn(async () => { throw new Error('No saved knowledge revision in this synthetic reading fixture'); }),
+  requireCanonicalHostClientAuthentication: jest.requireActual<typeof import('@client/src/api/canonical-host')>('@client/src/api/canonical-host').requireCanonicalHostClientAuthentication,
   readDocumentParsingStatus: (...args: unknown[]) => mockStatus(...args),
   readParsedDocument: (...args: unknown[]) => mockReading(...args),
   readDocumentTranslationReading: (...args: unknown[]) => mockTranslation(...args),
   startDocumentParsing: (...args: unknown[]) => mockStart(...args),
   subscribeCanonicalHostClientSession: (callback: () => void) => {
-    mockSessionCallbacks.push(callback);
+    sessionCallbacks.push(callback);
     return () => undefined;
   },
-}));
+  };
+});
 
 function readingPayload() {
   return {
@@ -143,6 +178,25 @@ beforeEach(() => {
   mockSessionCallbacks.length = 0;
   mockStart.mockReset();
   mockStart.mockResolvedValue({});
+  mockCatalogue.mockReset();
+  mockCatalogue.mockResolvedValue({ items: [{ familyId: 'FAM-1', versions: [
+    { documentVersionId: 'DV1', readerWorkItemId: '' }, { documentVersionId: 'DV2', readerWorkItemId: '' },
+  ] }], nextCursor: null });
+  mockQuicklook.mockReset();
+  mockQuicklook.mockImplementation(async (workItemId: string) => {
+    const saved = assessmentAssociationFixture(false);
+    saved.document = { ...saved.document, workItemId, documentVersionId: 'DV1', familyId: 'FAM-1' };
+    return saved;
+  });
+  mockCanonicalHttp.mockReset();
+  mockCanonicalHttp.mockImplementation(async (input: CanonicalHttpInput) => {
+    if (input.method === 'POST' && input.url === '/api/canonical-host/work-items/parse-pdf')
+      return { status: 200, data: canonicalCreationReceipt() };
+    if (input.method === 'GET' && input.url === '/api/canonical-host/work-items/WI-CANONICAL/document-parsing')
+      return { status: 200, data: canonicalCreationPage() };
+    throw new Error('Unexpected canonical HTTP request in synthetic page test');
+  });
+
   mockWiki.mockReset();
   mockStatus.mockResolvedValue(statusPayload());
   mockReading.mockResolvedValue(readingPayload());
@@ -956,4 +1010,179 @@ it('clears the admitted continuation and saved reading when its explicit POST is
   expect(container.textContent).not.toContain('核对解析请求');
   expect(mockStart.mock.calls[1]).toEqual(mockStart.mock.calls[0]);
   expect(mockStart).toHaveBeenCalledTimes(2);
+});
+
+
+interface CanonicalHttpInput { url: string; method: string; data?: unknown; signal?: AbortSignal }
+function canonicalCreationPage(): CanonicalDocumentParsingPageResponse {
+  const page = assessmentPageFixture();
+  page.workItem = { ...page.workItem, workItemId: 'WI-CANONICAL', requestId: 'REQ-CANONICAL',
+    source: { ...page.workItem.source, documentVersionId: 'DV1', parserRequestId: 'REQ-CANONICAL' } };
+  return page;
+}
+function canonicalCreationReceipt(): CanonicalOrdinaryWorkItemRunResponse {
+  const page = canonicalCreationPage();
+  return {
+    schemaVersion: 'wiselink.3_1.ordinary_work_item_run.v1', workItemCreated: true, workItemReused: false,
+    actionAttemptId: 'ATT-CANONICAL', result: {
+      schemaVersion: 'wiselink.3_1.canonical_pdf_vertical_response.v0.candidate',
+      status: 'CANDIDATE_VERTICAL_VERIFIED', workItem: page.workItem, readback: null, entry: page.entry,
+      authority: { canonicalRoleSelected: false, onlineWritePerformed: true, applicationPublished: false,
+        currentSelectionChanged: false, engineeringConclusionCreated: false },
+    },
+  };
+}
+function canonicalCalls(method: string): CanonicalHttpInput[] {
+  return mockCanonicalHttp.mock.calls.map((call: CanonicalHttpInput[]) => call[0])
+    .filter((input: CanonicalHttpInput) => input.method === method);
+}
+function canonicalDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+it('explicit canonical create works beside an existing dev association and opens only the independently read canonical WI', async () => {
+  await mount('workItemId=WI-DEV&panel=reader');
+  expect(mockQuicklook).toHaveBeenCalledWith('WI-DEV', expect.anything());
+  expect(canonicalCalls('POST')).toEqual([]);
+  await clickParseButton('创建评估事项');
+  expect(canonicalCalls('POST')).toEqual([{ url: '/api/canonical-host/work-items/parse-pdf', method: 'POST',
+    data: { documentVersionId: 'DV1' }, signal: expect.anything() }]);
+  expect(canonicalCalls('GET')).toHaveLength(1);
+  expect(canonicalCalls('GET')[0].url).toBe('/api/canonical-host/work-items/WI-CANONICAL/document-parsing');
+  expect(router.state.location.pathname).toBe('/document-versions/DV1');
+  const params = new URLSearchParams(router.state.location.search);
+  expect(params.get('workItemId')).toBe('WI-CANONICAL'); expect(params.get('panel')).toBe('assessment');
+  expect(mockStart).not.toHaveBeenCalled();
+  expect(jest.requireMock('@client/src/api/canonical-host').continueDocumentTranslation).not.toHaveBeenCalled();
+  await clickParseButton('核对创建结果');
+  expect(canonicalCalls('POST')).toHaveLength(1); // Existing canonical receipt is read again, never created twice.
+});
+
+it('loading, navigating and reparsing do not create a canonical assessment', async () => {
+  await mount();
+  await clickParseButton('重新解析');
+  await navigate('/document-versions/DV1?panel=assessment');
+  expect(canonicalCalls('POST')).toEqual([]); expect(canonicalCalls('GET')).toEqual([]);
+  expect(mockStart).toHaveBeenCalledTimes(1);
+});
+
+it('double click has one real wrapper POST and waits for independent READ before navigation', async () => {
+  const post = canonicalDeferred<{ status: number; data: CanonicalOrdinaryWorkItemRunResponse }>();
+  const read = canonicalDeferred<{ status: number; data: CanonicalDocumentParsingPageResponse }>();
+  mockCanonicalHttp.mockImplementation((input: CanonicalHttpInput) => input.method === 'POST' ? post.promise : read.promise);
+  await mount();
+  await act(async () => {
+    const button = [...container.querySelectorAll('button')].find(item => item.textContent === '创建评估事项');
+    expect(button).toBeDefined(); button!.click(); button!.click();
+  });
+  expect(canonicalCalls('POST')).toHaveLength(1); expect(canonicalCalls('GET')).toHaveLength(0);
+  await act(async () => post.resolve({ status: 200, data: canonicalCreationReceipt() }));
+  expect(canonicalCalls('GET')).toHaveLength(1); expect(router.state.location.search).not.toContain('WI-CANONICAL');
+  await act(async () => read.resolve({ status: 200, data: canonicalCreationPage() }));
+  expect(router.state.location.search).toContain('workItemId=WI-CANONICAL');
+});
+
+it.each(['version', 'session'])('a late canonical POST receipt cannot cross a %s change', async change => {
+  const post = canonicalDeferred<{ status: number; data: CanonicalOrdinaryWorkItemRunResponse }>();
+  mockCanonicalHttp.mockImplementation(() => post.promise);
+  await mount(); await clickParseButton('创建评估事项');
+  const signal = canonicalCalls('POST')[0].signal;
+  if (change === 'version') {
+    mockStatus.mockResolvedValue({ ...statusPayload(), documentVersionId: 'DV2' });
+    mockReading.mockResolvedValue({ ...readingPayload(), documentVersionId: 'DV2' });
+    await navigate('/document-versions/DV2');
+  } else await act(async () => mockSessionCallbacks[0]!());
+  expect(signal?.aborted).toBe(true);
+  await act(async () => post.resolve({ status: 200, data: canonicalCreationReceipt() }));
+  expect(canonicalCalls('GET')).toHaveLength(0);
+  expect(router.state.location.search).not.toContain('WI-CANONICAL');
+});
+
+it('an independent READ finishing after a version change cannot navigate back to the old WI', async () => {
+  const read = canonicalDeferred<{ status: number; data: CanonicalDocumentParsingPageResponse }>();
+  mockCanonicalHttp.mockImplementation((input: CanonicalHttpInput) => input.method === 'POST'
+    ? Promise.resolve({ status: 200, data: canonicalCreationReceipt() }) : read.promise);
+  await mount(); await clickParseButton('创建评估事项');
+  mockStatus.mockResolvedValue({ ...statusPayload(), documentVersionId: 'DV2' });
+  mockReading.mockResolvedValue({ ...readingPayload(), documentVersionId: 'DV2' });
+  await navigate('/document-versions/DV2');
+  await act(async () => read.resolve({ status: 200, data: canonicalCreationPage() }));
+  expect(router.state.location.pathname).toBe('/document-versions/DV2');
+  expect(router.state.location.search).not.toContain('WI-CANONICAL'); expect(canonicalCalls('POST')).toHaveLength(1);
+});
+
+it.each([401, 403, 404])('canonical create HTTP %s clears this reading scope and never navigates or starts a model', async status => {
+  mockCanonicalHttp.mockResolvedValue({ status, data: {} });
+  await mount(); await clickParseButton('创建评估事项');
+  expect(canonicalCalls('POST')).toHaveLength(1); expect(canonicalCalls('GET')).toHaveLength(0);
+  expect(router.state.location.search).not.toContain('WI-CANONICAL');
+  expect(container.textContent).not.toContain('constructed-parser'); expect(mockStart).not.toHaveBeenCalled();
+});
+
+it.each(['WI', 'REQUEST', 'DV', 'ARTIFACT', 'HASH', 'BYTES'])('independent READ mismatched %s never opens an assessment or resends create', async field => {
+  const page = canonicalCreationPage();
+  if (field === 'WI') page.workItem.workItemId = 'WI-OTHER';
+  if (field === 'REQUEST') page.workItem.requestId = 'REQ-OTHER';
+  if (field === 'DV') page.workItem.source.documentVersionId = 'DV-OTHER';
+  if (field === 'ARTIFACT') page.workItem.source.sourceArtifactId = 'ART-OTHER';
+  if (field === 'HASH') page.workItem.source.sourceFileSha256 = 'OTHER-HASH';
+  if (field === 'BYTES') page.workItem.source.sourceByteLength += 1;
+  mockCanonicalHttp.mockImplementation(async (input: CanonicalHttpInput) => ({ status: 200,
+    data: input.method === 'POST' ? canonicalCreationReceipt() : page }));
+  await mount(); await clickParseButton('创建评估事项');
+  expect(router.state.location.search).not.toContain('WI-CANONICAL');
+  expect(container.textContent).toContain('独立读回与创建回执不一致');
+  await clickParseButton('核对创建结果'); expect(canonicalCalls('POST')).toHaveLength(1);
+});
+
+it('a lost create receipt preserves the original DV intent, refreshes associations and never adopts an old dev WI', async () => {
+  mockCanonicalHttp.mockRejectedValue(new Error('synthetic response lost'));
+  await mount('workItemId=WI-DEV&panel=reader');
+  await clickParseButton('创建评估事项');
+  const oldReads: number = mockQuicklook.mock.calls.length;
+  await clickParseButton('核对创建结果');
+  expect(mockQuicklook.mock.calls.length).toBeGreaterThan(oldReads);
+  expect(canonicalCalls('POST')).toHaveLength(1); expect(canonicalCalls('GET')).toHaveLength(0);
+  expect(new URLSearchParams(router.state.location.search).get('workItemId')).toBe('WI-DEV');
+  expect(container.textContent).toContain('创建结果尚未确认'); expect(mockStart).not.toHaveBeenCalled();
+});
+
+it('independent READ failure retains the exact original WI for a read-only retry', async () => {
+  const failure = new Error('synthetic independent READ unavailable');
+  mockCanonicalHttp.mockImplementation(async (input: CanonicalHttpInput) => {
+    if (input.method === 'POST') return { status: 200, data: canonicalCreationReceipt() };
+    throw failure;
+  });
+  await mount(); await clickParseButton('创建评估事项');
+  expect(router.state.location.search).not.toContain('WI-CANONICAL');
+  mockCanonicalHttp.mockResolvedValue({ status: 200, data: canonicalCreationPage() });
+  await clickParseButton('核对创建结果');
+  expect(canonicalCalls('POST')).toHaveLength(1); expect(canonicalCalls('GET')).toHaveLength(2);
+  expect(canonicalCalls('GET').every((input: CanonicalHttpInput) => input.url.includes('/WI-CANONICAL/'))).toBe(true);
+  expect(router.state.location.search).toContain('WI-CANONICAL');
+});
+
+
+it('leaving the document cancels the local create observation and ignores its late receipt', async () => {
+  const post = canonicalDeferred<{ status: number; data: CanonicalOrdinaryWorkItemRunResponse }>();
+  mockCanonicalHttp.mockImplementation(() => post.promise);
+  await mount(); await clickParseButton('创建评估事项');
+  const signal = canonicalCalls('POST')[0].signal;
+  await navigate('/library'); expect(signal?.aborted).toBe(true);
+  await act(async () => post.resolve({ status: 200, data: canonicalCreationReceipt() }));
+  expect(router.state.location.pathname).toBe('/library'); expect(canonicalCalls('GET')).toHaveLength(0);
+  expect(canonicalCalls('POST')).toHaveLength(1);
+});
+
+it('a create receipt bound to another DV remains unconfirmed and cannot be replaced or opened', async () => {
+  const receipt = canonicalCreationReceipt(); receipt.result.workItem.source.documentVersionId = 'DV-OTHER';
+  mockCanonicalHttp.mockResolvedValue({ status: 200, data: receipt });
+  await mount(); await clickParseButton('创建评估事项');
+  expect(container.textContent).toContain('创建回执与当前文档版本不一致');
+  await clickParseButton('核对创建结果');
+  expect(canonicalCalls('POST')).toHaveLength(1); expect(canonicalCalls('GET')).toHaveLength(0);
+  expect(router.state.location.search).not.toContain('WI-CANONICAL');
 });

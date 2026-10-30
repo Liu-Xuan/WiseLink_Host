@@ -10,9 +10,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Button } from '@client/src/components/ui/button';
 import { getCanonicalHostClientSessionGeneration, isCanonicalHostClientSessionAuthenticationRequired,
+  createCanonicalWorkItem, getDocumentParsingPage,
   readDocumentTranslationReading, readDocumentParsingStatus, readParsedDocument, startDocumentParsing,
   subscribeCanonicalHostClientSession } from '@client/src/api/canonical-host';
 import type { DocumentParsedReading, DocumentParsingStatus, DocumentParseRunSummary, StartDocumentParseRequest } from '@shared/document-parsing.interface';
+import type { CanonicalOrdinaryWorkItemRunResponse } from '@shared/api.interface';
 import type { MineruReaderSource } from '@shared/mineru-reading.interface';
 import { MineruMarkdownReader } from './MineruMarkdownReader';
 import { DocumentParsedImage } from './DocumentParsedImage';
@@ -30,7 +32,7 @@ import { documentAssessmentExactSourceRoute, documentAssessmentReturnParams, doc
   documentWorkbenchPanelRoute, readDocumentWorkbenchPanel } from './document-workbench-panel';
 import DocumentAssessmentWorkspace, { type AssessmentSourceSelection } from './DocumentAssessmentWorkspace';
 import { writeReviewDraft } from '@client/src/features/review/review-draft-store';
-import { readDocumentWorkItemLocator } from './document-analysis-route';
+import { documentVersionAnalysisRoute, readDocumentWorkItemLocator } from './document-analysis-route';
 
 export default function DocumentVersionReadingPage() {
   const { documentVersionId = '' } = useParams();
@@ -93,6 +95,19 @@ export default function DocumentVersionReadingPage() {
   const parseInFlight = useRef(false);
   const [importReply, setImportReply] = useState<DocumentParseRunSummary | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
+  const [assessmentCreating, setAssessmentCreating] = useState(false);
+  const [assessmentCreationError, setAssessmentCreationError] = useState<string | null>(null);
+  const assessmentCreation = useRef<{
+    input: { documentVersionId: string };
+    receipt: CanonicalOrdinaryWorkItemRunResponse | null;
+  } | null>(null);
+  const assessmentCreationInFlight = useRef(false);
+  const assessmentCreationController = useRef<AbortController | null>(null);
+  const clearAssessmentCreation = useCallback(() => {
+    assessmentCreationController.current?.abort(); assessmentCreationController.current = null;
+    assessmentCreation.current = null; assessmentCreationInFlight.current = false;
+    setAssessmentCreating(false); setAssessmentCreationError(null);
+  }, []);
   const [refresh, setRefresh] = useState(0);
   const loaded = useRef('');
   const bodyPoll = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -120,14 +135,16 @@ export default function DocumentVersionReadingPage() {
     if (assessmentDraftRef.current)
       writeReviewDraft(assessmentDraftRef.current, '', getCanonicalHostClientSessionGeneration());
     setSourceNavigationError(null); setManualSourceVersion(null);
+    clearAssessmentCreation();
     rejectedRef.current = true; epoch.current++; bodyControllerRef.current?.abort();
     request.current = null; currentSettingsRequest.current = null; parseInFlight.current = false;
     setImportReply(null); setParseError(null); setSending(false);
     setStatus(null); setReading(null); setTranslation(null); setSource(null); loaded.current = '';
     setTranslationObservedAt(null); setTranslationLocateRevision(null);
-  }, []);
+  }, [clearAssessmentCreation]);
 
   useEffect(() => {
+    clearAssessmentCreation();
     epoch.current++;
     setStatus(previous => previous?.documentVersionId === documentVersionId ? previous : null);
     setReading(null); setSource(null); setError(null); setSourceNavigationError(null); setManualSourceVersion(null); setSending(false);
@@ -136,7 +153,8 @@ export default function DocumentVersionReadingPage() {
     setTranslationLocationRequest(0);
     setTranslationObservedAt(null); setTranslationLocateRevision(null);
     loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
-    return subscribeCanonicalHostClientSession(() => {
+    const unsubscribe = subscribeCanonicalHostClientSession(() => {
+      clearAssessmentCreation();
       epoch.current++;
       rejectedRef.current = false; setSourceNavigationError(null); setManualSourceVersion(null);
       setStatus(null); setReading(null); setSource(null); setTranslation(null); setTranslationPage(null); setTranslationUnitId(null); setTranslationSourceContext(requestedSource); setTranslationError(null);
@@ -144,7 +162,8 @@ export default function DocumentVersionReadingPage() {
       loaded.current = ''; request.current = null; currentSettingsRequest.current = null;
       parseInFlight.current = false; setImportReply(null); setParseError(null); setSending(false); setRefresh(value => value + 1);
     });
-  }, [readingIdentity]);
+    return () => { unsubscribe(); clearAssessmentCreation(); };
+  }, [readingIdentity, clearAssessmentCreation]);
 
   useEffect(() => { if (requestedRun) clearTimeout(bodyPoll.current); }, [requestedRun]);
   useEffect(() => {
@@ -337,7 +356,7 @@ export default function DocumentVersionReadingPage() {
   })() : null;
 
   async function start(withCurrentSettings = false) {
-    if (!currentStatus || parseInFlight.current || sending || (withCurrentSettings ? request.current : currentSettingsRequest.current)) return;
+    if (!currentStatus || assessmentCreationInFlight.current || parseInFlight.current || sending || (withCurrentSettings ? request.current : currentSettingsRequest.current)) return;
     if (withCurrentSettings && !canRestartWithCurrentSettings && !currentSettingsRequest.current) return;
     const pendingRequest = withCurrentSettings ? currentSettingsRequest : request;
     const version = documentVersionId;
@@ -382,6 +401,76 @@ export default function DocumentVersionReadingPage() {
     } finally {
       if (identity.current === navigation && epoch.current === generation) {
         parseInFlight.current = false; setSending(false);
+      }
+    }
+  }
+
+  async function createAssessment(): Promise<void> {
+    if (!currentStatus || rejectedRef.current || assessmentCreationInFlight.current ||
+        parseInFlight.current || isCanonicalHostClientSessionAuthenticationRequired()) return;
+    // A lost POST receipt cannot be correlated from the latest association: it may be a dev run.
+    if (assessmentCreation.current && !assessmentCreation.current.receipt) {
+      savedLinks.refreshSavedWork();
+      setAssessmentCreationError('创建结果尚未确认，正在重新读取本版本关联。请核对原请求，不要重复创建。');
+      return;
+    }
+    const navigation: string = readingIdentity;
+    const generation: number = epoch.current;
+    const session: number = getCanonicalHostClientSessionGeneration();
+    const controller: AbortController = new AbortController();
+    assessmentCreationController.current = controller;
+    const current = (): boolean => !controller.signal.aborted && identity.current === navigation &&
+      epoch.current === generation && getCanonicalHostClientSessionGeneration() === session;
+    assessmentCreation.current ??= { input: { documentVersionId }, receipt: null };
+    const pending = assessmentCreation.current;
+    assessmentCreationInFlight.current = true; setAssessmentCreating(true); setAssessmentCreationError(null);
+    try {
+      if (!pending.receipt) {
+        const created = await createCanonicalWorkItem(pending.input, controller.signal);
+        if (!current()) return;
+        const item = created?.result?.workItem;
+        if (created?.schemaVersion !== 'wiselink.3_1.ordinary_work_item_run.v1' ||
+            !item?.workItemId?.trim() || !item.requestId?.trim() ||
+            item.source?.documentVersionId !== pending.input.documentVersionId ||
+            item.source.parserRequestId !== item.requestId)
+          throw new Error('创建回执与当前文档版本不一致，请核对原请求。');
+        pending.receipt = created;
+      }
+      const created = pending.receipt;
+      const item = created.result.workItem;
+      const readback = await getDocumentParsingPage(item.workItemId, 'applicability', { freshness: 'mutation' });
+      if (!current()) return;
+      const source = readback?.workItem?.source;
+      if (readback?.schemaVersion !== 'wiselink.3_1.document_parsing_page.v0.candidate' ||
+          readback.status !== 'FRESH_READ' || readback.workItem.workItemId !== item.workItemId ||
+          readback.workItem.requestId !== item.requestId || !source ||
+          source.documentVersionId !== pending.input.documentVersionId ||
+          source.documentId !== item.source.documentId || source.parserRequestId !== item.requestId ||
+          source.sourceArtifactId !== item.source.sourceArtifactId ||
+          source.sourceFileSha256 !== item.source.sourceFileSha256 ||
+          source.sourceByteLength !== item.source.sourceByteLength)
+        throw new Error('评估事项独立读回与创建回执不一致，请核对原请求。');
+      if (created.result.status !== 'CANDIDATE_VERTICAL_VERIFIED' ||
+          readback.workItem.phase !== 'CANDIDATE_READBACK_VERIFIED')
+        throw new Error('评估事项尚未完成文档接收，请核对原事项状态。');
+      const origin: URLSearchParams = new URLSearchParams(searchParams);
+      for (const key of ['workItemId', 'assessmentCriterion', 'assessmentIssue', 'assessmentTab', 'criterion'])
+        origin.delete(key);
+      navigate(documentVersionAnalysisRoute(pending.input.documentVersionId, item.workItemId, 'assessment', origin));
+    } catch (reason: unknown) {
+      if (!current()) return;
+      const code: number | null = reason && typeof reason === 'object' && 'statusCode' in reason
+        ? Number(reason.statusCode) : null;
+      if (code !== null && [401, 403, 404].includes(code)) {
+        rejectCurrentAccess();
+        setError(reason instanceof Error ? reason.message : '此文档暂不可访问，请重新核权。');
+      } else {
+        setAssessmentCreationError(reason instanceof Error ? reason.message : '创建结果尚未确认，请核对原请求。');
+      }
+    } finally {
+      if (current()) {
+        assessmentCreationInFlight.current = false; assessmentCreationController.current = null;
+        setAssessmentCreating(false);
       }
     }
   }
@@ -487,12 +576,19 @@ export default function DocumentVersionReadingPage() {
     {latest ? <p role="status">{parseFailure ?? (latest.status === 'PUBLISHED' ? `解析版本 ${latest.parseRevision} 已发布。` :
       latest.status === 'FAILED' ? `解析未完成：${latest.errorCode ?? '请重试或联系维护人员'}` :
       expired ? '执行期限已过。' : latest.waitingForLocalWorker ? '等待本机解析器接续。' : latest.status === 'STAGING' ? `正在保存并核验产物，已核验 ${latest.verifiedArtifacts} 个文件。` : '正在解析原件。')}</p> : null}
+    {currentStatus && !rejectedRef.current ? <div>
+      <Button variant="outline" onClick={() => { void createAssessment(); }}
+        disabled={assessmentCreating || sending || isCanonicalHostClientSessionAuthenticationRequired()}>
+        {assessmentCreating ? '正在核对评估事项…' : assessmentCreation.current ? '核对创建结果' : '创建评估事项'}
+      </Button>
+      {assessmentCreationError ? <p role="alert">{assessmentCreationError}</p> : null}
+    </div> : null}
         <div className="document-reading-actions">
-          <Button onClick={() => { void start(); }} disabled={!currentStatus?.runtimeAvailable || (busy && !request.current) || sending || Boolean(currentSettingsRequest.current)}>
+          <Button onClick={() => { void start(); }} disabled={assessmentCreating || !currentStatus?.runtimeAvailable || (busy && !request.current) || sending || Boolean(currentSettingsRequest.current)}>
             {sending ? '正在受理…' : checkingImport ? '核对同一导入请求（继续一步）' : request.current ? '核对解析请求' : busy ? (parseFailure ? '等待接续' : latest?.waitingForLocalWorker ? '等待本机解析' : '正在解析…') : currentStatus?.publishedRun ? '重新解析' : '解析文档'}
           </Button>
           {(canRestartWithCurrentSettings || currentSettingsRequest.current) && <Button variant="outline"
-            onClick={() => { void start(true); }} disabled={!currentStatus?.runtimeAvailable || sending || Boolean(request.current)}>
+            onClick={() => { void start(true); }} disabled={assessmentCreating || !currentStatus?.runtimeAvailable || sending || Boolean(request.current)}>
             {currentSettingsRequest.current ? '核对当前设置请求' : '按当前设置重新解析'}
           </Button>}
           <Button variant="outline" onClick={() => setRefresh(value => value + 1)}>刷新</Button>
