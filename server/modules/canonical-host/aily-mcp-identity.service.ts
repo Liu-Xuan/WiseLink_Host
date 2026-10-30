@@ -3,7 +3,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { IdentityRepository } from '../identity/identity.repository';
 
 export const AILY_MCP_CONFIGURATION = Symbol('AILY_MCP_CONFIGURATION');
-export interface AilyMcpConfiguration {
+export interface AilyUserJwtMcpConfiguration {
+  authenticationMode?: 'AILY_USER_JWT';
   enabled: boolean;
   agentId: string;
   expectedClientId: string;
@@ -11,6 +12,20 @@ export interface AilyMcpConfiguration {
   /** Actual target payload types/namespaces must be verified before enabling. */
   subjectNamespace: 'FEISHU_OPEN_ID' | null;
   tenantNamespace: 'FEISHU_TENANT_KEY' | null;
+}
+export interface AilyHostServiceMcpConfiguration {
+  authenticationMode: 'HOST_SERVICE'; enabled: boolean; agentId: string; expectedClientId: string;
+  tenantId: string; principalId: string;
+  signingSecret?: never; subjectNamespace?: never; tenantNamespace?: never;
+}
+export type AilyMcpConfiguration = AilyUserJwtMcpConfiguration | AilyHostServiceMcpConfiguration;
+/** Host configuration association, not a remote agent, chat or end-user attestation. */
+export interface AilyHostServiceCaller {
+  authenticationMode: 'HOST_SERVICE'; tenantId: string; principalId: string; agentId: string; expectedClientId: string;
+}
+export type AilyMcpCaller = AilyMcpVerifiedActor | AilyHostServiceCaller;
+export function isAilyHostServiceCaller(caller:AilyMcpCaller):caller is AilyHostServiceCaller {
+  return 'authenticationMode' in caller && caller.authenticationMode === 'HOST_SERVICE';
 }
 export interface AilyMcpVerifiedActor {
   agentId: string; actorUserId: string; tenantId: string;
@@ -60,8 +75,35 @@ function claimType(value: unknown): ClaimType {
 @Injectable()
 export class AilyMcpIdentityService {
   private readonly verified = new WeakSet<object>();
+  private readonly serviceCallers = new WeakSet<object>();
   constructor(private readonly identities: IdentityRepository,
     @Optional() @Inject(AILY_MCP_CONFIGURATION) private readonly config: AilyMcpConfiguration | null = null) {}
+
+  authenticationMode(): 'AILY_USER_JWT' | 'HOST_SERVICE' {
+    return this.config?.authenticationMode === 'HOST_SERVICE' ? 'HOST_SERVICE' : 'AILY_USER_JWT';
+  }
+
+  async authorizeCaller(header:unknown):Promise<AilyMcpCaller> {
+    if(this.config?.authenticationMode !== 'HOST_SERVICE') return this.verify(header);
+    const config=this.config;
+    if(!config.enabled || !/^agent_[A-Za-z0-9_-]{1,59}$/u.test(config.agentId) ||
+        !/^cli_[A-Za-z0-9_-]+$/u.test(config.expectedClientId) || !config.tenantId || config.tenantId !== config.tenantId.trim() ||
+        !/^service:[A-Za-z0-9:_-]{1,140}$/u.test(config.principalId))
+      throw new UnauthorizedException('AILY_MCP_SERVICE_CALLER_NOT_CONFIGURED');
+    const caller:AilyHostServiceCaller=Object.freeze({authenticationMode:'HOST_SERVICE',tenantId:config.tenantId,
+      principalId:config.principalId,agentId:config.agentId,expectedClientId:config.expectedClientId});
+    this.serviceCallers.add(caller);
+    return caller;
+  }
+
+  assertAuthorizedCaller(caller:AilyMcpCaller):void {
+    if(!isAilyHostServiceCaller(caller)) return this.assertVerified(caller);
+    const config=this.config;
+    if(!this.serviceCallers.has(caller) || config?.authenticationMode !== 'HOST_SERVICE' || !config.enabled ||
+        caller.tenantId!==config.tenantId || caller.principalId!==config.principalId ||
+        caller.agentId!==config.agentId || caller.expectedClientId!==config.expectedClientId)
+      throw new UnauthorizedException('AILY_MCP_SERVICE_CALLER_REQUIRED');
+  }
 
   async verify(header: unknown): Promise<AilyMcpVerifiedActor> {
     const diagnostic: AilyMcpIdentityDiagnostic = {stage: 'CONFIGURATION', signatureVerified: null,
@@ -70,7 +112,7 @@ export class AilyMcpIdentityService {
       throw new IdentityRejection(code, {...diagnostic, stage});
     }
     const config = this.config;
-    if (!config?.enabled || !config.signingSecret || !config.expectedClientId ||
+    if (config?.authenticationMode === 'HOST_SERVICE' || !config?.enabled || !config.signingSecret || !config.expectedClientId ||
         config.subjectNamespace !== 'FEISHU_OPEN_ID' || config.tenantNamespace !== 'FEISHU_TENANT_KEY')
       reject('AILY_MCP_IDENTITY_NOT_CONFIGURED', 'CONFIGURATION');
     if (typeof header !== 'string' || header.length > 16_384) reject('AILY_MCP_JWT_INVALID', 'JWT_FORMAT');

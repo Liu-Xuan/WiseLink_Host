@@ -1,8 +1,8 @@
 import { createHmac } from 'node:crypto';
 import { UnauthorizedException } from '@nestjs/common';
-import { AilyMcpIdentityService, readAilyMcpIdentityDiagnostic, type AilyMcpConfiguration, type AilyMcpIdentityDiagnostic } from '../../server/modules/canonical-host/aily-mcp-identity.service';
+import { AilyMcpIdentityService, readAilyMcpIdentityDiagnostic, type AilyMcpConfiguration, type AilyUserJwtMcpConfiguration, type AilyMcpIdentityDiagnostic } from '../../server/modules/canonical-host/aily-mcp-identity.service';
 
-const config:AilyMcpConfiguration = {enabled:true,agentId:'agent_synthetic',expectedClientId:'synthetic-host',
+const config:AilyUserJwtMcpConfiguration = {enabled:true,agentId:'agent_synthetic',expectedClientId:'synthetic-host',
   signingSecret:'synthetic-signature-only',subjectNamespace:'FEISHU_OPEN_ID',tenantNamespace:'FEISHU_TENANT_KEY'};
 function jwt(claims:Record<string,unknown>={},algorithm='HS256',secret=config.signingSecret) {
   const head = Buffer.from(JSON.stringify({alg:algorithm})).toString('base64url');
@@ -139,5 +139,34 @@ describe('trusted fixed diagnostics on the original verification path',()=>{
     expect(readAilyMcpIdentityDiagnostic(error)).toBe(diagnostic);
     for(const forged of [new UnauthorizedException(error.message),Object.create(Object.getPrototypeOf(error)),
       {identityDiagnostic:diagnostic},null,'synthetic-secret'])expect(readAilyMcpIdentityDiagnostic(forged)).toBeNull();
+  });
+});
+
+
+describe('explicit Host service caller trust',()=>{
+  const serviceConfig={authenticationMode:'HOST_SERVICE' as const,enabled:true,agentId:'agent_synthetic',
+    expectedClientId:'cli_synthetic',tenantId:'tenant-test',principalId:'service:aily-synthetic'};
+  it('uses only explicit configured service association, never a JWT, remote user or mapping',async()=>{
+    const h=fixture(serviceConfig);const verify=jest.spyOn(h.service,'verify');
+    const caller=await h.service.authorizeCaller('synthetic-invalid-user-jwt');
+    expect(caller).toEqual({authenticationMode:'HOST_SERVICE',tenantId:'tenant-test',principalId:'service:aily-synthetic',
+      agentId:'agent_synthetic',expectedClientId:'cli_synthetic'});
+    expect(Object.isFrozen(caller)).toBe(true);expect(()=>h.service.assertAuthorizedCaller(caller)).not.toThrow();
+    expect(()=>h.service.assertAuthorizedCaller({...caller})).toThrow('AILY_MCP_SERVICE_CALLER_REQUIRED');
+    expect(h.resolveSubjectMapping).not.toHaveBeenCalled();expect(verify).not.toHaveBeenCalled();
+    await expect(h.service.verify(jwt())).rejects.toThrow('AILY_MCP_IDENTITY_NOT_CONFIGURED');
+    expect(()=>h.service.assertVerified(caller as never)).toThrow('AILY_MCP_IDENTITY_REQUIRED');
+  });
+  it('invalidates an existing service capability when its configured tenant/principal changes',async()=>{
+    const configuration={...serviceConfig};const h=fixture(configuration);
+    const caller=await h.service.authorizeCaller(undefined);configuration.principalId='service:other';
+    expect(()=>h.service.assertAuthorizedCaller(caller)).toThrow('AILY_MCP_SERVICE_CALLER_REQUIRED');
+    expect(h.resolveSubjectMapping).not.toHaveBeenCalled();
+  });
+  it.each([undefined,'AILY_USER_JWT'] as const)('retains strict user JWT authentication without service fallback for mode %s',async authenticationMode=>{
+    const h=fixture({...config,authenticationMode});
+    await expect(h.service.authorizeCaller('synthetic-invalid')).rejects.toThrow('AILY_MCP_JWT_INVALID');
+    const actor=await h.service.authorizeCaller(jwt());expect(()=>h.service.assertAuthorizedCaller(actor)).not.toThrow();
+    expect(h.resolveSubjectMapping).toHaveBeenCalledTimes(1);expect(actor).toHaveProperty('mappingRevision',7);
   });
 });

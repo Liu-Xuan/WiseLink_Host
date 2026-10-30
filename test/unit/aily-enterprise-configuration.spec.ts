@@ -1,5 +1,5 @@
 import { loadAilyEnterpriseConfiguration, type AilyEnterpriseConfigurationState } from '../../server/modules/canonical-host/aily-enterprise-configuration';
-import { syntheticAilyEnterpriseJson } from '../support/aily-enterprise-configuration.fixture';
+import { syntheticAilyEnterpriseJson, syntheticAilyHostServiceConfiguration } from '../support/aily-enterprise-configuration.fixture';
 import type { Provider } from '@nestjs/common';
 import { CanonicalHostModule } from '../../server/modules/canonical-host/canonical-host.module';
 import { AilyHostInvocationIdentityProvider } from '../../server/modules/canonical-host/aily-host-invocation-identity.provider';
@@ -8,6 +8,9 @@ import { AILY_HOST_INVOCATION_IDENTITY } from '../../server/modules/canonical-ho
 import { HierarchicalWikiAutomation } from '../../server/modules/canonical-host/hierarchical-wiki.automation';
 import { AILY_MCP_CONFIGURATION } from '../../server/modules/canonical-host/aily-mcp-identity.service';
 import { AILY_TASK_CONFIGURATION, AilyTaskAdmissionService } from '../../server/modules/canonical-host/aily-task-admission';
+import { AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION } from '../../server/modules/canonical-host/automatic-work-item-source-authorization.port';
+import { MiaodaAutomaticWorkItemSourceAuthorizationAdapter } from '../../server/modules/canonical-host/miaoda-automatic-work-item-source-authorization.adapter';
+import { DocumentManagementRuntimeModule } from '../../server/modules/document-management-runtime/document-management-runtime.module';
 
 function mcpOnlyJson():Record<string,unknown> {
   const full=syntheticAilyEnterpriseJson();
@@ -31,6 +34,14 @@ describe('strict server enterprise configuration', () => {
         .toEqual({provide: AILY_HOST_INVOCATION_IDENTITY, useExisting: AilyHostInvocationIdentityProvider});
     }
   });
+  it('connects the service domain source token to the original production authorizer adapter',()=>{
+    const module=CanonicalHostModule.forRoot({imports:[DocumentManagementRuntimeModule]});
+    expect(module.imports).toContain(DocumentManagementRuntimeModule);
+    expect(module.providers).toContainEqual({provide:AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,
+      useClass:MiaodaAutomaticWorkItemSourceAuthorizationAdapter});
+    expect(Reflect.getMetadata('exports',DocumentManagementRuntimeModule)).toBeDefined();
+  });
+
   it('defaults off without reading other credential/config sources', () => {
     expect(loadAilyEnterpriseConfiguration({})).toEqual({status: 'DISABLED', reason: 'AILY_ENTERPRISE_CONFIGURATION_DISABLED'});
     expect(loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON: '{"enabled":false}'}).status).toBe('DISABLED');
@@ -124,4 +135,40 @@ describe('strict server enterprise configuration', () => {
     expect(loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON: JSON.stringify(syntheticAilyEnterpriseJson())}))
       .toEqual({status: 'UNAVAILABLE', reason: 'AILY_MCP_SIGNING_SECRET_REQUIRED'});
   });
+});
+
+
+describe('strict fixed-service configuration',()=>{
+  function full():Record<string,unknown> {
+    const {configuration}=syntheticAilyHostServiceConfiguration();
+    return {schemaVersion:'wiselink.aily-enterprise-configuration.v1',enabled:true,...configuration};
+  }
+  it('accepts explicit HOST_SERVICE without a signer and leaves original verified facts unchanged',()=>{
+    const value=full();const state=loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON:JSON.stringify(value)});
+    expect(state).toMatchObject({status:'READY',configuration:{mcp:{authenticationMode:'HOST_SERVICE',tenantId:'tenant-test',
+      principalId:'service:aily-synthetic'},caller:{browserTransport:'APPLICATION'}}});
+    if(state.status!=='READY')throw new Error('SYNTHETIC_READY_REQUIRED');
+    expect(state.configuration.mcp).not.toHaveProperty('signingSecret');
+    expect(state.configuration.mcp).not.toHaveProperty('subjectNamespace');
+    expect(state.configuration.task.apiAccessVerified).toBe(true);expect(state.configuration.task.trustedToolsVerified).toBe(true);
+  });
+  it('permits service MCP-only while Task/provider/background remain disabled',()=>{
+    const value=full();value.task={enabled:false};value.background={enabled:false,allowOriginalRequest:false};delete value.caller;
+    const state=loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON:JSON.stringify(value)});
+    expect(state.status).toBe('MCP_ONLY');
+    const providers=Reflect.getMetadata('providers',CanonicalHostModule) as Provider[];
+    expect(configurationFactory(providers,AILY_TASK_CONFIGURATION)(state)).toBeNull();
+    expect(configurationFactory(providers,AILY_MCP_CONFIGURATION)(state)).toMatchObject({authenticationMode:'HOST_SERVICE'});
+  });
+  it.each(['tenant','principal','agent','app','user-transport','mixed-namespace','mixed-secret','unverified','unknown-mode'])(
+    'rejects %s instead of inferring service authority or falling back',reason=>{
+      const value=full();const mcp=value.mcp as Record<string,unknown>;const task=value.task as Record<string,unknown>;
+      if(reason==='tenant')mcp.tenantId='tenant-other';if(reason==='principal')mcp.principalId='service:other';
+      if(reason==='agent')mcp.agentId='agent_other';if(reason==='app')mcp.expectedClientId='cli_other';
+      if(reason==='user-transport')(value.caller as Record<string,unknown>).browserTransport='USER_GRANT';
+      if(reason==='mixed-namespace')mcp.subjectNamespace='FEISHU_OPEN_ID';if(reason==='mixed-secret')mcp.signingSecret='synthetic-private';
+      if(reason==='unverified')task.trustedToolsVerified=false;if(reason==='unknown-mode')mcp.authenticationMode='INFER';
+      expect(loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON:JSON.stringify(value)}))
+        .toEqual({status:'UNAVAILABLE',reason:'AILY_ENTERPRISE_CONFIGURATION_INVALID'});
+    });
 });

@@ -502,3 +502,18 @@ function reservationHarness(state = 'CANCELLED') {
       idempotencyKey: newTask.idempotencyKey}, undefined, undefined,
     {model, intakeRequestId: owner.requestId, principalId: original.row.leaseOwner!})};
 }
+
+
+it('looks up only exact Aily Host actor metadata, never an unscoped task body',async()=>{
+  const metadata={attemptId:'ATT-synthetic',operationRef:'AQ-synthetic',actorUserId:'owner-test',tenantId:'tenant-test',
+    workItemId:'WI-test',taskInputHash:'a'.repeat(64),documentVersionId:'DV-test',inputRevision:4,baseRevision:4};
+  let selected:unknown;let where:SQL|undefined;
+  const repository=new ActionAttemptRepository({select:(columns:unknown)=>{selected=columns;return {from:()=>({where:(condition:SQL)=>{
+    where=condition;return {limit:async()=>[metadata]};}})};}} as never);
+  expect(await repository.readAilyTaskActorBinding({operationRef:'AQ-synthetic',tenantId:'tenant-test',workItemId:'WI-test'})).toEqual(metadata);
+  expect(Object.keys(selected as object).sort()).toEqual(Object.keys(metadata).sort());
+  const query=dialect.sqlToQuery(where!);expect(query.sql).toContain('operation_ref');expect(query.sql).toContain('tenant_id');
+  expect(query.sql).toContain('work_item_id');expect(query.sql).toContain("'{modelInput,executionMode}'='AILY_AGENT_V1'");
+  expect(query.params).toEqual(expect.arrayContaining(['AQ-synthetic','tenant-test','WI-test','OPENCLAW_MCP_V1','OPENCLAW_DYNAMIC_EVALUATION']));
+  expect(selected).not.toHaveProperty('taskEnvelopeJson');expect(selected).not.toHaveProperty('resultEnvelopeJson');
+});

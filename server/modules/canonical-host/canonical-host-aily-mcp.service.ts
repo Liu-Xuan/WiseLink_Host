@@ -1,7 +1,7 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { toNodeHandler, type NodeMcpRequestHandler } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
-import { AilyMcpIdentityService, readAilyMcpIdentityDiagnostic, type AilyMcpVerifiedActor,
+import { AilyMcpIdentityService, readAilyMcpIdentityDiagnostic, type AilyMcpCaller,
   type AilyMcpIdentityDiagnostic } from './aily-mcp-identity.service';
 import { AilyTaskDomainService } from './aily-task-domain.service';
 import { ailySourceCommand, ailyValidateCommand, ailySaveCommand, ailyReadCommand,
@@ -9,7 +9,7 @@ import { ailySourceCommand, ailyValidateCommand, ailySaveCommand, ailyReadComman
 
 const annotations = {readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false};
 type DiscoveryMethod = 'initialize' | 'notifications/initialized' | 'tools/list' | 'ping';
-type DiscoveryAuth = 'MISSING_JWT' | 'NOT_CONFIGURED' | 'MAPPING_MISSING' | 'REJECTED' | 'UNCONFIRMED' | 'VERIFIED';
+type DiscoveryAuth = 'MISSING_JWT' | 'NOT_CONFIGURED' | 'MAPPING_MISSING' | 'REJECTED' | 'UNCONFIRMED' | 'VERIFIED' | 'SERVICE_ROUTE';
 
 /** Only a single static request bypasses the business precheck. The SDK still validates its protocol. */
 function discoveryMethod(body: unknown): DiscoveryMethod | null {
@@ -31,7 +31,7 @@ export class CanonicalHostAilyMcpService {
     body: unknown, jwt: unknown): Promise<void> {
     const method = discoveryMethod(body);
     if (method) await this.observeDiscovery(method, jwt);
-    else await this.identity.verify(jwt);
+    else await this.identity.authorizeCaller(jwt);
     const handler = createMcpHandler(() => this.server(jwt), {legacy: 'stateless', responseMode: 'json'});
     await toNodeHandler(handler)(request, response, body);
   }
@@ -40,8 +40,9 @@ export class CanonicalHostAilyMcpService {
   private async observeDiscovery(method: DiscoveryMethod, jwt: unknown): Promise<void> {
     let outcome: DiscoveryAuth = 'MISSING_JWT';
     let identityDiagnostic: Readonly<AilyMcpIdentityDiagnostic> | null = null;
-    if (jwt !== undefined && jwt !== null) {
-      try { await this.identity.verify(jwt); outcome = 'VERIFIED'; }
+    const authenticationMode=this.identity.authenticationMode();
+    if (authenticationMode==='HOST_SERVICE' || (jwt !== undefined && jwt !== null)) {
+      try { await this.identity.authorizeCaller(jwt); outcome = authenticationMode==='HOST_SERVICE'?'SERVICE_ROUTE':'VERIFIED'; }
       catch (cause) {
         identityDiagnostic = readAilyMcpIdentityDiagnostic(cause);
         outcome = 'UNCONFIRMED';
@@ -53,7 +54,8 @@ export class CanonicalHostAilyMcpService {
       }
     }
     this.logger.log(JSON.stringify({event: 'AILY_MCP_DISCOVERY_AUTH', method, outcome, domainDispatched: false,
-      ...(identityDiagnostic ? {identityDiagnostic} : {})}));
+      ...(identityDiagnostic ? {identityDiagnostic} : {}),
+      ...(authenticationMode==='HOST_SERVICE'?{authenticationMode}:{})}));
   }
 
   private server(jwt: unknown): McpServer {
@@ -73,9 +75,9 @@ export class CanonicalHostAilyMcpService {
     return server;
   }
 
-  private async result(jwt: unknown, operation: (actor: AilyMcpVerifiedActor) => Promise<unknown>) {
+  private async result(jwt: unknown, operation: (actor: AilyMcpCaller) => Promise<unknown>) {
     try {
-      const actor = await this.identity.verify(jwt);
+      const actor = await this.identity.authorizeCaller(jwt);
       return {content: [{type: 'text' as const, text: JSON.stringify(await operation(actor))}]};
     } catch (cause) {
       const code = cause instanceof Error && /^[A-Z][A-Z0-9_:.-]{0,199}$/u.test(cause.message)

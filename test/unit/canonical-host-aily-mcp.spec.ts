@@ -4,7 +4,7 @@ import { CanonicalHostAilyMcpService } from '../../server/modules/canonical-host
 import { ailySourceCommand, ailyValidateCommand, ailySaveCommand, ailyReadCommand, ailyStageCommand, ailyFinishCommand } from '../../server/modules/canonical-host/aily-task-domain.types';
 import { AilyMcpIdentityService, type AilyMcpIdentityDiagnostic } from '../../server/modules/canonical-host/aily-mcp-identity.service';
 import { loadAilyEnterpriseConfiguration } from '../../server/modules/canonical-host/aily-enterprise-configuration';
-import { syntheticAilyEnterpriseJson } from '../support/aily-enterprise-configuration.fixture';
+import { syntheticAilyEnterpriseJson, syntheticAilyHostServiceConfiguration } from '../support/aily-enterprise-configuration.fixture';
 import { EventEmitter } from 'node:events';
 import { createHmac } from 'node:crypto';
 
@@ -13,20 +13,21 @@ function connectionFixture(configured = true) {
   const state=loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON:JSON.stringify({
     schemaVersion:full.schemaVersion,enabled:true,host:full.host,mcp:full.mcp,
     task:{enabled:false},background:{enabled:false,allowOriginalRequest:false}}),WL_AILY_MCP_SIGNING_SECRET:'synthetic-only-signature'});
-  if(state.status!=='MCP_ONLY')throw new Error('SYNTHETIC_MCP_ONLY_REQUIRED');
+  if(state.status!=='MCP_ONLY' || state.configuration.mcp.authenticationMode==='HOST_SERVICE')throw new Error('SYNTHETIC_MCP_ONLY_REQUIRED');
+  const mcp=state.configuration.mcp;
   const mapping=jest.fn(async(_input:{feishuOpenId:string;feishuTenantKey:string;expectedClientId:string}):
     Promise<{id:string;revision:number;miaodaUserId:string;miaodaTenantId:string}|null>=>
     ({id:'synthetic-mapping',revision:1,miaodaUserId:'synthetic-owner',miaodaTenantId:'synthetic-tenant'}));
-  const identity=new AilyMcpIdentityService({resolveSubjectMapping:mapping} as never,configured?state.configuration.mcp:null);
+  const identity=new AilyMcpIdentityService({resolveSubjectMapping:mapping} as never,configured?mcp:null);
   const domain={sources:jest.fn(),validate:jest.fn(),save:jest.fn(),read:jest.fn(),stageOverall:jest.fn(),finish:jest.fn()};
   const service=new CanonicalHostAilyMcpService(identity,domain as never);
   const jwt=(claims:Record<string,unknown>={})=>{
     const head=Buffer.from(JSON.stringify({alg:'HS256'})).toString('base64url');
-    const payload=Buffer.from(JSON.stringify({agent_id:state.configuration.mcp.agentId,user_id:'synthetic-open-id',
+    const payload=Buffer.from(JSON.stringify({agent_id:mcp.agentId,user_id:'synthetic-open-id',
       tenant_id:'synthetic-tenant-key',exp:4102444800,...claims})).toString('base64url');
-    return `${head}.${payload}.${createHmac('sha256',state.configuration.mcp.signingSecret).update(`${head}.${payload}`).digest('base64url')}`;
+    return `${head}.${payload}.${createHmac('sha256',mcp.signingSecret).update(`${head}.${payload}`).digest('base64url')}`;
   };
-  return {state,mapping,identity,domain,service,jwt};
+  return {state:{...state,configuration:{...state.configuration,mcp}},mapping,identity,domain,service,jwt};
 }
 
 function protocolResponse(contentType:string,wire:string,expectedId:string|number|null):Record<string,unknown> {
@@ -398,4 +399,30 @@ describe('in-memory MCP protocol response boundary',()=>{
       if(reason==='missing-response')wire=': heartbeat\n\n';
       expect(()=>protocolResponse('text/event-stream',wire,7)).toThrow();
     });
+});
+
+
+describe('Host service route is not JWT user authentication',()=>{
+  it('reports explicit route trust for metadata without claiming JWT VERIFIED or calling a domain',async()=>{
+    const mapping=jest.fn();const configuration=syntheticAilyHostServiceConfiguration().configuration.mcp;
+    const identity=new AilyMcpIdentityService({resolveSubjectMapping:mapping} as never,configuration);
+    const domain=connectionFixture().domain;const service=new CanonicalHostAilyMcpService(identity,domain as never);
+    const listed=await protocol(service,{jsonrpc:'2.0',id:2,method:'tools/list'});
+    expect(listed.body).toHaveProperty('result.tools');expect(mapping).not.toHaveBeenCalled();
+    for(const fn of Object.values(domain))expect(fn).not.toHaveBeenCalled();
+    expect(discoveryLog.mock.calls).toEqual([[JSON.stringify({event:'AILY_MCP_DISCOVERY_AUTH',method:'tools/list',
+      outcome:'SERVICE_ROUTE',domainDispatched:false,authenticationMode:'HOST_SERVICE'})]]);
+    expect(JSON.stringify(discoveryLog.mock.calls)).not.toMatch(/VERIFIED|signatureVerified|mappingId|actorUserId/u);
+  });
+  it('freshly derives a service caller for both HTTP and each callback without accepting model actor fields',async()=>{
+    const mapping=jest.fn();const identity=new AilyMcpIdentityService({resolveSubjectMapping:mapping} as never,
+      syntheticAilyHostServiceConfiguration().configuration.mcp);
+    const authorize=jest.spyOn(identity,'authorizeCaller');const domain=connectionFixture().domain;
+    domain.sources.mockResolvedValue({read:true});const service=new CanonicalHostAilyMcpService(identity,domain as never);
+    expect((await protocol(service,call())).body).toMatchObject({result:{content:[{text:JSON.stringify({read:true})}]}});
+    expect(authorize).toHaveBeenCalledTimes(2);expect(mapping).not.toHaveBeenCalled();
+    const caller=domain.sources.mock.calls[0][0];identity.assertAuthorizedCaller(caller);
+    expect(caller).not.toHaveProperty('actorUserId');expect(caller).not.toHaveProperty('mappingId');
+    expect(discoveryLog).not.toHaveBeenCalled();
+  });
 });

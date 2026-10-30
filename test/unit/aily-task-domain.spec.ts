@@ -1,3 +1,5 @@
+import { EngineeringMatterWorkingRepository } from '../../server/modules/canonical-host/engineering-matter-working.repository';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { AilyTaskDomainService } from '../../server/modules/canonical-host/aily-task-domain.service';
 import { AilyTrustedTaskContext, type AilyTaskDomainSnapshot } from '../../server/modules/canonical-host/aily-task-domain.types';
@@ -17,7 +19,7 @@ import { buildJobAidProblemTask,parseJobAidProblemTask } from '../../server/modu
 import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { buildJobAidChecklistBinding } from '../../server/modules/canonical-host/jobaid-checklist-binding';
 import { AILY_TASK_ROLE_MAPPING } from '../../server/modules/canonical-host/aily-executor-run';
-import { syntheticAilyEnterpriseConfiguration } from '../support/aily-enterprise-configuration.fixture';
+import { syntheticAilyEnterpriseConfiguration, syntheticAilyHostServiceConfiguration } from '../support/aily-enterprise-configuration.fixture';
 import { successorWorkItem } from '../support/aily-initial-successor.fixture';
 import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
 
@@ -277,5 +279,52 @@ describe('enterprise final conditional outer ACK',()=>{
     if(reason==='new-revision')h.owner.revision=6;
     if(reason==='mapping-revoked')h.database.execute.mockResolvedValue([{allowed:false}]);
     await expect(h.service.acknowledgeAilyWorkItem(h.context())).rejects.toThrow();
+  });
+});
+
+
+describe('Host service caller admission before task reads',()=>{
+  function serviceFixture() {
+    const identity=new AilyMcpIdentityService({resolveSubjectMapping:jest.fn()} as never,syntheticAilyHostServiceConfiguration().configuration.mcp);
+    const actors={assertHostedServiceRole:jest.fn(),withActorScope:jest.fn(),withActorTransaction:jest.fn()};
+    const repository={readAilyTaskActorBinding:jest.fn(),readByOperationRef:jest.fn()};
+    const domain=new AilyTaskDomainService(identity,actors as never,repository as never,{} as never,{} as never,
+      new AilyTaskAdmissionService(null),{} as never,{} as never);
+    return {identity,actors,repository,domain,service:new CanonicalHostAilyMcpService(identity,domain)};
+  }
+  it.each(['sources','validate','save','read','stageOverall','finish'] as const)('rejects service %s at null admission before any role/task/source access',async method=>{
+    const h=serviceFixture();const names={sources:'read_assessment_sources',validate:'validate_assessment_work',
+      save:'save_assessment_work',read:'read_assessment_work',stageOverall:'project_assessment_stage_overall',finish:'finish_assessment_task'};
+    const handlers=new Map<string,(value:never)=>Promise<unknown>>();
+    const register=jest.spyOn(McpServer.prototype,'registerTool').mockImplementation(function(name,_definition,call){
+      handlers.set(name,call as never);return {remove:jest.fn(),enable:jest.fn(),disable:jest.fn(),update:jest.fn()} as never;
+    });
+    const input={taskContextRef:'AQ-service',...(method==='sources'?{sourceRefs:['source:synthetic'],purpose:'合成来源'}:
+      method==='validate'?{workJson:'{}'}:method==='save'?{candidateRef:'00000000-0000-4000-8000-000000000001'}:{workRevisionRef:'JAWR-synthetic'})};
+    try {
+      (h.service as unknown as {server(value:unknown):McpServer}).server(undefined);
+      expect(await handlers.get(names[method])!(input as never)).toEqual({isError:true,
+        content:[{type:'text',text:JSON.stringify({code:'INITIAL_CONTINUATION_AILY_NOT_CONFIGURED'})}]});
+      for(const fn of [...Object.values(h.actors),...Object.values(h.repository)])expect(fn).not.toHaveBeenCalled();
+    } finally {register.mockRestore();}
+  });
+  it('does not accept an otherwise identical model-supplied service caller object',async()=>{
+    const h=serviceFixture();const caller=await h.identity.authorizeCaller(undefined);
+    await expect(h.domain.sources({...caller},{taskContextRef:'AQ-service',sourceRefs:['source:synthetic'],purpose:'合成'}))
+      .rejects.toThrow('AILY_MCP_SERVICE_CALLER_REQUIRED');
+    expect(h.repository.readAilyTaskActorBinding).not.toHaveBeenCalled();expect(h.actors.assertHostedServiceRole).not.toHaveBeenCalled();
+  });
+});
+
+
+describe('original physical Hosted SQL role check',()=>{
+  it.each([true,false])('checks current_user before actor scope without SET ROLE: %s',async allowed=>{
+    const execute=jest.fn(async(_statement:import('drizzle-orm').SQL)=>[{isHostedService:allowed}]);const use=jest.fn();
+    const repository=new EngineeringMatterWorkingRepository({execute} as never,{use} as never,{roleSchema:'synthetic'},{} as never);
+    if(allowed)await expect(repository.assertHostedServiceRole()).resolves.toBeUndefined();
+    else await expect(repository.assertHostedServiceRole()).rejects.toThrow('ENGINEERING_MATTER_RUNTIME_AUTHORIZATION_UNAVAILABLE');
+    const query=new PgDialect().sqlToQuery(execute.mock.calls[0][0]);
+    expect(query.sql).toContain('current_user =');expect(query.params).toEqual(['service_role_synthetic']);
+    expect(query.sql).not.toMatch(/SET ROLE|set_config/iu);expect(use).not.toHaveBeenCalled();
   });
 });

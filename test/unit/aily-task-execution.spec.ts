@@ -52,7 +52,7 @@ const actor = {userId: 'owner-test', tenantId: 'tenant-test', appId: 'app_17bzc5
 /** In-memory repository exercises real reservation/preparation/claim/consumer code.
  * All identity/config/client inputs are synthetic; this is not PostgreSQL or platform proof.
  */
-function harness() {
+function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JWT') {
   const original = originalFixture();
   original.source.units[0].payload = {text: `完整原文起点${'原始条件不得截断。'.repeat(12000)}完整原文终点`};
   const workItem = {schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
@@ -76,6 +76,10 @@ function harness() {
     readByIdempotency: jest.fn(async () => row),
     readLatestByExactIdempotency: jest.fn(async () => row),
     readByAttemptId: jest.fn(async () => row), readByOperationRef: jest.fn(async () => row),
+    readAilyTaskActorBinding:jest.fn(async(input:{operationRef:string;tenantId:string;workItemId:string})=>row&&
+      row.operationRef===input.operationRef&&row.tenantId===input.tenantId&&row.workItemId===input.workItemId
+      ?{attemptId:row.attemptId,operationRef:row.operationRef,actorUserId:row.actorUserId,tenantId:row.tenantId,workItemId:row.workItemId,
+        taskInputHash:row.taskInputHash,documentVersionId:row.documentVersionId,inputRevision:row.inputRevision,baseRevision:row.baseRevision}:null),
     readControlByOperationRef: jest.fn(async () => row),
     heartbeat: jest.fn(async (input: {leaseToken: string; leaseGeneration: number; now: Date; leaseMs: number}) => {
       if (!row || row.status !== 'RUNNING' || row.cancelRequestedAt || row.leaseToken !== input.leaseToken ||
@@ -254,16 +258,22 @@ function harness() {
   repository.finishTerminal.mockImplementation(input=>actualAttempts.finishTerminal(input));
   const actualRegistrar=new MiaodaCanonicalWorkItemRegistrarAdapter(new MiaodaWorkItemRepository(grantDatabase as never));
   registrar.compareAndSet.mockImplementation(input=>actualRegistrar.compareAndSet(input));
-  const actors = {withActorScope:jest.fn(async (_actor:string,operation:()=>Promise<unknown>)=>operation()),
+  const actors = {assertHostedServiceRole:jest.fn(async()=>undefined),withActorScope:jest.fn(async (_actor:string,operation:()=>Promise<unknown>)=>operation()),
     withActorTransaction: jest.fn(async (_actor: string, operation: (input: {database: typeof grantDatabase}) => Promise<unknown>) => operation({database: grantDatabase}))};
   const dispatch = {claimAilyWorkItem:jest.fn(async () => ({...outer,leaseExpiresAt:outer.leaseExpiresAt.toISOString()})),
     acknowledgeAilyWorkItem:jest.fn(),authorizeAilyInitialSuccessor:jest.fn(async(_input:unknown)=>({status:'UNCHANGED',leaseGeneration:outer.leaseGeneration}))};
   const execution = new AilyTaskExecutionService(admission, jobAid, attempts, repository as never, actors as never, client,
-    UNAVAILABLE_AILY_HOST_INVOCATION_IDENTITY,dispatch as never);
+    authenticationMode==='HOST_SERVICE'?{resolve:async input=>({...input,status:'READY' as const,transport:'APPLICATION' as const,
+      identityRef:'synthetic-application-caller',callerAppId:'cli_synthetic',accessToken:'synthetic-only-tat'})}
+      :UNAVAILABLE_AILY_HOST_INVOCATION_IDENTITY,dispatch as never);
+  const sourceAuthorization={authorizeSourceRead:jest.fn(async(input:{tenantId:string;actorUserId:string;documentId:string;
+    documentVersionId:string;sourceArtifactId:string;sourceFileSha256:string;sourceByteLength:number},_database?:unknown)=>({
+      ...input,allowed:authorized,action:'DOCUMENT_READ',authorizationPolicy:'MIAODA_HOST_DOCUMENT_READ'}))};
   const identity = new AilyMcpIdentityService({resolveSubjectMapping:async () => ({id:'synthetic-mapping',revision:1,
-    miaodaUserId:actor.userId,miaodaTenantId:actor.tenantId})} as never,{enabled:true,agentId:config.agentId,
+    miaodaUserId:actor.userId,miaodaTenantId:actor.tenantId})} as never,authenticationMode==='HOST_SERVICE'?{authenticationMode,enabled:true,agentId:config.agentId,
+    expectedClientId:'cli_synthetic',tenantId:config.tenantId,principalId:config.principalId}:{enabled:true,agentId:config.agentId,
     expectedClientId:'synthetic-host-app',signingSecret:'synthetic-test-secret',subjectNamespace:'FEISHU_OPEN_ID',tenantNamespace:'FEISHU_TENANT_KEY'});
-  const domain = new AilyTaskDomainService(identity,actors as never,repository as never,work as never,jobAid,admission,registrar as never,dispatch as never);
+  const domain = new AilyTaskDomainService(identity,actors as never,repository as never,work as never,jobAid,admission,registrar as never,dispatch as never,sourceAuthorization as never);
   const mcp = new CanonicalHostAilyMcpService(identity,domain);
   const header = Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url');
   const payload = Buffer.from(JSON.stringify({exp:4102444800,agent_id:config.agentId,user_id:'synthetic-open-id',tenant_id:'synthetic-tenant-key'})).toString('base64url');
@@ -276,9 +286,6 @@ function harness() {
   const httpRequest={headers:{},method:'POST',path:'/synthetic/initial-analysis/continue'} as unknown as Request;
   const sessions = {withVerifiedReviewServiceSql: jest.fn(async (operation: () => Promise<unknown>) => operation()),
     nativeBrowserIdentity:jest.fn((request:Request)=>request===httpRequest&&authorized?session:null)};
-  const sourceAuthorization={authorizeSourceRead:jest.fn(async(input:{tenantId:string;actorUserId:string;documentId:string;
-    documentVersionId:string;sourceArtifactId:string;sourceFileSha256:string;sourceByteLength:number},_database?:unknown)=>({
-      ...input,allowed:authorized,action:'DOCUMENT_READ',authorizationPolicy:'MIAODA_HOST_DOCUMENT_READ'}))};
   const continuation = new CanonicalInitialAnalysisContinuationService(authorization as never, permissions as never,
     registrar as never, attempts, initial as never, {} as never, jobAid, sessions as never, undefined, sourceAuthorization as never, admission, execution,dispatch as never);
   const command = {requestId, expectedRevision: 5, operation: 'EVALUATE_JOBAID' as const, executionMode: 'AILY_AGENT_V1' as const, modelRef: 'aily/deepseek-v4-pro'};
@@ -653,8 +660,8 @@ describe('normal enterprise task consumer', () => {
     expect(h.work.save).not.toHaveBeenCalled();expect(h.repository.compareAndSetAilyDomainRun).not.toHaveBeenCalled();
   });
 
-  it('uses the actual safe POST selector for MCP SAVE, independent READ and stage Overall before create returns', async () => {
-    const h = harness();
+  it.each(['AILY_USER_JWT','HOST_SERVICE'] as const)('uses the actual safe POST selector for %s MCP SAVE, independent READ and stage Overall before create returns', async authenticationMode => {
+    const h = harness(authenticationMode);
     type Tool = {definition:{inputSchema:{parse(value:unknown):unknown}}; call:(input:never)=>Promise<{isError?:boolean;content:Array<{text:string}>}>};
     const tools = new Map<string,Tool>();
     const register = jest.spyOn(McpServer.prototype,'registerTool').mockImplementation(function(name,definition,call) {
@@ -738,7 +745,7 @@ describe('normal enterprise task consumer', () => {
       expect(h.client.create).toHaveBeenCalledTimes(1);expect(h.run().pending?.phase).toBe('READ');
       expect(h.run().post.state).toBe('ACCEPTED');expect(stageRef).toMatch(/^artifact:\/\/synthetic\//u);
       expect(h.artifacts.persistAndReadback).toHaveBeenCalledTimes(2);
-      const actor=await h.identity.verify(h.jwt);const finalRef=h.run().pending!.workRevisionRef!;
+      const actor=await h.identity.authorizeCaller(h.jwt);const finalRef=h.run().pending!.workRevisionRef!;
       await h.domain.finish(actor,{taskContextRef:h.row().operationRef,workRevisionRef:finalRef});
       expect(h.row().status).toBe('SUCCEEDED');expect(h.row().projectionApplied).toBe(true);expect(h.workItem.revision).toBe(6);
       expect(h.repository.markCommitting).toHaveBeenCalledTimes(1);expect(h.repository.finishTerminal).toHaveBeenCalledTimes(1);
@@ -746,6 +753,9 @@ describe('normal enterprise task consumer', () => {
       expect(h.work.publishedOriginalBindingInTransaction).toHaveBeenCalledTimes(2);
       await h.domain.finish(actor,{taskContextRef:h.row().operationRef,workRevisionRef:finalRef});
       expect(h.repository.markCommitting).toHaveBeenCalledTimes(1);expect(h.client.create).toHaveBeenCalledTimes(1);
+      if(authenticationMode==='HOST_SERVICE'){expect(h.actors.assertHostedServiceRole).toHaveBeenCalled();
+        expect(h.repository.readAilyTaskActorBinding).toHaveBeenCalled();expect(h.sourceAuthorization.authorizeSourceRead).toHaveBeenCalled();
+        expect(h.grantLimit).not.toHaveBeenCalled();expect(h.run().invocation?.callerAppId).toBe('cli_synthetic');}
     } finally {register.mockRestore();}
   });
 

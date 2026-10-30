@@ -6,10 +6,10 @@ import { AilyBackgroundDispatchService } from '../../server/modules/canonical-ho
 import { AilyTaskAdmissionService } from '../../server/modules/canonical-host/aily-task-admission';
 import type { AilyExecutorRun } from '../../server/modules/canonical-host/aily-executor-run';
 import { HierarchicalWikiAutomation } from '../../server/modules/canonical-host/hierarchical-wiki.automation';
-import { syntheticAilyEnterpriseConfiguration } from '../support/aily-enterprise-configuration.fixture';
+import { syntheticAilyEnterpriseConfiguration, syntheticAilyHostServiceConfiguration } from '../support/aily-enterprise-configuration.fixture';
 
-function fixture() {
-  const state = syntheticAilyEnterpriseConfiguration();
+function fixture(hostService=false) {
+  const state = hostService?syntheticAilyHostServiceConfiguration():syntheticAilyEnterpriseConfiguration();
   const workItem = {workItemId: 'WI-test', requestId: 'original-intake', revision: 4,
     source: {documentVersionId: 'DV-test', documentId: 'DOC-test', sourceArtifactId: 'ART-test',
       sourceFileSha256: 'a'.repeat(64), sourceByteLength: 120}} as CanonicalWorkItemProjection;
@@ -127,4 +127,13 @@ describe('one exact background engineering invocation', () => {
     expect(wiki.next).not.toHaveBeenCalled();
     await automation.reserveDue(); expect(wiki.next).toHaveBeenCalledTimes(1);
   });
+});
+
+
+it('uses the original background dispatcher in fixed-service mode without a browser/JWT identity',async()=>{
+  const h=fixture(true);expect(h.state.configuration.mcp).not.toHaveProperty('signingSecret');
+  expect(await h.service.runOnce()).toMatchObject({status:'DISPATCHED',requestId:h.stage.requestId});
+  expect(h.execution.execute).toHaveBeenCalledWith(expect.objectContaining({purpose:'BACKGROUND',actor:{userId:'owner-test',tenantId:'tenant-test'}}));
+  expect(h.execution.execute.mock.calls[0][0]).not.toHaveProperty('sessionId');
+  expect(h.jobAid.enqueueOriginalContinuation).not.toHaveBeenCalled();
 });

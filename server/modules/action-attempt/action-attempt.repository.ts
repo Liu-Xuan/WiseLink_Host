@@ -257,6 +257,19 @@ export class ActionAttemptRepository {
     return (row as ActionAttemptRow | undefined) ?? null;
   }
 
+  /** Gateway service caller: exact configured scope, metadata only, before actor binding. */
+  async readAilyTaskActorBinding(input:{operationRef:string;tenantId:string;workItemId:string}) {
+    const [row]=await this.db.select({attemptId:actionAttempt.attemptId,operationRef:actionAttempt.operationRef,
+      actorUserId:actionAttempt.actorUserId,tenantId:actionAttempt.tenantId,workItemId:actionAttempt.workItemId,
+      taskInputHash:actionAttempt.taskInputHash,documentVersionId:actionAttempt.documentVersionId,
+      inputRevision:actionAttempt.inputRevision,baseRevision:actionAttempt.baseRevision})
+      .from(actionAttempt).where(and(eq(actionAttempt.operationRef,input.operationRef),eq(actionAttempt.tenantId,input.tenantId),
+        eq(actionAttempt.workItemId,input.workItemId),eq(actionAttempt.requestOrigin,ACTION_ATTEMPT_REQUEST_ORIGIN),
+        eq(actionAttempt.actionType,'OPENCLAW_DYNAMIC_EVALUATION'),
+        sql`${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,executionMode}'='AILY_AGENT_V1'`)).limit(1);
+    return row??null;
+  }
+
   async readControlByOperationRef(operationRef:string):Promise<ActionAttemptControlRow|null> {
     const [row]=await this.db.select(attemptControlColumns()).from(actionAttempt)
       .where(eq(actionAttempt.operationRef,operationRef)).limit(1);

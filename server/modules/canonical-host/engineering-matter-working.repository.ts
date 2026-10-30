@@ -261,19 +261,7 @@ export class EngineeringMatterWorkingRepository {
     // platform identity, global context or any role membership.
     if (!/^[A-Za-z0-9_-]{1,255}$/u.test(actorUserId))
       throw runtimeAuthorizationUnavailable();
-    // MCP tool dispatch does not guarantee RequestContextService's HTTP flag.
-    // Check the actual pre-existing SQL role before binding an actor; this
-    // cannot turn an authenticated/browser database context into service_role.
-    const roleSchema = this.databaseConfig.roleSchema;
-    if (!roleSchema || !/^[A-Za-z0-9_]{1,255}$/u.test(roleSchema))
-      throw runtimeAuthorizationUnavailable();
-    // A caller already holding a transaction must check that same physical
-    // connection; acquiring a root-pool connection here can deadlock a full pool.
-    const [runtimeRole] = await roleExecutor.execute<{ isHostedService: boolean }>(
-      sql`SELECT current_user = ${`service_role_${roleSchema}`} AS "isHostedService"`,
-    );
-    if (runtimeRole?.isHostedService !== true)
-      throw runtimeAuthorizationUnavailable();
+    await this.assertHostedServiceRole(roleExecutor);
     return new Promise<T>((resolve, reject) => {
       this.sqlContext.use(
         {
@@ -289,6 +277,23 @@ export class EngineeringMatterWorkingRepository {
         },
       );
     });
+  }
+
+  /** Checks the existing physical role without selecting or fabricating an actor. */
+  async assertHostedServiceRole(roleExecutor:Pick<PostgresJsDatabase,'execute'>=this.db):Promise<void> {
+    // MCP tool dispatch does not guarantee RequestContextService's HTTP flag.
+    // Check the actual pre-existing SQL role before binding an actor; this
+    // cannot turn an authenticated/browser database context into service_role.
+    const roleSchema = this.databaseConfig.roleSchema;
+    if (!roleSchema || !/^[A-Za-z0-9_]{1,255}$/u.test(roleSchema))
+      throw runtimeAuthorizationUnavailable();
+    // A caller already holding a transaction must check that same physical
+    // connection; acquiring a root-pool connection here can deadlock a full pool.
+    const [runtimeRole] = await roleExecutor.execute<{ isHostedService: boolean }>(
+      sql`SELECT current_user = ${`service_role_${roleSchema}`} AS "isHostedService"`,
+    );
+    if (runtimeRole?.isHostedService !== true)
+      throw runtimeAuthorizationUnavailable();
   }
 
   /** Build the same facade around an already-open W4 transaction. */

@@ -69,8 +69,16 @@ export class AilyTaskAdmissionService {
 
   /** Original-run reads authorize the target, never select a model again. */
   requireScope(tenantId: string, workItem: CanonicalWorkItemProjection): AilyTaskConfiguration {
+    const config=this.requireConfiguredScope();
+    if(!this.matches(tenantId,workItem))throw new ConflictException('INITIAL_CONTINUATION_AILY_NOT_CONFIGURED');
+    return config;
+  }
+
+  /** Trusted service admission, before resolving an actor or reading any task. */
+  requireConfiguredScope(binding?:{tenantId:string;principalId:string;agentId:string}):AilyTaskConfiguration {
     const config = this.config;
-    if (!config || !this.matches(tenantId, workItem) ||
+    if (!config?.enabled || (binding && (binding.tenantId!==config.tenantId || binding.principalId!==config.principalId ||
+        binding.agentId!==config.agentId)) || !config.tenantId.trim() || !config.workItemId.trim() || !config.intakeRequestId.trim() ||
         !/^agent_[A-Za-z0-9_-]{1,59}$/u.test(config.agentId) ||
         !/^service:[A-Za-z0-9:_-]{1,140}$/u.test(config.principalId) ||
         config.principalId === 'service:openclaw-main' || config.principalId === process.env.WL_CODEX_SERVICE_PRINCIPAL_ID ||

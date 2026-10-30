@@ -3,10 +3,10 @@ import { AilyHostInvocationIdentityProvider } from '../../server/modules/canonic
 import { AilyTaskAdmissionService } from '../../server/modules/canonical-host/aily-task-admission';
 import type { AilyHostInvocationRequest } from '../../server/modules/canonical-host/aily-host-invocation-identity.port';
 import { createAilyChat, serializeAilyChatRequest } from '../../server/modules/canonical-host/aily-chat-client';
-import { syntheticAilyEnterpriseConfiguration } from '../support/aily-enterprise-configuration.fixture';
+import { syntheticAilyEnterpriseConfiguration, syntheticAilyHostServiceConfiguration } from '../support/aily-enterprise-configuration.fixture';
 
-function fixture() {
-  const state = syntheticAilyEnterpriseConfiguration();
+function fixture(hostService=false) {
+  const state = hostService?syntheticAilyHostServiceConfiguration():syntheticAilyEnterpriseConfiguration();
   const projection = {workItemId: 'WI-test', requestId: 'original-intake', revision: 4} as CanonicalWorkItemProjection;
   const workItems = {loadAutoProcessingProjection: jest.fn(async () => ({row: {requestedByUserId: 'owner-test', revision: 4}, projection}))};
   const actors = {withActorScope: jest.fn(async (_actor: string, operation: () => Promise<unknown>) => operation())};
@@ -70,4 +70,21 @@ describe('formal Aily application identity consumer', () => {
     expect(result).toEqual({status: 'UNAVAILABLE', transport: 'APPLICATION', reason: 'AILY_APPLICATION_IDENTITY_UNAVAILABLE'});
     expect(JSON.stringify(result)).not.toMatch(/synthetic-app-secret|synthetic-token|private-cause/u);
   });
+});
+
+
+it('uses the actual application-token provider in explicit service mode without user JWT configuration',async()=>{
+  const priorId=process.env.FEISHU_OAUTH_CLIENT_ID;const priorSecret=process.env.FEISHU_OAUTH_CLIENT_SECRET;
+  process.env.FEISHU_OAUTH_CLIENT_ID='cli_synthetic';process.env.FEISHU_OAUTH_CLIENT_SECRET='synthetic-only-secret';
+  const http=jest.spyOn(globalThis,'fetch').mockResolvedValue(Response.json({code:0,tenant_access_token:'synthetic-only-token',expire:7200}));
+  try {
+    const h=fixture(true);expect(h.state.configuration.mcp).not.toHaveProperty('signingSecret');
+    expect(await h.service.resolve(h.request)).toMatchObject({status:'READY',transport:'APPLICATION',callerAppId:'cli_synthetic'});
+    expect(http).toHaveBeenCalledTimes(1);expect(String(http.mock.calls[0][0])).toContain('/tenant_access_token/internal');
+    expect(h.actors.withActorScope).toHaveBeenCalledWith('owner-test',expect.any(Function));
+  } finally {
+    if(priorId===undefined)delete process.env.FEISHU_OAUTH_CLIENT_ID;else process.env.FEISHU_OAUTH_CLIENT_ID=priorId;
+    if(priorSecret===undefined)delete process.env.FEISHU_OAUTH_CLIENT_SECRET;else process.env.FEISHU_OAUTH_CLIENT_SECRET=priorSecret;
+    http.mockRestore();
+  }
 });

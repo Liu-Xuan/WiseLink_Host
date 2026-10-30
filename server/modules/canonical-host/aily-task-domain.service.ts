@@ -1,4 +1,4 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { and, eq, sql, type SQL } from 'drizzle-orm';
 import type { CanonicalWorkItemProjection } from '@shared/api.interface';
@@ -8,7 +8,7 @@ import { ActionAttemptRepository } from '../action-attempt/action-attempt.reposi
 import { parseTaskEnvelope, canonicalJson } from '../action-attempt/action-attempt-envelope';
 import { automaticWorkItemTaskLease } from '../action-attempt/automatic-work-item-attempt-lease';
 import { EngineeringMatterWorkingRepository } from './engineering-matter-working.repository';
-import { AilyMcpIdentityService, type AilyMcpVerifiedActor } from './aily-mcp-identity.service';
+import { AilyMcpIdentityService, isAilyHostServiceCaller, type AilyMcpVerifiedActor, type AilyMcpCaller, type AilyHostServiceCaller } from './aily-mcp-identity.service';
 import { AilyTaskAdmissionService } from './aily-task-admission';
 import { CanonicalJobAidProblemService } from './canonical-jobaid-problem.service';
 import { JobAidWorkRepository, assertJobAidWorkFence } from './jobaid-work.repository';
@@ -22,33 +22,103 @@ import { sameAilyPendingOperation, type AilyExecutorRun } from './aily-executor-
 import { canonicalHostBareSha256 } from './canonical-host-sha256';
 import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
 
+import { AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION, type AutomaticWorkItemSourceAuthorizationPort }
+  from './automatic-work-item-source-authorization.port';
+
+type ServiceTaskActor = {authenticationMode:'HOST_SERVICE';caller:AilyHostServiceCaller;
+  actorUserId:string;tenantId:string;agentId:string;
+  binding:NonNullable<Awaited<ReturnType<ActionAttemptRepository['readAilyTaskActorBinding']>>>};
+type DomainActor = AilyMcpVerifiedActor | ServiceTaskActor;
+function isServiceTaskActor(actor:DomainActor):actor is ServiceTaskActor {
+  return 'authenticationMode' in actor && actor.authenticationMode==='HOST_SERVICE';
+}
 type Operation = 'READ' | 'WRITE' | 'FINALIZE';
 
 /** Trusted adapter for the existing domain consumers, not a second work store. */
 @Injectable()
 export class AilyTaskDomainService {
+  private readonly logger=new Logger(AilyTaskDomainService.name);
   constructor(private readonly identity: AilyMcpIdentityService, private readonly actors: EngineeringMatterWorkingRepository,
     private readonly repository: ActionAttemptRepository, private readonly work: JobAidWorkRepository,
     private readonly jobAid: CanonicalJobAidProblemService, private readonly admission: AilyTaskAdmissionService,
     @Inject(CANONICAL_WORK_ITEM_REGISTRAR) private readonly registrar: CanonicalWorkItemRegistrarPort,
-    private readonly dispatch: AutomaticWorkItemDispatchService) {}
+    private readonly dispatch: AutomaticWorkItemDispatchService,
+    @Optional() @Inject(AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION) private readonly sourceAuthorization?:AutomaticWorkItemSourceAuthorizationPort) {}
 
-  private run<T>(actor: AilyMcpVerifiedActor, operation: () => Promise<T>): Promise<T> {
-    this.identity.assertVerified(actor);
-    // This method verifies the pre-existing Hosted service role before binding
-    // the mapped actor. It cannot elevate a browser SQL connection.
-    return this.actors.withActorScope(actor.actorUserId, async () => {
-      const result=await operation();
-      this.identity.assertVerified(actor);
-      await this.actors.withActorTransaction(actor.actorUserId,async({database})=>{
-        const [proof]=await database.execute<{allowed:boolean}>(sql`SELECT (${this.actorPredicate(actor)}) AS allowed`);
+  private assertActor(actor:DomainActor):void {
+    if(isServiceTaskActor(actor))this.identity.assertAuthorizedCaller(actor.caller);
+    else this.identity.assertVerified(actor);
+  }
+
+  private async run<T>(caller:AilyMcpCaller,ref:string,operation:(actor:DomainActor)=>Promise<T>,purpose:Operation='WRITE'):Promise<T> {
+    let actor:DomainActor;
+    if(isAilyHostServiceCaller(caller)) {
+      this.identity.assertAuthorizedCaller(caller);
+      const config=this.admission.requireConfiguredScope(caller);
+      if(!this.sourceAuthorization || typeof this.sourceAuthorization.authorizeSourceRead!=='function')
+        throw new Error('AILY_DOMAIN_SOURCE_AUTHORIZATION_REQUIRED');
+      if(typeof this.actors.assertHostedServiceRole!=='function')throw new Error('AILY_DOMAIN_SERVICE_ROLE_REQUIRED');
+      await this.actors.assertHostedServiceRole();
+      const binding=await this.repository.readAilyTaskActorBinding({operationRef:ref,tenantId:config.tenantId,workItemId:config.workItemId});
+      if(!binding || binding.operationRef!==ref || binding.tenantId!==config.tenantId || binding.workItemId!==config.workItemId ||
+          !/^[A-Za-z0-9_-]{1,255}$/u.test(binding.actorUserId) || !binding.attemptId || !binding.documentVersionId ||
+          !binding.taskInputHash || !/^[a-f0-9]{64}$/u.test(binding.taskInputHash) ||
+          !Number.isSafeInteger(binding.inputRevision) || !Number.isSafeInteger(binding.baseRevision))
+        throw new Error('AILY_DOMAIN_TASK_NOT_FOUND');
+      actor=Object.freeze({authenticationMode:'HOST_SERVICE',caller,actorUserId:binding.actorUserId,
+        tenantId:caller.tenantId,agentId:caller.agentId,binding:Object.freeze({...binding})});
+    } else {this.identity.assertVerified(caller);actor=caller;}
+    const resolvedActor=actor;
+    return this.actors.withActorScope(actor.actorUserId,async()=>{
+      const result=await operation(resolvedActor);
+      this.assertActor(resolvedActor);
+      // Service reads re-authorize the same exact task/source after external
+      // awaits. Completed READ/final recovery does not acquire a new lease.
+      const authorization=isServiceTaskActor(resolvedActor)?await this.authorizeProof(resolvedActor,ref,purpose):null;
+      const predicate=authorization?(purpose==='READ'?authorization.readPredicate:authorization.snapshot.writePredicate)
+        :this.actorPredicate(resolvedActor);
+      await this.actors.withActorTransaction(resolvedActor.actorUserId,async({database})=>{
+        const [proof]=await database.execute<{allowed:boolean}>(sql`SELECT (${predicate}) AS allowed`);
         if(proof?.allowed!==true)throw new Error('AILY_DOMAIN_AUTHORIZATION_CHANGED');
       });
+      if(isServiceTaskActor(resolvedActor))this.logger.log(JSON.stringify({event:'AILY_MCP_HOST_SERVICE_OPERATION',
+        authenticationMode:'HOST_SERVICE',operationRef:resolvedActor.binding.operationRef}));
       return result;
     });
   }
 
-  private actorPredicate(actor:AilyMcpVerifiedActor):SQL {
+  private actorPredicate(actor:DomainActor,binding?:{row:Awaited<ReturnType<ActionAttemptRepository['readByOperationRef']>>;
+    current:CanonicalWorkItemProjection}):SQL {
+    if(isServiceTaskActor(actor)) {
+      if(!binding?.row)throw new Error('AILY_DOMAIN_TASK_BINDING_CHANGED');
+      const {row,current}=binding;
+      return sql`EXISTS (SELECT 1 FROM ${actionAttempt}
+        JOIN ${workItem} ON ${workItem.tenantId}=${actionAttempt.tenantId} AND ${workItem.workItemId}=${actionAttempt.workItemId}
+        JOIN ${autoWorkItemAuthorization} ON ${autoWorkItemAuthorization.tenantId}=${workItem.tenantId}
+          AND ${autoWorkItemAuthorization.workItemId}=${workItem.workItemId}
+        WHERE ${actionAttempt.attemptId}=${actor.binding.attemptId} AND ${actionAttempt.operationRef}=${row.operationRef}
+          AND ${actionAttempt.tenantId}=${actor.tenantId} AND ${actionAttempt.workItemId}=${actor.binding.workItemId}
+          AND ${actionAttempt.actorUserId}=${actor.actorUserId} AND ${actionAttempt.taskInputHash}=${actor.binding.taskInputHash}
+          AND ${actionAttempt.documentVersionId}=${actor.binding.documentVersionId}
+          AND ${actionAttempt.inputRevision}=${actor.binding.inputRevision} AND ${actionAttempt.baseRevision}=${actor.binding.baseRevision}
+          AND ${actionAttempt.requestOrigin}='OPENCLAW_MCP_V1' AND ${actionAttempt.actionType}='OPENCLAW_DYNAMIC_EVALUATION'
+          AND ${actionAttempt.taskEnvelopeJson}=${row.taskEnvelopeJson}
+          AND ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,executionMode}'='AILY_AGENT_V1'
+          AND ${actionAttempt.taskEnvelopeJson}::jsonb #>> '{modelInput,actorUserId}'=${actor.actorUserId}
+          AND ${workItem.requestedByUserId}=${actor.actorUserId} AND ${workItem.requestId}=${current.requestId}
+          AND ${workItem.documentId}=${current.source.documentId} AND ${workItem.documentVersionId}=${row.documentVersionId}
+          AND ${workItem.sourceArtifactId}=${current.source.sourceArtifactId}
+          AND ${workItem.sourceFileSha256}=${canonicalHostBareSha256(current.source.sourceFileSha256)}
+          AND ${workItem.sourceByteLength}=${current.source.sourceByteLength}
+          AND ${autoWorkItemAuthorization.grantKind}='MIAODA_CANONICAL_PARSE_REQUEST'
+          AND ${autoWorkItemAuthorization.actorUserId}=${actor.actorUserId}
+          AND ${autoWorkItemAuthorization.requestId}=${workItem.requestId}
+          AND ${autoWorkItemAuthorization.documentId}=${workItem.documentId}
+          AND ${autoWorkItemAuthorization.documentVersionId}=${workItem.documentVersionId}
+          AND ${autoWorkItemAuthorization.sourceArtifactId}=${workItem.sourceArtifactId}
+          AND ${autoWorkItemAuthorization.sourceFileSha256}=${workItem.sourceFileSha256}
+          AND ${autoWorkItemAuthorization.sourceByteLength}=${workItem.sourceByteLength})`;
+    }
     return sql`${new Date(actor.expiresAt).toISOString()}::timestamptz>clock_timestamp() AND EXISTS (SELECT 1 FROM ${identitySubjectMapping}
       WHERE ${identitySubjectMapping.id}=${actor.mappingId} AND ${identitySubjectMapping.revision}=${actor.mappingRevision}
         AND ${identitySubjectMapping.status}='ACTIVE' AND ${identitySubjectMapping.miaodaUserId}=${actor.actorUserId}
@@ -56,9 +126,9 @@ export class AilyTaskDomainService {
         AND ${identitySubjectMapping.feishuOpenId}=${actor.feishuOpenId} AND ${identitySubjectMapping.feishuTenantKey}=${actor.feishuTenantKey})`;
   }
 
-  async sources(actor: AilyMcpVerifiedActor, raw: unknown) {
+  async sources(caller: AilyMcpCaller, raw: unknown) {
     const input = ailySourceCommand.parse(raw);
-    return this.run(actor, async () => {
+    return this.run(caller,input.taskContextRef,async actor => {
       const context = await this.context(actor, input.taskContextRef, 'WRITE');
       const {row} = context.snapshot;
       return this.jobAid.readSources({attemptRef: input.taskContextRef, workItemId: row.workItemId,
@@ -67,9 +137,9 @@ export class AilyTaskDomainService {
     });
   }
 
-  async validate(actor: AilyMcpVerifiedActor, raw: unknown) {
+  async validate(caller: AilyMcpCaller, raw: unknown) {
     const input = ailyValidateCommand.parse(raw);
-    return this.run(actor, async () => {
+    return this.run(caller,input.taskContextRef,async actor => {
       const context = await this.context(actor, input.taskContextRef, 'WRITE');
       const {row, run, baseline} = context.snapshot;
       if (run.pending && run.pending.phase !== 'READ') {
@@ -89,9 +159,9 @@ export class AilyTaskDomainService {
     });
   }
 
-  async save(actor: AilyMcpVerifiedActor, raw: unknown) {
+  async save(caller: AilyMcpCaller, raw: unknown) {
     const input = ailySaveCommand.parse(raw);
-    return this.run(actor, async () => {
+    return this.run(caller,input.taskContextRef,async actor => {
       let context = await this.context(actor, input.taskContextRef, 'WRITE');
       let {run, row} = context.snapshot;
       let pending = run.pending;
@@ -132,9 +202,9 @@ export class AilyTaskDomainService {
     });
   }
 
-  async read(actor: AilyMcpVerifiedActor, raw: unknown) {
+  async read(caller: AilyMcpCaller, raw: unknown) {
     const input = ailyReadCommand.parse(raw);
-    return this.run(actor, async () => {
+    return this.run(caller,input.taskContextRef,async actor => {
       const context = await this.context(actor, input.taskContextRef, 'READ');
       const {row, run} = context.snapshot;
       const key = input.saveRequestId ?? (!input.workRevisionRef ? run.pending?.saveRequestId : undefined);
@@ -160,23 +230,23 @@ export class AilyTaskDomainService {
         }
       }
       return result;
-    });
+    },'READ');
   }
 
-  async stageOverall(actor: AilyMcpVerifiedActor, raw: unknown) {
+  async stageOverall(caller: AilyMcpCaller, raw: unknown) {
     const input = ailyStageCommand.parse(raw);
-    return this.run(actor, async () => this.jobAid.projectAilyStage(await this.context(actor, input.taskContextRef, 'WRITE'), input.workRevisionRef));
+    return this.run(caller,input.taskContextRef,async actor => this.jobAid.projectAilyStage(await this.context(actor, input.taskContextRef, 'WRITE'), input.workRevisionRef));
   }
 
-  async finish(actor: AilyMcpVerifiedActor, raw: unknown) {
+  async finish(caller: AilyMcpCaller, raw: unknown) {
     const input = ailyFinishCommand.parse(raw);
-    return this.run(actor, async () => {
+    return this.run(caller,input.taskContextRef,async actor => {
       const context = await this.context(actor, input.taskContextRef, 'FINALIZE');
       const result = await this.jobAid.finishAily(context, input.workRevisionRef);
       // Evaluation final is distinct from the outer complete-analysis ACK.
       const acknowledgement = await this.dispatch.acknowledgeAilyWorkItem(context);
       return {result, acknowledgement};
-    });
+    },'FINALIZE');
   }
 
   private async pending(context: AilyTrustedTaskContext, next: AilyExecutorRun, allowReadSlotChange=false): Promise<boolean> {
@@ -187,20 +257,34 @@ export class AilyTaskDomainService {
     return changed;
   }
 
-  private async context(actor: AilyMcpVerifiedActor, ref: string, operation: Operation): Promise<AilyTrustedTaskContext> {
+  private async context(actor: DomainActor, ref: string, operation: Operation): Promise<AilyTrustedTaskContext> {
     const snapshot = await this.authorize(actor, ref, operation);
     return AilyTrustedTaskContext.authorized(snapshot, () => this.authorize(actor, ref, operation));
   }
 
-  private async authorize(actor: AilyMcpVerifiedActor, ref: string, operation: Operation): Promise<AilyTaskDomainSnapshot> {
-    this.identity.assertVerified(actor);
+  private async authorize(actor: DomainActor, ref: string, operation: Operation): Promise<AilyTaskDomainSnapshot> {
+    return (await this.authorizeProof(actor,ref,operation)).snapshot;
+  }
+
+  private async authorizeProof(actor:DomainActor,ref:string,operation:Operation):Promise<{
+    snapshot:AilyTaskDomainSnapshot;readPredicate:SQL}> {
+    this.assertActor(actor);
+    if(isServiceTaskActor(actor))this.admission.requireConfiguredScope(actor.caller);
     const row = await this.repository.readByOperationRef(ref);
     if (!row || row.actorUserId !== actor.actorUserId || row.tenantId !== actor.tenantId || !row.workItemId)
       throw new Error('AILY_DOMAIN_TASK_NOT_FOUND');
+    if(isServiceTaskActor(actor) && (row.attemptId!==actor.binding.attemptId || row.operationRef!==actor.binding.operationRef ||
+        row.workItemId!==actor.binding.workItemId || row.documentVersionId!==actor.binding.documentVersionId ||
+        row.taskInputHash!==actor.binding.taskInputHash || row.inputRevision!==actor.binding.inputRevision ||
+        row.baseRevision!==actor.binding.baseRevision || row.requestOrigin!=='OPENCLAW_MCP_V1' || row.actionType!=='OPENCLAW_DYNAMIC_EVALUATION'))
+      throw new Error('AILY_DOMAIN_TASK_BINDING_CHANGED');
     const task = parseTaskEnvelope(row.taskEnvelopeJson);
     const sealedInput = parseJobAidProblemTask(task);
     if (sealedInput.executionMode !== 'AILY_AGENT_V1' || task.operationRef !== ref || task.actionAttemptId !== row.attemptId ||
         task.inputHash !== row.taskInputHash || sealedInput.actorUserId !== actor.actorUserId)
+      throw new Error('AILY_DOMAIN_TASK_BINDING_CHANGED');
+    if(isServiceTaskActor(actor) && (task.tenantId!==row.tenantId || task.workItemId!==row.workItemId ||
+        task.documentVersionId!==row.documentVersionId || task.inputRevision!==row.inputRevision || task.baseRevision!==row.baseRevision))
       throw new Error('AILY_DOMAIN_TASK_BINDING_CHANGED');
     const current: CanonicalWorkItemProjection = await this.registrar.getTenantScopedByWorkItemId({tenantId: actor.tenantId, workItemId: row.workItemId});
     const config = this.admission.requireScope(actor.tenantId, current);
@@ -212,8 +296,22 @@ export class AilyTaskDomainService {
         task.documentVersionId !== current.source.documentVersionId ||
         !task.sourceRefs.some(source => source.ref === current.source.sourceArtifactId && source.sha256 === canonicalHostBareSha256(current.source.sourceFileSha256)))
       throw new Error('AILY_DOMAIN_RUN_BINDING_CHANGED');
-    const writePredicate = this.actorPredicate(actor);
+    const writePredicate = this.actorPredicate(actor,{row,current});
     const authorization = await this.actors.withActorTransaction(actor.actorUserId, async ({database}) => {
+      if(isServiceTaskActor(actor)) {
+        if(!this.sourceAuthorization)throw new Error('AILY_DOMAIN_SOURCE_AUTHORIZATION_REQUIRED');
+        const expected={tenantId:actor.tenantId,actorUserId:actor.actorUserId,workItemId:row.workItemId!,requestId:current.requestId,
+          documentId:current.source.documentId,documentVersionId:current.source.documentVersionId,
+          sourceArtifactId:current.source.sourceArtifactId,sourceFileSha256:canonicalHostBareSha256(current.source.sourceFileSha256),
+          sourceByteLength:current.source.sourceByteLength};
+        const access=await this.sourceAuthorization.authorizeSourceRead(expected,database);
+        if(!access.allowed || access.action!=='DOCUMENT_READ' || access.authorizationPolicy!=='MIAODA_HOST_DOCUMENT_READ' ||
+            access.tenantId!==expected.tenantId || access.actorUserId!==expected.actorUserId || access.documentId!==expected.documentId ||
+            access.documentVersionId!==expected.documentVersionId || access.sourceArtifactId!==expected.sourceArtifactId ||
+            access.sourceFileSha256!==expected.sourceFileSha256 || access.sourceByteLength!==expected.sourceByteLength)
+          throw new Error('AILY_DOMAIN_SOURCE_AUTHORIZATION_REQUIRED');
+        this.assertActor(actor);
+      }
       const [proof] = await database.execute<{allowed: boolean}>(sql`SELECT (${writePredicate}) AS allowed`);
       if (proof?.allowed !== true) throw new Error('AILY_DOMAIN_AUTHORIZATION_CHANGED');
       const [owner] = await database.select().from(workItem).where(and(eq(workItem.tenantId, actor.tenantId),
@@ -225,6 +323,11 @@ export class AilyTaskDomainService {
       const bound = automaticWorkItemTaskLease(sealedInput.automaticWorkItemLease);
       const [grant] = await database.select().from(autoWorkItemAuthorization).where(and(
         eq(autoWorkItemAuthorization.tenantId, actor.tenantId), eq(autoWorkItemAuthorization.workItemId, row.workItemId))).limit(1);
+      if(isServiceTaskActor(actor) && (!bound || !grant || grant.grantKind!=='MIAODA_CANONICAL_PARSE_REQUEST' ||
+          grant.actorUserId!==actor.actorUserId || grant.requestId!==current.requestId || grant.requestId!==bound.requestId ||
+          grant.documentId!==owner.documentId || grant.documentVersionId!==owner.documentVersionId ||
+          grant.sourceArtifactId!==owner.sourceArtifactId || grant.sourceFileSha256!==owner.sourceFileSha256 ||
+          Number(grant.sourceByteLength)!==Number(owner.sourceByteLength)))throw new Error('AILY_DOMAIN_SOURCE_CHANGED');
       const active = !!grant && !!bound && grant.grantKind === 'MIAODA_CANONICAL_PARSE_REQUEST' && grant.status === 'LEASED' && grant.leaseOwner === config.principalId &&
         !!grant.leaseToken && !!grant.leaseExpiresAt && grant.leaseExpiresAt > new Date() &&
         grant.requestId === bound.requestId && grant.leaseGeneration === bound.leaseGeneration && grant.requestId === current.requestId &&
@@ -263,9 +366,11 @@ export class AilyTaskDomainService {
       return {outer, writePredicate: liveWrite};
     });
     const history = await this.work.listForRuntime({tenantId: actor.tenantId, actorUserId: actor.actorUserId, workItemId: row.workItemId});
-    return {row, task, sealedInput, run, baseline: history[0] ?? null, writePredicate: authorization.writePredicate,
+    const snapshot:AilyTaskDomainSnapshot={row, task, sealedInput, run, baseline: history[0] ?? null, writePredicate: authorization.writePredicate,
       scope: {principalId: config.principalId, tenantId: actor.tenantId, workItemId: row.workItemId, appId: 'app_17bzc551rsg',
         attemptRef: ref, authorizationFingerprint: config.authorizationFingerprint,
         ...(authorization.outer ? {automaticWorkItemLease: authorization.outer} : {})}};
+    // Exact read authority stays separate from the snapshot's unchanged write fence.
+    return {snapshot,readPredicate:writePredicate};
   }
 }
