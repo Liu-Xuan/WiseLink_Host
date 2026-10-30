@@ -1,3 +1,4 @@
+import { types } from 'node:util';
 import {
   createAilyChat,
   serializeAilyChatRequest,
@@ -32,6 +33,97 @@ describe('Host Aily transport', () => {
     await expect(observeAilyChat({...request,chatId:'1234'})).rejects.toThrow();
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect((globalThis.fetch as jest.Mock).mock.calls[0][1].method).toBe('GET');
+  });
+
+  async function getFailure(response:Response,chatId='1'.repeat(19)):Promise<Error> {
+    globalThis.fetch=jest.fn().mockResolvedValue(response);
+    try {await observeAilyChat({...request,chatId});throw new Error('SYNTHETIC_GET_REJECTION_REQUIRED');}
+    catch(cause) {
+      if(!types.isNativeError(cause))throw cause;
+      expect(cause.message).not.toBe('SYNTHETIC_GET_REJECTION_REQUIRED');
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      const [url,init]=(globalThis.fetch as jest.Mock).mock.calls[0];
+      expect(url).toBe(`https://open.feishu.cn/open-apis/aily/v1/agents/agent_test/chats/${chatId}`);
+      expect(init).toMatchObject({method:'GET',redirect:'error',headers:{authorization:`Bearer ${request.accessToken}`}});
+      expect(new URL(url).search).toBe('');
+      return cause;
+    }
+  }
+  function numericMetadata(error:Error) {
+    return {status:Object.getOwnPropertyDescriptor(error,'status')?.value,
+      code:Object.getOwnPropertyDescriptor(error,'code')?.value};
+  }
+
+  it('keeps the actual HTTP and numeric platform code from a bounded original GET rejection',async()=>{
+    const marker='SYNTHETIC_PRIVATE_TOKEN_AND_BODY';
+    const error=await getFailure(Response.json({code:2700001,msg:marker,data:{token:marker,answer:marker}},{status:400}));
+    expect(error.message).toBe('AILY_HTTP_400');expect(numericMetadata(error)).toEqual({status:400,code:2700001});
+    expect(JSON.stringify(error)).toBe(JSON.stringify({status:400,code:2700001}));
+    expect(String(error)).not.toContain(marker);
+    for(const field of ['body','response','cause','token','msg'])expect(Object.hasOwn(error,field)).toBe(false);
+  });
+
+  it.each([
+    {name:'non-JSON sensitive body',response:()=>new Response('SYNTHETIC_PRIVATE_BODY https://synthetic.invalid/?token=SYNTHETIC_SECRET',{status:400})},
+    {name:'over-boundary body',response:()=>new Response('SYNTHETIC_PRIVATE_BODY'.repeat(100001),{status:400})},
+    {name:'invalid UTF-8',response:()=>new Response(new Uint8Array([0xc3,0x28]),{status:400})},
+    {name:'missing body',response:()=>new Response(null,{status:400})},
+    {name:'failed body stream',response:()=>new Response(new ReadableStream<Uint8Array>({start(controller){
+      controller.error(new Error('SYNTHETIC_PRIVATE_BODY_STREAM'));}}),{status:400})},
+  ])('retains HTTP 400 when the $name cannot supply a verified platform code',async test=>{
+    const error=await getFailure(test.response());
+    expect(error.message).toBe('AILY_HTTP_400');expect(numericMetadata(error)).toEqual({status:400,code:null});
+    expect(JSON.stringify(error)).toBe(JSON.stringify({status:400,code:null}));
+    expect(String(error)).not.toContain('SYNTHETIC_PRIVATE');
+  });
+
+  it.each(['2700001',2700001.5,Number.MAX_SAFE_INTEGER+1,-1,null,true])(
+    'never coerces an unverified platform code %s from an HTTP rejection',async code=>{
+      const error=await getFailure(Response.json({code,msg:'SYNTHETIC_PRIVATE_BODY'},{status:400}));
+      expect(error.message).toBe('AILY_HTTP_400');expect(numericMetadata(error)).toEqual({status:400,code:null});
+    });
+
+  it('keeps HTTP 200 nonzero platform code rejected with the original message and own numeric fields',async()=>{
+    const error=await getFailure(Response.json({code:2700002,msg:'SYNTHETIC_PRIVATE_BODY',data:{status:'Completed'}}));
+    expect(error.message).toBe('AILY_RESULT_REJECTED');expect(numericMetadata(error)).toEqual({status:200,code:2700002});
+    expect(JSON.stringify(error)).toBe(JSON.stringify({status:200,code:2700002}));
+  });
+
+  it.each([
+    {name:'invalid JSON',response:()=>new Response('SYNTHETIC_PRIVATE_BODY'),message:'AILY_RESULT_INVALID'},
+    {name:'oversized body',response:()=>new Response('x'.repeat(2_000_001)),message:'AILY_RESULT_TOO_LARGE'},
+  ])('preserves the existing HTTP 200 $name error while retaining its known status',async test=>{
+    const error=await getFailure(test.response());
+    expect(error.message).toBe(test.message);expect(numericMetadata(error)).toEqual({status:200,code:null});
+  });
+
+  it('keeps the original successful-response decoder error message with numeric status only',async()=>{
+    const bytes=new Uint8Array([0xc3,0x28]);let expected:Error|undefined;
+    try {new TextDecoder('utf-8',{fatal:true}).decode(bytes);}catch(cause){if(types.isNativeError(cause))expected=cause;else throw cause;}
+    expect(expected).toBeDefined();const error=await getFailure(new Response(bytes));
+    expect(error.message).toBe(expected!.message);expect(types.isNativeError(error)).toBe(true);
+    expect(Object.getPrototypeOf(error)).toBe(Object.getPrototypeOf(expected));
+    expect(numericMetadata(error)).toEqual({status:200,code:null});
+  });
+
+  it('observes the exact synthetic 19-digit original chat with its unchanged caller and no replacement POST',async()=>{
+    const chatId='1'.repeat(19);
+    globalThis.fetch=jest.fn().mockResolvedValue(Response.json({code:0,data:{agent_chat_id:chatId,
+      session_id:request.remoteSessionId,status:'Running',content:[{type:'text',text:'SYNTHETIC_PRIVATE_BODY'}]}}));
+    expect(await observeAilyChat({...request,chatId})).toEqual({chatId,remoteStatus:'Running'});
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(`https://open.feishu.cn/open-apis/aily/v1/agents/agent_test/chats/${chatId}`,
+      expect.objectContaining({method:'GET',redirect:'error',headers:{authorization:`Bearer ${request.accessToken}`,accept:'application/json'}}));
+  });
+
+  it.each([
+    {fields:{agent_chat_id:'2'.repeat(19)},message:'AILY_RESULT_CHAT_MISMATCH'},
+    {fields:{session_id:'synthetic-other-session'},message:'AILY_RESULT_SESSION_MISMATCH'},
+  ])('retains exact original-pair refusal $message after platform success',async test=>{
+    const chatId='1'.repeat(19);
+    const error=await getFailure(Response.json({code:0,data:{agent_chat_id:chatId,session_id:request.remoteSessionId,
+      status:'Completed',...test.fields}}),chatId);
+    expect(error.message).toBe(test.message);expect(numericMetadata(error)).toEqual({status:200,code:0});
   });
 
   it('sends the exact persisted full task once with stream false and no model or lease fields', async () => {
@@ -256,7 +348,7 @@ describe('Host Aily transport', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it.each([31, 64])('reads an exact %s-digit original chat without truncating its ID', async (length) => {
+  it.each([19, 31, 64])('reads an exact %s-digit original chat without truncating its ID', async (length) => {
     const chatId = '1'.repeat(length);
     globalThis.fetch = jest.fn().mockResolvedValue(Response.json({
       code: 0,

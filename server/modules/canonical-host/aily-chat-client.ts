@@ -1,3 +1,4 @@
+import { types } from 'node:util';
 import {
   consumeAilyChatStream,
   isAilyChatId,
@@ -211,52 +212,64 @@ async function readAilyChatSnapshot(input: AilyChatResultRequest, includeAnswer:
     signal: AbortSignal.timeout(30_000),
     redirect: 'error',
   });
-  if (!response.ok) throw new Error(`AILY_HTTP_${response.status}`);
-  const body = await readResultBody(response);
-  if (!body || typeof body !== 'object' || Array.isArray(body))
-    throw new Error('AILY_RESULT_INVALID');
-  const envelope = body as Record<string, unknown>;
-  if (envelope.code !== 0) throw new Error('AILY_RESULT_REJECTED');
+  // These own numeric fields are the existing technical receipt consumer's
+  // status/code contract. Never retain the platform's free-form diagnostics.
+  let code: number | null = null;
+  const failure = (message: string) => Object.assign(new Error(message), {status: response.status, code});
+  let body: unknown;
+  try { body = await readResultBody(response); }
+  catch (cause) {
+    if (!response.ok) throw failure(`AILY_HTTP_${response.status}`);
+    // Preserve the original bounded-reader/decoder error and its message.
+    if (types.isNativeError(cause)) throw Object.assign(cause, {status: response.status, code});
+    throw failure('AILY_RESULT_INVALID');
+  }
+  const envelope = body && typeof body === 'object' && !Array.isArray(body) ? body as Record<string, unknown> : null;
+  if (envelope && typeof envelope.code === 'number' && Number.isSafeInteger(envelope.code) && envelope.code >= 0)
+    code = envelope.code;
+  if (!response.ok) throw failure(`AILY_HTTP_${response.status}`);
+  if (!envelope) throw failure('AILY_RESULT_INVALID');
+  if (envelope.code !== 0) throw failure('AILY_RESULT_REJECTED');
   const data = envelope.data;
   if (!data || typeof data !== 'object' || Array.isArray(data))
-    throw new Error('AILY_RESULT_INVALID');
+    throw failure('AILY_RESULT_INVALID');
   const result = data as Record<string, unknown>;
   if (
     result.agent_chat_id !== undefined &&
     (!isAilyChatId(result.agent_chat_id) || result.agent_chat_id !== input.chatId)
   )
-    throw new Error('AILY_RESULT_CHAT_MISMATCH');
+    throw failure('AILY_RESULT_CHAT_MISMATCH');
   if (
     result.session_id !== undefined &&
     (typeof result.session_id !== 'string' ||
       !/^[A-Za-z0-9_-]{1,96}$/u.test(result.session_id) ||
       (input.remoteSessionId !== undefined && result.session_id !== input.remoteSessionId))
   )
-    throw new Error('AILY_RESULT_SESSION_MISMATCH');
+    throw failure('AILY_RESULT_SESSION_MISMATCH');
   if (
     result.finish_reason !== undefined &&
     (typeof result.finish_reason !== 'string' ||
       result.finish_reason.length > 200)
   )
-    throw new Error('AILY_RESULT_INVALID');
+    throw failure('AILY_RESULT_INVALID');
   if (
     typeof result.status !== 'string' ||
     !result.status ||
     result.status.length > 96 ||
     (includeAnswer && !Array.isArray(result.content))
   )
-    throw new Error('AILY_RESULT_INVALID');
+    throw failure('AILY_RESULT_INVALID');
   const text: string[] = [];
   for (const content of includeAnswer && Array.isArray(result.content) ? result.content : []) {
     if (!content || typeof content !== 'object' || Array.isArray(content))
-      throw new Error('AILY_RESULT_INVALID');
+      throw failure('AILY_RESULT_INVALID');
     const entry = content as Record<string, unknown>;
     if (entry.type !== 'text') continue;
-    if (typeof entry.text !== 'string') throw new Error('AILY_RESULT_INVALID');
+    if (typeof entry.text !== 'string') throw failure('AILY_RESULT_INVALID');
     text.push(entry.text);
   }
   const answer = text.join('\n');
-  if (includeAnswer && answer.length > 60_000) throw new Error('AILY_RESULT_TOO_LARGE');
+  if (includeAnswer && answer.length > 60_000) throw failure('AILY_RESULT_TOO_LARGE');
   return {
     chatId: input.chatId,
     answer,
