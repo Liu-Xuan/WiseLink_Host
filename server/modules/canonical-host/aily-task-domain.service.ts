@@ -49,7 +49,7 @@ export class AilyTaskDomainService {
   }
 
   private actorPredicate(actor:AilyMcpVerifiedActor):SQL {
-    return sql`${new Date(actor.expiresAt)}>clock_timestamp() AND EXISTS (SELECT 1 FROM ${identitySubjectMapping}
+    return sql`${new Date(actor.expiresAt).toISOString()}::timestamptz>clock_timestamp() AND EXISTS (SELECT 1 FROM ${identitySubjectMapping}
       WHERE ${identitySubjectMapping.id}=${actor.mappingId} AND ${identitySubjectMapping.revision}=${actor.mappingRevision}
         AND ${identitySubjectMapping.status}='ACTIVE' AND ${identitySubjectMapping.miaodaUserId}=${actor.actorUserId}
         AND ${identitySubjectMapping.miaodaTenantId}=${actor.tenantId} AND ${identitySubjectMapping.expectedClientId}=${actor.expectedClientId}

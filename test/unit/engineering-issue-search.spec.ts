@@ -5,6 +5,7 @@ import { EngineeringIssueSearchService } from '../../server/modules/canonical-ho
 import { EngineeringReadPhaseObservation } from '../../server/modules/canonical-host/engineering-read-phase-observation';
 import type { CanonicalHostActor } from '../../server/modules/canonical-host/canonical-host.types';
 import { jobAidReadingFixture } from './semantic-reading-ui.fixtures';
+import type { JobAidWorkingReadModel } from '@shared/jobaid-problem-assessment.interface';
 
 const actor = {
   userId: 'owner',
@@ -58,6 +59,7 @@ function setup() {
     new PgDialect().sqlToQuery(query).sql.includes('WITH authorized_issue_text')
       ? matches(query) : db.execute(query) };
   const jobAid = {
+    readBrowser: jest.fn(), saveWork: jest.fn(), projectAilyStage: jest.fn(), finishAily: jest.fn(),
     readBrowserRevision: jest.fn().mockImplementation(async (_id, ref) => {
       if (ref !== saved.workRevisionRef)
         throw Object.assign(new Error('JOBAID_WORK_NOT_FOUND'), {
@@ -447,6 +449,7 @@ describe('saved knowledge catalogue', () => {
       workRef: identity.workRef,
     }, actor);
     expect(work.reading).toBeNull();
+    expect(work).not.toHaveProperty('stageOverall');
     expect(work.content.issues[0].body).toBe(h.saved.content.issues[0].body);
     const issue = await h.service.read(identity, actor);
     expect(issue.reading).toBeNull();
@@ -524,8 +527,49 @@ describe('saved knowledge catalogue', () => {
       workRef: h.saved.workRevisionRef,
     }, actor);
     expect(read.overall).toBe(overall);
+    expect(read).not.toHaveProperty('stageOverall');
     expect(read.content).toBe(h.saved.content);
     expect(h.jobAid.readBrowserRevision).not.toHaveBeenCalled();
+  });
+
+  it.each([false, true])('passes the authorized exact saved stage through independently of final Overall (final=%s)', async hasOverall => {
+    const h = setup();
+    const reading = (await h.service.read(h.identity, actor)).reading!;
+    h.jobAid.readBrowserRevision.mockClear();
+    const stage: NonNullable<JobAidWorkingReadModel['stageOverall']> = {
+      status: 'CURRENT',
+      receipt: {schemaVersion: 'wiselink.aily-stage-overall.v1', workRevisionRef: h.saved.workRevisionRef,
+        workRevision: h.saved.workRevision, sourceAssessment: {actionAttemptId: h.saved.actionAttemptId!,
+          workRevisionRef: h.saved.workRevisionRef, workRevision: h.saved.workRevision,
+          saveRequestId: h.saved.requestId, readObservedAt: '2026-10-29T00:00:00.000Z'},
+        artifact: {storeRole: 'UnifiedArtifactStoreCandidate', ref: 'artifact://synthetic-stage', sha256: 'a'.repeat(64),
+          byteLength: 100, mediaType: 'application/json'}, observedAt: '2026-10-29T00:00:01.000Z'},
+      readingResult: {...reading, resultRef: 'STAGE-A', resultRevision: h.saved.workRevision},
+    };
+    const overall = hasOverall ? {status: 'STALE' as const, readingResult: {...reading, resultRef: 'OVERALL-A'}} : null;
+    h.jobAid.readBrowserKnowledgeRevision.mockResolvedValue({revision: h.saved, overall, stageOverall: stage});
+    h.db.execute.mockResolvedValue([{...h.identity, current: false}]);
+    const knowledge = await h.service.readKnowledge({subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId,
+      workRef: h.saved.workRevisionRef}, actor);
+    expect(knowledge.stageOverall).toBe(stage);expect(knowledge.overall).toBe(overall);
+    expect(knowledge.entry).toMatchObject({workRef: h.saved.workRevisionRef, workRevision: h.saved.workRevision, current: false});
+    expect(knowledge.content).toBe(h.saved.content);
+    expect(h.jobAid.readBrowserKnowledgeRevision).toHaveBeenCalledTimes(1);
+    expect(h.jobAid.readBrowserKnowledgeRevision).toHaveBeenCalledWith(h.saved.workItemId, h.saved.workRevisionRef, actor);
+    for (const method of [h.jobAid.readBrowserRevision, h.jobAid.readBrowser, h.jobAid.saveWork,
+      h.jobAid.projectAilyStage, h.jobAid.finishAily, h.matters.readWorkingRevision])expect(method).not.toHaveBeenCalled();
+    expect(h.db.execute).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains an explicitly absent stage receipt without inventing a stage or another read', async () => {
+    const h = setup();
+    h.jobAid.readBrowserKnowledgeRevision.mockResolvedValue({revision: h.saved, overall: null, stageOverall: null});
+    h.db.execute.mockResolvedValue([{...h.identity, current: true}]);
+    const knowledge = await h.service.readKnowledge({subjectKind: 'WORK_ITEM', subjectId: h.saved.workItemId,
+      workRef: h.saved.workRevisionRef}, actor);
+    expect(knowledge).toHaveProperty('stageOverall', null);expect(knowledge.overall).toBeNull();
+    expect(h.jobAid.readBrowserKnowledgeRevision).toHaveBeenCalledTimes(1);
+    expect(h.jobAid.readBrowserRevision).not.toHaveBeenCalled();expect(h.jobAid.saveWork).not.toHaveBeenCalled();
   });
 
   it('continues across denied work and never exposes denied identity metadata', async () => {

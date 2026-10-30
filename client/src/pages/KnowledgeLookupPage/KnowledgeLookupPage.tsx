@@ -436,6 +436,17 @@ function KnowledgeCatalogue({ sourceIdentityReady, sourceIdentityError, retrySou
               evidence={read.content.evidence} onLocateDocument={locate} />} /> : null}
           {read.entry.subjectKind === 'ENGINEERING_MATTER' && read.entry.overviewStatus !== 'CURRENT' &&
             <div className="knowledge-notice">{read.entry.overviewStatus === 'STALE' ? '问题已更新，综合尚未覆盖。本页保留各部分的确切保存范围。' : '当前已保存问题解释，综合认识尚未形成。'}</div>}
+          {read.entry.subjectKind === 'WORK_ITEM' && read.stageOverall ? <section className="knowledge-prose" aria-label="确切阶段综合">
+            <h2>阶段综合 · 工作修订 {read.stageOverall.receipt.workRevision}</h2>
+            <p className="knowledge-notice">这是所选保存版本的阶段成果，任务可能仍在继续。</p>
+            {read.stageOverall.status === 'STALE' && <p className="knowledge-notice">这份阶段综合已过时，保留当时的认识和来源供核对。</p>}
+            {read.stageOverall.status === 'CURRENT' && <p>{compactReadingSummary(read.stageOverall.readingResult.content.headline, read.stageOverall.readingResult.content.listBrief)}</p>}
+            <details className="knowledge-work-details"><summary>展开阶段判断与依据</summary>
+              <p className="whitespace-pre-wrap">{read.stageOverall.readingResult.content.listBrief}</p>
+              <SavedAssessmentReading result={read.stageOverall.readingResult} depth="brief"
+                locationSuffix={`stage-overall:${read.entry.workRef}`} onLocateDocument={locate} />
+            </details>
+          </section> : null}
           {read.entry.subjectKind === 'WORK_ITEM' && (read.overall ? <section className="knowledge-prose" aria-label="确切综合意见">
             <h2>综合意见</h2>
             {read.overall.status === 'STALE' && <p className="knowledge-notice">这份综合意见已过时，保留当时的判断和来源供核对。</p>}
@@ -444,7 +455,7 @@ function KnowledgeCatalogue({ sourceIdentityReady, sourceIdentityError, retrySou
               <p className="whitespace-pre-wrap">{read.overall.readingResult.content.listBrief}</p>
               <SavedAssessmentReading result={read.overall.readingResult} depth="brief" onLocateDocument={locate} />
             </details>
-          </section> : <div className="knowledge-notice">这份问题分析尚无与该修订绑定的综合意见。</div>)}
+          </section> : !read.stageOverall ? <div className="knowledge-notice">这份问题分析尚无与该修订绑定的综合意见。</div> : null)}
           {read.content.understanding && <section className="knowledge-prose"><h2>本工作的问题理解</h2><EngineeringIssueBody body={read.content.understanding} evidence={read.content.evidence} onLocateDocument={locate} /></section>}
           <SavedWorkIssueDirectory read={read} selectedIssueKey={selectedIssueKey} onOpen={openIssue} />
           {selectedIssueKey && !visibleIssues.length ? <p role="alert">该问题不在当前读回的确切工作中，请重新选择。</p> : null}

@@ -281,7 +281,10 @@ export class EngineeringIssueSearchService {
           AND w.matter_id=${exact.subjectId} AND w.matter_work_revision_id=${exact.workRef}`));
         if (!rows.length) throw new NotFoundException('ENGINEERING_KNOWLEDGE_WORK_NOT_FOUND');
         const result = this.knowledgeFromWork(exact, revision, rows[0].current);
-        if (workItemRead) result.overall = workItemRead.overall;
+        if (workItemRead) {
+          result.overall = workItemRead.overall;
+          if (Object.hasOwn(workItemRead, 'stageOverall')) result.stageOverall = workItemRead.stageOverall;
+        }
         completed = true;
         return result;
       });

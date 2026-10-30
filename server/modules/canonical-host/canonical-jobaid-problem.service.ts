@@ -3295,8 +3295,22 @@ export class CanonicalJobAidProblemService {
     const task = parseTaskEnvelope(row.taskEnvelopeJson);
     if (task.modelInput.executionMode !== 'AILY_AGENT_V1') return null;
     const input = parseJobAidProblemTask(task);
-    if (input.actorUserId !== actor.userId || row.taskInputHash !== task.inputHash ||
-        revision.documentVersionId !== task.documentVersionId) throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
+    const identity = actor.objectAccessActor;
+    // The public reader already checked this reader's current object/source access.
+    // Native shared READ does not replace the immutable task's original producer.
+    const nativeSharedReader = identity && isHostedCanonicalFinalUserActor(identity) &&
+      identity.transport === 'MIAODA_AUTHENTICATED_HTTP' &&
+      identity.identityProvenance === 'MIAODA_GATEWAY_USER_CONTEXT' &&
+      identity.tenantId === actor.tenantId && identity.canonicalSubject.id === actor.userId &&
+      identity.applicationScopeId === actor.appId;
+    if (input.actorUserId !== row.actorUserId || (!nativeSharedReader && input.actorUserId !== actor.userId) ||
+        row.taskInputHash !== task.inputHash || task.tenantId !== row.tenantId || task.tenantId !== actor.tenantId ||
+        task.workItemId !== row.workItemId || task.workItemId !== workItem.workItemId ||
+        task.workItemId !== revision.workItemId || task.actionAttemptId !== row.attemptId ||
+        task.actionAttemptId !== revision.actionAttemptId || task.operationRef !== row.operationRef ||
+        task.taskType !== row.actionType || task.inputRevision !== row.inputRevision || task.baseRevision !== row.baseRevision ||
+        row.documentVersionId !== task.documentVersionId || revision.documentVersionId !== task.documentVersionId)
+      throw new Error('AILY_STAGE_OVERALL_BINDING_CHANGED');
     const receipt = ailyStageOveralls(row.reviewActivityJson).find(item => item.workRevisionRef === revision.workRevisionRef);
     if (!receipt) return null;
     const actualRead = exactProgramWorkRead(row,revision,receipt.sourceAssessment.readObservedAt);

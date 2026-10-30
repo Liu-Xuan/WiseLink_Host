@@ -10,6 +10,8 @@ import type {
 } from '@shared/engineering-issue-search.interface';
 import type { CanonicalLibraryDocumentsResponse, EngineeringMatterDirectoryResponse } from '@shared/api.interface';
 import type { DocumentReadingPreview, DocumentReadingRequest } from '@shared/document-reading.interface';
+import type { AssessmentReadingResult } from '@shared/assessment-reading.interface';
+import type { DocumentAssessmentEvidence } from '@client/src/features/matter/assessment-reading';
 import { getCanonicalLibraryDocuments } from '@client/src/api/canonical-host';
 import type { HierarchicalWikiList } from '@shared/hierarchical-wiki.interface';
 import { getEngineeringMatterDirectory } from '@client/src/api/engineering-matter';
@@ -31,6 +33,9 @@ const mockSourcePage = jest.fn();
 const mockSavedDocumentReading = jest.fn();
 const mockIdentity = jest.fn();
 const mockWrite = jest.fn((..._args: unknown[]) => { throw new Error('Read-only catalogue invoked a write'); });
+type SavedReadingProps = {result: AssessmentReadingResult; locationSuffix?: string;
+  onLocateDocument: (evidence: DocumentAssessmentEvidence) => void};
+const mockSavedReadingProps = jest.fn<void, [SavedReadingProps]>();
 const mockWiki = jest.fn();
 const wikiDirectory = (): HierarchicalWikiList => ({
   items: [{ wikiId: 'WIKI-787-23-15', summaryId: 'DS-WIKI-23-15', parentSummaryId: null,
@@ -115,8 +120,10 @@ jest.mock('@client/src/api/engineering-matter', () => ({
 jest.mock('@client/src/api/hierarchical-wiki', () => ({ listHierarchicalWiki: (...args: unknown[]) => mockWiki(...args) }));
 jest.mock('@client/src/features/matter/SavedAssessmentReading', () => ({
   __esModule: true,
-  default: ({ result }: { result: { content: { headline: string } } }) =>
-    require('react').createElement('div', null, result.content.headline),
+  default: (props: SavedReadingProps) => {
+    mockSavedReadingProps(props);
+    return require('react').createElement('div', null, props.result.content.headline);
+  },
 }));
 jest.mock('@client/src/api/canonical-host', () => ({
   readEngineeringKnowledgeCatalogue: (...args: unknown[]) => mockCatalogue(...args),
@@ -241,6 +248,25 @@ const read = (item: EngineeringKnowledgeEntry): EngineeringKnowledgeRead => ({
   } as EngineeringKnowledgeRead['content'],
   reading: {} as EngineeringKnowledgeRead['reading'],
 });
+
+
+function stageOverallFor(item: EngineeringKnowledgeEntry, status: 'CURRENT' | 'STALE' = 'CURRENT'):
+  NonNullable<EngineeringKnowledgeRead['stageOverall']> {
+  const evidence: DocumentAssessmentEvidence = {kind: 'DOCUMENT_PASSAGE', workItemId: item.subjectId,
+    documentVersionId: 'DV-stage-A', sourceRefId: 'SR-stage-A', evidenceRef: 'SOURCE-stage-A',
+    title: '原保存来源 A', versionLabel: 'PR-stage-A', excerpt: '保持所选保存版本的原依据。',
+    locator: JSON.stringify({parseRunId: 'PR-stage-A', sourceRefId: 'SR-stage-A'})};
+  return {status, receipt: {schemaVersion: 'wiselink.aily-stage-overall.v1', workRevisionRef: item.workRef,
+    workRevision: item.workRevision, sourceAssessment: {actionAttemptId: 'ATT-stage-A', workRevisionRef: item.workRef,
+      workRevision: item.workRevision, saveRequestId: 'SAVE-stage-A', readObservedAt: '2026-10-29T00:00:00.000Z'},
+    artifact: {storeRole: 'UnifiedArtifactStoreCandidate', ref: 'artifact://synthetic-stage-A', sha256: 'a'.repeat(64),
+      byteLength: 100, mediaType: 'application/json'}, observedAt: '2026-10-29T00:00:01.000Z'},
+    readingResult: {resultRef: 'STAGE-A', resultRevision: item.workRevision,
+      scope: {kind: 'WORK_ITEM', workItemId: item.subjectId, documentVersionId: 'DV-stage-A'},
+      content: {schemaVersion: 'wiselink.3_1.assessment_reading.v1', headline: '阶段正文 A',
+        listBrief: '阶段 A 的完整保存认识及限制。', lead: '阶段 A 的原始详细解释。', claims: [], decisiveClaimIds: []},
+      evidence: [evidence], candidateOnly: true}};
+}
 
 let root: Root;
 let router: ReturnType<typeof createMemoryRouter>;
@@ -481,6 +507,61 @@ describe('knowledge catalogue identity and reading lifecycle', () => {
     expect(overall.querySelector('p')?.textContent).toBe('综合短意见');
     expect(container.querySelector('.knowledge-preview')?.textContent)
       .not.toContain('尚无与该修订绑定的综合意见');
+  });
+
+  it('reads and unfolds a saved stage without final completion or writes, retaining its original source navigation', async () => {
+    const item = workEntry('WI-TARGET', 'JAWR-A');item.workRevision = 4;
+    const knowledge = read(item);knowledge.overall = null;knowledge.stageOverall = stageOverallFor(item);
+    mockCatalogue.mockResolvedValue(page(item));mockReadWork.mockResolvedValue(knowledge);
+    await mount('?subjectKind=WORK_ITEM&subjectId=WI-TARGET&workRef=JAWR-A');await settle();
+    const preview = container.querySelector('.knowledge-preview')!;
+    const stage = preview.querySelector('[aria-label="确切阶段综合"]')!;
+    expect(stage.querySelector('h2')?.textContent).toBe('阶段综合 · 工作修订 4');
+    expect(stage.textContent).toContain('阶段 A 的完整保存认识及限制。');
+    expect(stage.textContent).toContain('这是所选保存版本的阶段成果，任务可能仍在继续。');
+    expect(preview.querySelector('[aria-label="确切综合意见"]')).toBeNull();
+    expect(preview.textContent).not.toContain('尚无与该修订绑定的综合意见');
+    expect(stage.textContent).not.toMatch(/任务已完成|自动处理已确认|ACK|CAS/);
+    const details = stage.querySelector('details')!;expect(details.open).toBe(false);
+    await act(async () => { details.open = true;details.dispatchEvent(new dom.window.Event('toggle')); });
+    const rendered = mockSavedReadingProps.mock.calls.find(([props]) => props.result === knowledge.stageOverall!.readingResult)![0];
+    expect(rendered.result.content.lead).toBe('阶段 A 的原始详细解释。');
+    expect(rendered.result.evidence).toBe(knowledge.stageOverall.readingResult.evidence);
+    expect(rendered.locationSuffix).toBe('stage-overall:JAWR-A');
+    expect(mockReadWork).toHaveBeenCalledTimes(1);expect(mockWrite).not.toHaveBeenCalled();
+    const source = rendered.result.evidence.find((evidence): evidence is DocumentAssessmentEvidence => evidence.kind === 'DOCUMENT_PASSAGE')!;
+    await act(async () => rendered.onLocateDocument(source));
+    expect(router.state.location.pathname).toBe('/document-versions/DV-stage-A');
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get('parseRunId')).toBe('PR-stage-A');expect(params.get('sourceRef')).toBe('SR-stage-A');
+    expect(new URLSearchParams(params.get('returnKnowledgeQuery')!).get('workRef')).toBe('JAWR-A');
+    expect(mockReadWork).toHaveBeenCalledTimes(1);expect(mockWrite).not.toHaveBeenCalled();
+  });
+
+  it.each(['CURRENT', 'STALE'] as const)('keeps exact historical A and both independent syntheses while stage is %s and B is current', async stageStatus => {
+    const current = workEntry('WI-TARGET', 'JAWR-B');const historical = {...workEntry('WI-TARGET', 'JAWR-A'), current: false, workRevision: 2};
+    const knowledge = read(historical);knowledge.stageOverall = stageOverallFor(historical, stageStatus);
+    knowledge.overall = {status: 'STALE', readingResult: {...knowledge.stageOverall.readingResult, resultRef: 'OVERALL-A', resultRevision: 7,
+      content: {...knowledge.stageOverall.readingResult.content, headline: '既有综合正文 A', listBrief: '既有综合 A 的原判断和依据。'}}};
+    mockCatalogue.mockResolvedValue(page(current));mockReadWork.mockResolvedValue(knowledge);
+    await mount('?workItemId=WI-TARGET&subjectKind=WORK_ITEM&subjectId=WI-TARGET&workRef=JAWR-A');await settle();
+    const preview = container.querySelector('.knowledge-preview')!;
+    expect(preview.querySelector('.article-kicker')?.textContent).toContain('当时的工程认识 · 工作修订 2');
+    expect(container.querySelector('.knowledge-results .knowledge-badge')?.textContent).toContain('当前工作 · 修订 3');
+    const stage = preview.querySelector('[aria-label="确切阶段综合"]')!;
+    const overall = preview.querySelector('[aria-label="确切综合意见"]')!;
+    expect(stage.textContent).toContain('阶段综合 · 工作修订 2');expect(stage.textContent).toContain('阶段正文 A');
+    expect(overall.textContent).toContain('既有综合正文 A');expect(overall.textContent).toContain('既有综合 A 的原判断和依据。');
+    expect(overall.textContent).toContain('这份综合意见已过时');
+    expect(stage.textContent?.includes('这份阶段综合已过时')).toBe(stageStatus === 'STALE');
+    expect(stage.querySelector('details')?.open).toBe(false);expect(overall.querySelector('details')?.open).toBe(false);
+    const stageProps = mockSavedReadingProps.mock.calls.find(([props]) => props.result === knowledge.stageOverall!.readingResult)![0];
+    const finalProps = mockSavedReadingProps.mock.calls.find(([props]) => props.result === knowledge.overall!.readingResult)![0];
+    expect(stageProps.result.resultRef).toBe('STAGE-A');expect(finalProps.result.resultRef).toBe('OVERALL-A');
+    expect(stageProps.locationSuffix).not.toBe(finalProps.locationSuffix);
+    expect(mockJobAidWork).not.toHaveBeenCalled();expect(mockReadWork).toHaveBeenCalledTimes(1);
+    expect(mockReadWork).toHaveBeenCalledWith({subjectKind: 'WORK_ITEM', subjectId: 'WI-TARGET', workRef: 'JAWR-A'}, expect.anything());
+    expect(router.state.location.search).toContain('workRef=JAWR-A');expect(mockWrite).not.toHaveBeenCalled();
   });
 
   it('opens the exact saved WorkItem from a deep link even when the catalogue starts with an older matter', async () => {
@@ -734,13 +815,29 @@ describe('knowledge source documents reading', () => {
     const toggle = container.querySelector<HTMLButtonElement>(
       '.knowledge-source-conditions-toggle',
     )!;
-    expect(toggle.textContent).toContain('关键条件与阅读限制（3）');
+    expect(toggle.textContent).toContain('关键条件与阅读限制（2）');
     await act(async () =>
       toggle.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true })),
     );
-    expect(container.textContent).toContain('认识限制 现行版主题');
-    expect(container.textContent).toContain('来源限制 现行版主题');
+    const conditions = toggle.closest('.knowledge-source-conditions')!;
+    expect([...conditions.querySelectorAll('li')].map(item => item.textContent)).toEqual([
+      '关键条件 现行版主题', '认识限制 现行版主题',
+    ]);
+    expect(conditions.textContent).not.toContain('来源限制 现行版主题');
+    const article = container.querySelector('[aria-label="文档 Wiki"]')!;
+    const supplement = [...article.querySelectorAll('section')]
+      .find(section => section.querySelector('h2')?.textContent === '阅读补充')!;
+    expect(supplement.textContent).toContain('来源限制 现行版主题');
+    const version = sourceDocuments().items[0].versions.find(item => item.selectedVersionIsCurrent)!;
+    const preview = version.documentReading!.reading!;
+    expect(mockSavedDocumentReading).toHaveBeenCalledWith({
+      documentVersionId: version.documentVersionId,
+      parseRunId: preview.sourceBinding.original.parseRunId,
+      semanticRevision: preview.sourceBinding.semanticRevision,
+      readingRevision: preview.readingRevision,
+    }, expect.anything());
     expect(router.state.location.pathname).toBe('/knowledge');
+    expect(mockWrite).not.toHaveBeenCalled();
   });
 
   it('reads a historical document version in the Wiki before close reading', async () => {
@@ -1002,20 +1099,92 @@ test('fresh manual refetch preserves saved knowledge until an actual access reje
 
 
 test('a tenant-only identity refresh for the same actor and session rejects a late old-tenant response', async () => {
-  const old=deferred<EngineeringKnowledgeRead>();mockReadWork.mockReturnValueOnce(old.promise);
-  await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A');await settle();
-  const pending=deferred<EngineeringKnowledgeRead>();mockReadWork.mockReturnValueOnce(pending.promise);
-  currentTenant='tenant-only-new';
-  await act(async()=>{void queryClient.refetchQueries({predicate:query=>query.queryKey.includes('identity')});});await settle();
-  expect(mockReadWork).toHaveBeenCalledTimes(2);
-  expect(sessionGeneration).toBe(1);expect(currentActor).toBe('actor-test');
-  await act(async()=>old.resolve(read({...entry('A'),headline:'OLD_TENANT_RESPONSE'})));await settle();
-  expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('OLD_TENANT_RESPONSE');
-  await act(async()=>pending.resolve(read({...entry('A'),headline:'TENANT_ONLY_NEW_RESPONSE'})));await settle();
-  expect(container.querySelector('.knowledge-preview')?.textContent).toContain('TENANT_ONLY_NEW_RESPONSE');
-  const keys=queryClient.getQueryCache().getAll().filter(query=>query.queryKey.includes('work')).map(query=>query.queryKey);
-  expect(keys.some(key=>key.includes('tenant-only-new')&&key.includes('actor-test')&&key.includes(1))).toBe(true);
-  expect(mockWrite).not.toHaveBeenCalled();
+  const oldKey = [...ENGINEERING_MATTER_QUERY_ROOT, 'knowledge', 'unknown-app', 'tenant-test',
+    'actor-test', 1, 'work', 'ENGINEERING_MATTER', 'A', 'WR-A'] as const;
+  const newKey = [...ENGINEERING_MATTER_QUERY_ROOT, 'knowledge', 'unknown-app', 'tenant-only-new',
+    'actor-test', 1, 'work', 'ENGINEERING_MATTER', 'A', 'WR-A'] as const;
+  const fetchKeys: Array<readonly unknown[]> = [];
+  const removedKeys: Array<readonly unknown[]> = [];
+  const workReads: Array<{
+    call: number;
+    identity: Pick<EngineeringKnowledgeEntry, 'subjectKind' | 'subjectId' | 'workRef'>;
+    signal: AbortSignal;
+    pending: ReturnType<typeof deferred<EngineeringKnowledgeRead>>;
+    queryKeys: Array<readonly unknown[]>;
+  }> = [];
+  const stopSampling = queryClient.getQueryCache().subscribe(event => {
+    const key = event.query.queryKey;
+    if (key[2] !== 'knowledge' || key[7] !== 'work' || typeof key[8] !== 'string') return;
+    if (event.type === 'updated' && event.action.type === 'fetch') fetchKeys.push([...key]);
+    if (event.type === 'removed') removedKeys.push([...key]);
+  });
+  mockReadWork.mockImplementation((identity: typeof workReads[number]['identity'], signal: AbortSignal) => {
+    const request = { call: workReads.length + 1, identity: { ...identity }, signal,
+      pending: deferred<EngineeringKnowledgeRead>(),
+      queryKeys: queryClient.getQueryCache().getAll().filter(query =>
+        query.state.fetchStatus === 'fetching' && query.queryKey[2] === 'knowledge' &&
+        query.queryKey[7] === 'work' && query.queryKey.slice(-3).every((value, index) =>
+          value === [identity.subjectKind, identity.subjectId, identity.workRef][index]))
+        .map(query => [...query.queryKey]) };
+    workReads.push(request);
+    return request.pending.promise;
+  });
+  try {
+    await mount('?subjectKind=ENGINEERING_MATTER&subjectId=A&workRef=WR-A'); await settle();
+    expect(workReads).toHaveLength(1);
+    const old = workReads[0];
+    expect(old.queryKeys).toEqual([oldKey]);
+    expect(old.signal.aborted).toBe(false);
+    const initialFetchCount = fetchKeys.length;
+    currentTenant = 'tenant-only-new';
+    await act(async () => {
+      void queryClient.refetchQueries({ predicate: query => query.queryKey.includes('identity') });
+    }); await settle();
+    expect(sessionGeneration).toBe(1); expect(currentActor).toBe('actor-test');
+    expect(old.signal.aborted).toBe(true);
+    expect(removedKeys).toContainEqual(oldKey);
+    expect(queryClient.getQueryCache().find({ queryKey: oldKey, exact: true })).toBeUndefined();
+    expect(fetchKeys.slice(initialFetchCount)).toContainEqual(newKey);
+    for (const key of fetchKeys.slice(initialFetchCount)) expect(key).toEqual(newKey);
+    for (const request of workReads.slice(1)) expect(request.queryKeys).toEqual([newKey]);
+    const current = workReads.filter(request => !request.signal.aborted);
+    expect(current).toHaveLength(1);
+    expect(current[0]).not.toBe(old);
+    for (const request of workReads.filter(request => request !== current[0])) {
+      expect(request.signal.aborted).toBe(true);
+    }
+    await act(async () => old.pending.resolve(read({ ...entry('A'), headline: 'OLD_TENANT_RESPONSE' })));
+    await settle();
+    expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('OLD_TENANT_RESPONSE');
+    expect(queryClient.getQueryData(newKey)).toBeUndefined();
+    expect(queryClient.getQueryCache().find({ queryKey: oldKey, exact: true })).toBeUndefined();
+    const delivered = read({ ...entry('A'), headline: 'TENANT_ONLY_NEW_RESPONSE' });
+    await act(async () => current[0].pending.resolve(delivered)); await settle();
+    expect(container.querySelector('.knowledge-preview')?.textContent).toContain('TENANT_ONLY_NEW_RESPONSE');
+    expect(queryClient.getQueryData(newKey)).toEqual({ kind: 'readable', data: delivered, sessionGeneration: 1 });
+    const currentData = queryClient.getQueryData(newKey);
+    for (const request of workReads.slice(1).filter(item => item.signal.aborted)) {
+      const headline = `CANCELLED_WORK_RESPONSE_${request.call}`;
+      await act(async () => request.pending.resolve(read({ ...entry('A'), headline }))); await settle();
+      expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain(headline);
+      expect(queryClient.getQueryData(newKey)).toBe(currentData);
+    }
+    expect(container.querySelector('.knowledge-preview')?.textContent).toContain('TENANT_ONLY_NEW_RESPONSE');
+    expect(container.querySelector('.knowledge-preview')?.textContent).not.toContain('OLD_TENANT_RESPONSE');
+    expect(queryClient.getQueryCache().find({ queryKey: oldKey, exact: true })).toBeUndefined();
+    const businessWorkKeys = queryClient.getQueryCache().getAll()
+      .filter(query => query.queryKey[2] === 'knowledge' && query.queryKey[7] === 'work' &&
+        typeof query.queryKey[8] === 'string').map(query => query.queryKey);
+    expect(businessWorkKeys).toEqual([newKey]);
+    for (const request of workReads) expect(request.identity).toEqual({
+      subjectKind: 'ENGINEERING_MATTER', subjectId: 'A', workRef: 'WR-A',
+    });
+    for (const request of workReads.slice(1)) expect(request.queryKeys).toEqual([newKey]);
+    expect(router.state.location.search).toContain('workRef=WR-A');
+    expect(mockWrite).not.toHaveBeenCalled();
+  } finally {
+    stopSampling();
+  }
 });
 
 test.each(['tenant', 'actor'] as const)('source catalogue %s changes cannot reuse old preview props while exact reads are pending', async change => {

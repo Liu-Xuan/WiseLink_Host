@@ -1,5 +1,5 @@
 import type { AssessmentReadingResult } from './assessment-reading.interface';
-import type { JobAidProblemIssue, JobAidProblemWorkContent } from './jobaid-problem-assessment.interface';
+import type { JobAidProblemIssue, JobAidProblemWorkContent, JobAidWorkingReadModel } from './jobaid-problem-assessment.interface';
 import type { EngineeringMatterCorrectionNotice, EngineeringMatterOverviewCorrectionNotice, EngineeringMatterReferenceWorkNotice, EngineeringMatterOverviewSourceWork } from './matter-working.interface';
 
 export interface EngineeringIssueSearchHit {
@@ -61,6 +61,8 @@ export interface EngineeringKnowledgeRead {
     status: 'CANDIDATE_ONLY' | 'STALE';
     readingResult: AssessmentReadingResult;
   } | null;
+  /** Stage synthesis for this exact saved revision; it does not establish final/ACK. */
+  stageOverall?: JobAidWorkingReadModel['stageOverall'];
   correctionNotices?: EngineeringMatterCorrectionNotice[];
   overviewCorrectionNotices?: EngineeringMatterOverviewCorrectionNotice[];
   referenceWorkNotices?: EngineeringMatterReferenceWorkNotice[];
