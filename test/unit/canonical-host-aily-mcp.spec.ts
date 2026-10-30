@@ -1,8 +1,8 @@
-import { Logger } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/server';
 import { CanonicalHostAilyMcpService } from '../../server/modules/canonical-host/canonical-host-aily-mcp.service';
 import { ailySourceCommand, ailyValidateCommand, ailySaveCommand, ailyReadCommand, ailyStageCommand, ailyFinishCommand } from '../../server/modules/canonical-host/aily-task-domain.types';
-import { AilyMcpIdentityService } from '../../server/modules/canonical-host/aily-mcp-identity.service';
+import { AilyMcpIdentityService, type AilyMcpIdentityDiagnostic } from '../../server/modules/canonical-host/aily-mcp-identity.service';
 import { loadAilyEnterpriseConfiguration } from '../../server/modules/canonical-host/aily-enterprise-configuration';
 import { syntheticAilyEnterpriseJson } from '../support/aily-enterprise-configuration.fixture';
 import { EventEmitter } from 'node:events';
@@ -115,9 +115,14 @@ function call(name=toolInputs[0][0],args=toolInputs[0][1],id=3) {
 function noDomain(h:ReturnType<typeof connectionFixture>) {
   for(const method of Object.values(h.domain))expect(method).not.toHaveBeenCalled();
 }
-function authEvent(method:string,outcome:string) {
-  return JSON.stringify({event:'AILY_MCP_DISCOVERY_AUTH',method,outcome,domainDispatched:false});
+function authEvent(method:string,outcome:string,identityDiagnostic?:AilyMcpIdentityDiagnostic) {
+  return JSON.stringify({event:'AILY_MCP_DISCOVERY_AUTH',method,outcome,domainDispatched:false,
+    ...(identityDiagnostic?{identityDiagnostic}:{})});
 }
+function expectedDiagnostic(stage:AilyMcpIdentityDiagnostic['stage'],fields:Partial<Omit<AilyMcpIdentityDiagnostic,'stage'>>={}):AilyMcpIdentityDiagnostic {
+  return {stage,signatureVerified:null,userIdType:null,tenantIdType:null,agentMatched:null,expiryValid:null,...fields};
+}
+const signedStringClaims={signatureVerified:true,userIdType:'STRING' as const,tenantIdType:'STRING' as const};
 
 describe('enterprise MCP strict selectors',()=>{
   const candidate='00000000-0000-4000-8000-000000000001';
@@ -178,7 +183,10 @@ describe('enterprise MCP strict selectors',()=>{
       h.jwt(reason==='WRONG_AGENT'?{agent_id:'agent_other'}:{}));
     expect(result.status).toBe(200);expect(result.body).toHaveProperty('result.tools');noDomain(h);
     const outcome=reason==='NAMESPACE_UNKNOWN'?'NOT_CONFIGURED':reason==='NO_MAPPING'?'MAPPING_MISSING':'REJECTED';
-    expect(discoveryLog).toHaveBeenCalledWith(authEvent('tools/list',outcome));
+    const diagnostic=reason==='NAMESPACE_UNKNOWN'?expectedDiagnostic('CONFIGURATION'):reason==='NO_MAPPING'
+      ?expectedDiagnostic('SUBJECT_MAPPING',{...signedStringClaims,agentMatched:true,expiryValid:true})
+      :expectedDiagnostic('JWT_AGENT',{signatureVerified:true,agentMatched:false});
+    expect(discoveryLog).toHaveBeenCalledWith(authEvent('tools/list',outcome,diagnostic));
     if(reason!=='NO_MAPPING')expect(h.mapping).not.toHaveBeenCalled();
   });
 });
@@ -207,17 +215,21 @@ describe('gateway static discovery and fresh business authentication',()=>{
       expect(verify).toHaveBeenCalledTimes(header===undefined?0:4);
       const outcome=header===undefined?'MISSING_JWT':'NOT_CONFIGURED';
       for(const method of ['initialize','tools/list','ping','notifications/initialized'])
-        expect(discoveryLog).toHaveBeenCalledWith(authEvent(method,outcome));
+        expect(discoveryLog).toHaveBeenCalledWith(authEvent(method,outcome,
+          header===undefined?undefined:expectedDiagnostic('CONFIGURATION')));
       expect(h.mapping).not.toHaveBeenCalled();noDomain(h);
     });
 
   it.each([
-    [{user_id:123},'REJECTED'],[{tenant_id:123},'REJECTED'],[{agent_id:'agent_other'},'REJECTED'],[{exp:0},'REJECTED'],
-    [{},'VERIFIED'],
-  ] as const)('observes original verifier claims %j only as %s',async(claims,outcome)=>{
+    [{user_id:123},'REJECTED',expectedDiagnostic('JWT_SUBJECT',{signatureVerified:true,userIdType:'NUMBER',agentMatched:true})],
+    [{tenant_id:123},'REJECTED',expectedDiagnostic('JWT_SUBJECT',{...signedStringClaims,tenantIdType:'NUMBER',agentMatched:true})],
+    [{agent_id:'agent_other'},'REJECTED',expectedDiagnostic('JWT_AGENT',{signatureVerified:true,agentMatched:false})],
+    [{exp:0},'REJECTED',expectedDiagnostic('JWT_EXPIRY',{...signedStringClaims,agentMatched:true,expiryValid:false})],
+    [{},'VERIFIED',undefined],
+  ] as const)('observes original verifier claims %j only as %s',async(claims,outcome,diagnostic)=>{
     const h=connectionFixture();const result=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list'},h.jwt(claims));
     expect(result.body).toHaveProperty('result.tools');expect(discoveryLog).toHaveBeenCalledTimes(1);
-    expect(discoveryLog).toHaveBeenCalledWith(authEvent('tools/list',outcome));noDomain(h);
+    expect(discoveryLog).toHaveBeenCalledWith(authEvent('tools/list',outcome,diagnostic));noDomain(h);
     expect(h.mapping).toHaveBeenCalledTimes(outcome==='VERIFIED'?1:0);
   });
 
@@ -227,7 +239,8 @@ describe('gateway static discovery and fresh business authentication',()=>{
     else h.mapping.mockResolvedValueOnce(null); // Existing resolver returns null for absent/inactive mappings.
     const result=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list',params:{cursor:marker}},h.jwt({email:marker}));
     expect(result.body).toHaveProperty('result.tools');noDomain(h);
-    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list',reason==='lookup-error'?'UNCONFIRMED':'MAPPING_MISSING')]]);
+    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list',reason==='lookup-error'?'UNCONFIRMED':'MAPPING_MISSING',
+      reason==='lookup-error'?undefined:expectedDiagnostic('SUBJECT_MAPPING',{...signedStringClaims,agentMatched:true,expiryValid:true}))]]);
     expect(JSON.stringify(discoveryLog.mock.calls)).not.toContain(marker);expect(result.wire).not.toContain(marker);
   });
 
@@ -235,11 +248,37 @@ describe('gateway static discovery and fresh business authentication',()=>{
     const marker='synthetic-private-signature-marker';const h=connectionFixture();
     await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list',params:{cursor:marker}},marker);
     await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list'},h.jwt({email:marker,employee_no:marker}));
-    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list','REJECTED')],[authEvent('tools/list','VERIFIED')]]);
+    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list','REJECTED',expectedDiagnostic('JWT_FORMAT'))],
+      [authEvent('tools/list','VERIFIED')]]);
     const serialized=JSON.stringify(discoveryLog.mock.calls);
     for(const value of [marker,h.state.configuration.mcp.signingSecret,'synthetic-owner','synthetic-mapping','synthetic-open-id'])
       expect(serialized).not.toContain(value);
     noDomain(h);
+  });
+
+  it('logs no claims before a real signature comparison rejects the original JWT',async()=>{
+    const marker='synthetic-private-subject-token-marker';const h=connectionFixture();
+    const token=h.jwt({user_id:marker,tenant_id:marker,email:marker});
+    h.state.configuration.mcp.signingSecret='synthetic-other-signing-secret';
+    const result=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list',params:{cursor:marker}},token);
+    expect(result.body).toHaveProperty('result.tools');noDomain(h);expect(h.mapping).not.toHaveBeenCalled();
+    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list','REJECTED',expectedDiagnostic('JWT_SIGNATURE',{signatureVerified:false}))]]);
+    for(const value of [marker,token,h.state.configuration.mcp.signingSecret])expect(JSON.stringify(discoveryLog.mock.calls)).not.toContain(value);
+  });
+
+  it('never copies forged diagnostic properties or invokes their getters when observing a foreign exception',async()=>{
+    const marker='synthetic-private-forged-diagnostic-marker';const h=connectionFixture();
+    const cause=new UnauthorizedException('AILY_MCP_JWT_INVALID');const getter=jest.fn(()=>{throw new Error(marker);});
+    Object.defineProperty(cause,'identityDiagnostic',{get:getter});
+    Object.assign(cause,{diagnostic:{stage:marker,signatureVerified:true,userIdType:marker},token:marker});
+    jest.spyOn(h.identity,'verify').mockRejectedValueOnce(cause);
+    const result=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list'});
+    expect(result.body).toHaveProperty('result.tools');noDomain(h);expect(getter).not.toHaveBeenCalled();
+    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list','MISSING_JWT')]]);
+    await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list'},'synthetic-header');
+    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list','MISSING_JWT')],[authEvent('tools/list','REJECTED')]]);
+    expect(getter).not.toHaveBeenCalled();noDomain(h);
+    expect(JSON.stringify(discoveryLog.mock.calls)).not.toContain(marker);
   });
 
   it.each([

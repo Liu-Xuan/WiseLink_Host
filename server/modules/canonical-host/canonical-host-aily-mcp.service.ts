@@ -1,7 +1,8 @@
 import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { toNodeHandler, type NodeMcpRequestHandler } from '@modelcontextprotocol/node';
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
-import { AilyMcpIdentityService, type AilyMcpVerifiedActor } from './aily-mcp-identity.service';
+import { AilyMcpIdentityService, readAilyMcpIdentityDiagnostic, type AilyMcpVerifiedActor,
+  type AilyMcpIdentityDiagnostic } from './aily-mcp-identity.service';
 import { AilyTaskDomainService } from './aily-task-domain.service';
 import { ailySourceCommand, ailyValidateCommand, ailySaveCommand, ailyReadCommand,
   ailyStageCommand, ailyFinishCommand } from './aily-task-domain.types';
@@ -38,9 +39,11 @@ export class CanonicalHostAilyMcpService {
   /** Read-only authentication evidence; neither this actor nor this outcome grants tool authority. */
   private async observeDiscovery(method: DiscoveryMethod, jwt: unknown): Promise<void> {
     let outcome: DiscoveryAuth = 'MISSING_JWT';
+    let identityDiagnostic: Readonly<AilyMcpIdentityDiagnostic> | null = null;
     if (jwt !== undefined && jwt !== null) {
       try { await this.identity.verify(jwt); outcome = 'VERIFIED'; }
       catch (cause) {
+        identityDiagnostic = readAilyMcpIdentityDiagnostic(cause);
         outcome = 'UNCONFIRMED';
         if (cause instanceof UnauthorizedException) {
           if (cause.message === 'AILY_MCP_IDENTITY_NOT_CONFIGURED') outcome = 'NOT_CONFIGURED';
@@ -49,7 +52,8 @@ export class CanonicalHostAilyMcpService {
         }
       }
     }
-    this.logger.log(JSON.stringify({event: 'AILY_MCP_DISCOVERY_AUTH', method, outcome, domainDispatched: false}));
+    this.logger.log(JSON.stringify({event: 'AILY_MCP_DISCOVERY_AUTH', method, outcome, domainDispatched: false,
+      ...(identityDiagnostic ? {identityDiagnostic} : {})}));
   }
 
   private server(jwt: unknown): McpServer {
