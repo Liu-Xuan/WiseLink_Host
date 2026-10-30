@@ -89,6 +89,7 @@ async function fixture(expiresAtSeconds = Math.floor(Date.now() / 1000) + 3600) 
     tenant_id: mapping.feishuTenantKey, exp: expiresAtSeconds })).toString('base64url');
   const jwt = `${header}.${payload}.${createHmac('sha256', configuration.mcp.signingSecret).update(`${header}.${payload}`).digest('base64url')}`;
   const actor = await identity.verify(jwt);
+  const verify = jest.spyOn(identity, 'verify');
   const input = buildJobAidProblemTask({ workItem: item, actorUserId: actor.actorUserId,
     permissionSnapshotVersion: 'synthetic-permission', purpose: 'INITIAL_PROBLEM_ASSESSMENT', sourceCatalog: [],
     sourceBindings: [{ kind: 'SOURCE_FILE', workItemId: item.workItemId, documentVersionId: item.source.documentVersionId,
@@ -169,10 +170,10 @@ async function fixture(expiresAtSeconds = Math.floor(Date.now() / 1000) + 3600) 
   const register = jest.spyOn(McpServer.prototype, 'registerTool').mockImplementation(function (name, _definition, call) {
     handlers.set(name, call as never); return { remove: jest.fn(), enable: jest.fn(), disable: jest.fn(), update: jest.fn() } as never;
   });
-  try { (service as unknown as { server(value: typeof actor): McpServer }).server(actor); }
+  try { (service as unknown as { server(jwt: unknown): McpServer }).server(jwt); }
   finally { register.mockRestore(); }
   const invoke = (name: ToolName) => handlers.get(name)!({ taskContextRef: task.operationRef, ...selections[name] } as never);
-  return { actor, identity, item, row, proofs, select, actors, repository, work, jobAid, dispatch, invoke };
+  return { actor, identity, verify, item, row, proofs, select, actors, repository, work, jobAid, dispatch, invoke, jwt };
 }
 
 function authorizationError() {
@@ -182,6 +183,7 @@ function authorizationError() {
 it('executes real mapping predicates before and after a successful registered source read', async () => {
   const h = await fixture();
   expect(await h.invoke('read_assessment_sources')).toEqual({ content: [{ type: 'text', text: JSON.stringify(sourceResult) }] });
+  expect(h.verify).toHaveBeenCalledTimes(1); expect(h.verify).toHaveBeenCalledWith(h.jwt);
   expect(h.proofs).toEqual([true, true]); expect(h.jobAid.readSources).toHaveBeenCalledTimes(1);
   expect(h.select).toHaveBeenCalledTimes(2);
   expect(h.actors.withActorTransaction).toHaveBeenCalledTimes(2);
@@ -195,6 +197,7 @@ it.each((Object.keys(selections) as ToolName[]).flatMap(name => ['inactive', 're
     await client!.unsafe(reason === 'inactive' ? "UPDATE pg_temp.identity_subject_mapping SET status='INACTIVE' WHERE id=$1"
       : 'UPDATE pg_temp.identity_subject_mapping SET revision=revision+1 WHERE id=$1', [mapping.id]);
     expect(await h.invoke(name)).toEqual(authorizationError()); expect(h.proofs).toEqual([false]);
+    expect(h.verify).toHaveBeenCalledTimes(1); expect(h.verify).toHaveBeenCalledWith(h.jwt);
     expect(h.select).not.toHaveBeenCalled(); expect(h.work.listForRuntime).not.toHaveBeenCalled();
     expect(h.repository.compareAndSetAilyDomainRun).not.toHaveBeenCalled();
     for (const callback of Object.values(h.jobAid)) expect(callback).not.toHaveBeenCalled();

@@ -28,7 +28,9 @@ describe('MCP-only real domain admission',()=>{
       miaodaUserId:'owner',miaodaTenantId:'tenant'})} as never,config);
     const header=Buffer.from(JSON.stringify({alg:'HS256'})).toString('base64url');
     const payload=Buffer.from(JSON.stringify({agent_id:config.agentId,user_id:'synthetic-open-id',tenant_id:'synthetic-tenant-key',exp:4102444800})).toString('base64url');
-    const actor=await identity.verify(`${header}.${payload}.${createHmac('sha256',config.signingSecret).update(`${header}.${payload}`).digest('base64url')}`);
+    const jwt=`${header}.${payload}.${createHmac('sha256',config.signingSecret).update(`${header}.${payload}`).digest('base64url')}`;
+    const actor=await identity.verify(jwt);
+    const verify=jest.spyOn(identity,'verify');
     const item=successorWorkItem();const original=originalFixture();
     item.source={documentId:'DOC-test',documentVersionId:original.binding.documentVersionId,sourceArtifactId:original.binding.sourceArtifactId,
       sourceFileSha256:original.binding.sourceSha256,sourceByteLength:original.binding.sourceByteLength,
@@ -70,7 +72,7 @@ describe('MCP-only real domain admission',()=>{
       handlers.set(name,call as never);return {remove:jest.fn(),enable:jest.fn(),disable:jest.fn(),update:jest.fn()} as never;
     });
     try {
-      (service as unknown as {server(value:typeof actor):McpServer}).server(actor);
+      (service as unknown as {server(value:unknown):McpServer}).server(jwt);
       const selections:Record<string,object>={
         read_assessment_sources:{sourceRefs:['synthetic-source'],purpose:'核来源'},validate_assessment_work:{workJson:'{}'},
         save_assessment_work:{candidateRef:'00000000-0000-4000-8000-000000000001'},read_assessment_work:{workRevisionRef:'JAWR-synthetic'},
@@ -78,6 +80,8 @@ describe('MCP-only real domain admission',()=>{
       for(const [name,input] of Object.entries(selections))
         expect(await handlers.get(name)!({taskContextRef:task.operationRef,...input} as never)).toMatchObject({isError:true,
           content:[{text:JSON.stringify({code:'INITIAL_CONTINUATION_AILY_NOT_CONFIGURED'})}]});
+      expect(verify).toHaveBeenCalledTimes(6);
+      for(const [header] of verify.mock.calls)expect(header).toBe(jwt);
       expect(repository.readByOperationRef).toHaveBeenCalledTimes(6);expect(registrar.getTenantScopedByWorkItemId).toHaveBeenCalledTimes(6);
       expect(requireScope).toHaveBeenCalledTimes(6);expect(actors.withActorScope).toHaveBeenCalledTimes(6);
       for(const fn of [actors.withActorTransaction,repository.readAilyExecutorRun,repository.compareAndSetAilyDomainRun,

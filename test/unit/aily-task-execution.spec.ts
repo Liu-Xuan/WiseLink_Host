@@ -673,8 +673,7 @@ describe('normal enterprise task consumer', () => {
       expect(message.modelInput).toEqual(parseJobAidProblemTask(parseTaskEnvelope(h.row().taskEnvelopeJson)).modelInput);
       expect(message).not.toHaveProperty('task');
       expect(request.message).not.toContain(leaseToken);
-      const verified = await h.identity.verify(h.jwt);
-      (h.mcp as unknown as {server(actor:typeof verified):McpServer}).server(verified);
+      (h.mcp as unknown as {server(jwt:unknown):McpServer}).server(h.jwt);
       const call = async (name:string,args:object) => {
         const tool = tools.get(name)!;
         const input = tool.definition.inputSchema.parse({taskContextRef:message.taskContextRef,...args});

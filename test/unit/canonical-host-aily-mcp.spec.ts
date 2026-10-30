@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { McpServer } from '@modelcontextprotocol/server';
 import { CanonicalHostAilyMcpService } from '../../server/modules/canonical-host/canonical-host-aily-mcp.service';
 import { ailySourceCommand, ailyValidateCommand, ailySaveCommand, ailyReadCommand, ailyStageCommand, ailyFinishCommand } from '../../server/modules/canonical-host/aily-task-domain.types';
@@ -7,14 +8,16 @@ import { syntheticAilyEnterpriseJson } from '../support/aily-enterprise-configur
 import { EventEmitter } from 'node:events';
 import { createHmac } from 'node:crypto';
 
-function connectionFixture() {
+function connectionFixture(configured = true) {
   const full=syntheticAilyEnterpriseJson();
   const state=loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON:JSON.stringify({
     schemaVersion:full.schemaVersion,enabled:true,host:full.host,mcp:full.mcp,
     task:{enabled:false},background:{enabled:false,allowOriginalRequest:false}}),WL_AILY_MCP_SIGNING_SECRET:'synthetic-only-signature'});
   if(state.status!=='MCP_ONLY')throw new Error('SYNTHETIC_MCP_ONLY_REQUIRED');
-  const mapping=jest.fn(async()=>({id:'synthetic-mapping',revision:1,miaodaUserId:'synthetic-owner',miaodaTenantId:'synthetic-tenant'}));
-  const identity=new AilyMcpIdentityService({resolveSubjectMapping:mapping} as never,state.configuration.mcp);
+  const mapping=jest.fn(async(_input:{feishuOpenId:string;feishuTenantKey:string;expectedClientId:string}):
+    Promise<{id:string;revision:number;miaodaUserId:string;miaodaTenantId:string}|null>=>
+    ({id:'synthetic-mapping',revision:1,miaodaUserId:'synthetic-owner',miaodaTenantId:'synthetic-tenant'}));
+  const identity=new AilyMcpIdentityService({resolveSubjectMapping:mapping} as never,configured?state.configuration.mcp:null);
   const domain={sources:jest.fn(),validate:jest.fn(),save:jest.fn(),read:jest.fn(),stageOverall:jest.fn(),finish:jest.fn()};
   const service=new CanonicalHostAilyMcpService(identity,domain as never);
   const jwt=(claims:Record<string,unknown>={})=>{
@@ -26,7 +29,7 @@ function connectionFixture() {
   return {state,mapping,identity,domain,service,jwt};
 }
 
-function protocolResponse(contentType:string,wire:string,expectedId:string|number):Record<string,unknown> {
+function protocolResponse(contentType:string,wire:string,expectedId:string|number|null):Record<string,unknown> {
   const mediaType=contentType.split(';')[0].trim().toLowerCase();
   const messages:unknown[]=[];
   if(mediaType==='application/json')messages.push(JSON.parse(wire));
@@ -70,8 +73,12 @@ function protocolResponse(contentType:string,wire:string,expectedId:string|numbe
   return responses[0];
 }
 
+let discoveryLog:jest.SpyInstance;
+beforeEach(()=>{discoveryLog=jest.spyOn(Logger.prototype,'log').mockImplementation(()=>undefined);});
+afterEach(()=>{jest.restoreAllMocks();});
+
 /** Actual Node adapter/protocol, with in-memory Node HTTP surfaces; no listener. */
-async function protocol(service:CanonicalHostAilyMcpService,body:{jsonrpc:'2.0';id:string|number;method:string;params?:unknown},jwt:string) {
+async function protocolWire(service:CanonicalHostAilyMcpService,body:unknown,jwt:unknown=undefined) {
   let status=0;let responseHeaders:Record<string,string>={};const chunks:Buffer[]=[];
   const request={method:'POST',url:'/openapi/wiselink/aily-mcp',headers:{host:'localhost',
     'content-type':'application/json',accept:'application/json, text/event-stream','mcp-protocol-version':'2025-11-25'}};
@@ -81,7 +88,35 @@ async function protocol(service:CanonicalHostAilyMcpService,body:{jsonrpc:'2.0';
   await service.handle(request as unknown as Parameters<CanonicalHostAilyMcpService['handle']>[0],
     response as unknown as Parameters<CanonicalHostAilyMcpService['handle']>[1],body,jwt);
   const contentType=Object.entries(responseHeaders).find(([name])=>name.toLowerCase()==='content-type')?.[1]??'';
-  return {status,contentType,body:protocolResponse(contentType,Buffer.concat(chunks).toString('utf8'),body.id)};
+  return {status,contentType,wire:Buffer.concat(chunks).toString('utf8')};
+}
+
+async function protocol(service:CanonicalHostAilyMcpService,body:unknown,jwt:unknown=undefined) {
+  const response=await protocolWire(service,body,jwt);
+  const id=response.status!==400&&body&&typeof body==='object'&&!Array.isArray(body)&&'id'in body&&
+    (typeof body.id==='string'||typeof body.id==='number')?body.id:null;
+  return {...response,body:response.status===202&&response.wire===''
+    ?null:protocolResponse(response.contentType,response.wire,id)};
+}
+
+const toolInputs:[string,object][]=[
+  ['read_assessment_sources',{taskContextRef:'AQ-synthetic',sourceRefs:['source:synthetic'],purpose:'核来源'}],
+  ['validate_assessment_work',{taskContextRef:'AQ-synthetic',workJson:'{}'}],
+  ['save_assessment_work',{taskContextRef:'AQ-synthetic',candidateRef:'00000000-0000-4000-8000-000000000001'}],
+  ['read_assessment_work',{taskContextRef:'AQ-synthetic',workRevisionRef:'JAWR-synthetic'}],
+  ['project_assessment_stage_overall',{taskContextRef:'AQ-synthetic',workRevisionRef:'JAWR-synthetic'}],
+  ['finish_assessment_task',{taskContextRef:'AQ-synthetic',workRevisionRef:'JAWR-synthetic'}],
+];
+const initialize={jsonrpc:'2.0',id:1,method:'initialize',params:{protocolVersion:'2025-11-25',
+  capabilities:{},clientInfo:{name:'synthetic-client',version:'1'}}};
+function call(name=toolInputs[0][0],args=toolInputs[0][1],id=3) {
+  return {jsonrpc:'2.0',id,method:'tools/call',params:{name,arguments:args}};
+}
+function noDomain(h:ReturnType<typeof connectionFixture>) {
+  for(const method of Object.values(h.domain))expect(method).not.toHaveBeenCalled();
+}
+function authEvent(method:string,outcome:string) {
+  return JSON.stringify({event:'AILY_MCP_DISCOVERY_AUTH',method,outcome,domainDispatched:false});
 }
 
 describe('enterprise MCP strict selectors',()=>{
@@ -100,20 +135,19 @@ describe('enterprise MCP strict selectors',()=>{
       expect(schema.safeParse({...value,[field]:'forged'}).success).toBe(false);
   });
   it('registers the six actual facade methods without Native claim or queue tools',async()=>{
-    const actor={actorUserId:'synthetic-owner'};
-    const domain={sources:jest.fn(async()=>({read:true})),validate:jest.fn(),save:jest.fn(),read:jest.fn(),stageOverall:jest.fn(),finish:jest.fn()};
+    const h=connectionFixture();const domain=h.domain;domain.sources.mockResolvedValue({read:true});
     const registered=new Map<string,{call:(input:never)=>Promise<unknown>}>();
     const spy=jest.spyOn(McpServer.prototype,'registerTool').mockImplementation(function(name,_definition,call){
       registered.set(name,{call:call as never});return {remove:jest.fn(),enable:jest.fn(),disable:jest.fn(),update:jest.fn()} as never;
     });
     try {
-      const service=new CanonicalHostAilyMcpService({} as never,domain as never);
-      (service as unknown as {server(actor:never):McpServer}).server(actor as never);
+      (h.service as unknown as {server(jwt:unknown):McpServer}).server(h.jwt());
       expect([...registered.keys()]).toEqual(['read_assessment_sources','validate_assessment_work','save_assessment_work',
         'read_assessment_work','project_assessment_stage_overall','finish_assessment_task']);
       const input=ailySourceCommand.parse(cases[0][1]);
       await registered.get('read_assessment_sources')!.call(input as never);
-      expect(domain.sources).toHaveBeenCalledWith(actor,input);
+      expect(domain.sources).toHaveBeenCalledWith(expect.objectContaining({actorUserId:'synthetic-owner',tenantId:'synthetic-tenant'}),input);
+      expect(h.mapping).toHaveBeenCalledTimes(1);
       domain.sources.mockRejectedValueOnce(new Error('private body must not be returned'));
       expect(await registered.get('read_assessment_sources')!.call(input as never)).toMatchObject({isError:true,
         content:[{text:JSON.stringify({code:'AILY_DOMAIN_OPERATION_UNCONFIRMED'})}]});
@@ -136,15 +170,167 @@ describe('enterprise MCP strict selectors',()=>{
     for(const method of Object.values(h.domain))expect(method).not.toHaveBeenCalled();
   });
 
-  it.each(['NAMESPACE_UNKNOWN','WRONG_AGENT','NO_MAPPING'] as const)('keeps %s rejected in the actual connection handler',async reason=>{
+  it.each(['NAMESPACE_UNKNOWN','WRONG_AGENT','NO_MAPPING'] as const)('observes %s without granting static discovery actor authority',async reason=>{
     const h=connectionFixture();
     if(reason==='NAMESPACE_UNKNOWN')h.state.configuration.mcp.subjectNamespace=null;
-    if(reason==='NO_MAPPING')h.mapping.mockResolvedValueOnce(null as never);
-    await expect(protocol(h.service,{jsonrpc:'2.0',id:1,method:'tools/list',params:{}},
-      h.jwt(reason==='WRONG_AGENT'?{agent_id:'agent_other'}:{}))).rejects.toThrow(reason==='NAMESPACE_UNKNOWN'
-      ?'AILY_MCP_IDENTITY_NOT_CONFIGURED':reason==='NO_MAPPING'?'AILY_MCP_SUBJECT_MAPPING_REQUIRED':'AILY_MCP_JWT_INVALID');
-    for(const method of Object.values(h.domain))expect(method).not.toHaveBeenCalled();
+    if(reason==='NO_MAPPING')h.mapping.mockResolvedValueOnce(null);
+    const result=await protocol(h.service,{jsonrpc:'2.0',id:1,method:'tools/list',params:{}},
+      h.jwt(reason==='WRONG_AGENT'?{agent_id:'agent_other'}:{}));
+    expect(result.status).toBe(200);expect(result.body).toHaveProperty('result.tools');noDomain(h);
+    const outcome=reason==='NAMESPACE_UNKNOWN'?'NOT_CONFIGURED':reason==='NO_MAPPING'?'MAPPING_MISSING':'REJECTED';
+    expect(discoveryLog).toHaveBeenCalledWith(authEvent('tools/list',outcome));
     if(reason!=='NO_MAPPING')expect(h.mapping).not.toHaveBeenCalled();
+  });
+});
+
+describe('gateway static discovery and fresh business authentication',()=>{
+  it.each([undefined,'synthetic-private-invalid-jwt'])(
+    'serves identical SDK metadata without signer for header %s, never a domain reader',async header=>{
+      const h=connectionFixture(false);const verify=jest.spyOn(h.identity,'verify');
+      expect(loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON:JSON.stringify({
+        schemaVersion:'wiselink.aily-enterprise-configuration.v1',enabled:true,
+        host:h.state.configuration.host,mcp:syntheticAilyEnterpriseJson().mcp,
+        task:{enabled:false},background:{enabled:false,allowOriginalRequest:false}})}))
+        .toEqual({status:'UNAVAILABLE',reason:'AILY_MCP_SIGNING_SECRET_REQUIRED'});
+      const initialized=await protocol(h.service,initialize,header);
+      expect(initialized.status).toBe(200);expect(initialized.body).toMatchObject({jsonrpc:'2.0',id:1,
+        result:{serverInfo:{name:'wiselink-aily-engineering',version:'1.0.0'}}});
+      const listed=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list'},header);
+      expect(listed.status).toBe(200);expect(listed.body).not.toHaveProperty('error');
+      const tools=(listed.body as {result:{tools:Array<{name:string;inputSchema:unknown}>}}).result.tools;
+      expect(tools.map(tool=>tool.name)).toEqual(toolInputs.map(([name])=>name));
+      for(const tool of tools)expect(tool.inputSchema).toMatchObject({type:'object',additionalProperties:false});
+      const ping=await protocol(h.service,{jsonrpc:'2.0',id:4,method:'ping'},header);
+      expect(ping.body).toMatchObject({jsonrpc:'2.0',id:4,result:{}});
+      const notified=await protocol(h.service,{jsonrpc:'2.0',method:'notifications/initialized'},header);
+      expect(notified.status).toBe(202);expect(notified.body).toBeNull();
+      expect(verify).toHaveBeenCalledTimes(header===undefined?0:4);
+      const outcome=header===undefined?'MISSING_JWT':'NOT_CONFIGURED';
+      for(const method of ['initialize','tools/list','ping','notifications/initialized'])
+        expect(discoveryLog).toHaveBeenCalledWith(authEvent(method,outcome));
+      expect(h.mapping).not.toHaveBeenCalled();noDomain(h);
+    });
+
+  it.each([
+    [{user_id:123},'REJECTED'],[{tenant_id:123},'REJECTED'],[{agent_id:'agent_other'},'REJECTED'],[{exp:0},'REJECTED'],
+    [{},'VERIFIED'],
+  ] as const)('observes original verifier claims %j only as %s',async(claims,outcome)=>{
+    const h=connectionFixture();const result=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list'},h.jwt(claims));
+    expect(result.body).toHaveProperty('result.tools');expect(discoveryLog).toHaveBeenCalledTimes(1);
+    expect(discoveryLog).toHaveBeenCalledWith(authEvent('tools/list',outcome));noDomain(h);
+    expect(h.mapping).toHaveBeenCalledTimes(outcome==='VERIFIED'?1:0);
+  });
+
+  it.each(['inactive','missing','lookup-error'] as const)('does not report VERIFIED for %s mapping',async reason=>{
+    const marker='synthetic-private-error-token-https://credential.invalid';const h=connectionFixture();
+    if(reason==='lookup-error')h.mapping.mockRejectedValueOnce(new Error(marker));
+    else h.mapping.mockResolvedValueOnce(null); // Existing resolver returns null for absent/inactive mappings.
+    const result=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list',params:{cursor:marker}},h.jwt({email:marker}));
+    expect(result.body).toHaveProperty('result.tools');noDomain(h);
+    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list',reason==='lookup-error'?'UNCONFIRMED':'MAPPING_MISSING')]]);
+    expect(JSON.stringify(discoveryLog.mock.calls)).not.toContain(marker);expect(result.wire).not.toContain(marker);
+  });
+
+  it('never logs sensitive header/body/claim or error text, including successful observation',async()=>{
+    const marker='synthetic-private-signature-marker';const h=connectionFixture();
+    await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list',params:{cursor:marker}},marker);
+    await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list'},h.jwt({email:marker,employee_no:marker}));
+    expect(discoveryLog.mock.calls).toEqual([[authEvent('tools/list','REJECTED')],[authEvent('tools/list','VERIFIED')]]);
+    const serialized=JSON.stringify(discoveryLog.mock.calls);
+    for(const value of [marker,h.state.configuration.mcp.signingSecret,'synthetic-owner','synthetic-mapping','synthetic-open-id'])
+      expect(serialized).not.toContain(value);
+    noDomain(h);
+  });
+
+  it.each([
+    {...initialize,id:{}},{...initialize,params:{}},
+  ])('leaves invalid discovery protocol/params to SDK rejection: %j',async body=>{
+    const h=connectionFixture(false);const verify=jest.spyOn(h.identity,'verify');
+    const result=await protocol(h.service,body);
+    expect(result.body).toHaveProperty('error.code');expect(result.body).not.toHaveProperty('result');
+    expect(verify).not.toHaveBeenCalled();noDomain(h);
+  });
+
+
+  it('rejects numeric tools/list params with the SDK InvalidRequest and exact original id',async()=>{
+    const h=connectionFixture(false);const verify=jest.spyOn(h.identity,'verify');
+    const response=await protocolWire(h.service,{jsonrpc:'2.0',id:1,method:'tools/list',params:42});
+    expect(response.status).toBe(400);
+    expect(response.contentType.split(';')[0]).toBe('application/json');
+    const result=protocolResponse(response.contentType,response.wire,1);
+    expect(result).toEqual({jsonrpc:'2.0',id:1,error:{code:-32600,
+      message:'Bad Request: the request body is not a valid JSON-RPC message'}});
+    expect(result).not.toHaveProperty('result');
+    expect(verify).not.toHaveBeenCalled();noDomain(h);
+  });
+
+  it.each([
+    [],[initialize],[{jsonrpc:'2.0',id:2,method:'tools/list'},call()],
+    {jsonrpc:'2.0',id:1,params:{method:'tools/list'}},
+    {jsonrpc:'1.0',id:1,method:'tools/list'},
+    {jsonrpc:'2.0',id:1,method:'resources/list',params:{method:'tools/list'}},
+  ])('never lets arrays, nested method or non-static methods bypass the HTTP check: %j',async body=>{
+    const h=connectionFixture();const verify=jest.spyOn(h.identity,'verify');
+    await expect(protocolWire(h.service,body)).rejects.toThrow('AILY_MCP_JWT_INVALID');
+    expect(verify).toHaveBeenCalledTimes(1);expect(discoveryLog).not.toHaveBeenCalled();noDomain(h);
+  });
+
+  it('does not dispatch an embedded tools/call inside static list parameters',async()=>{
+    const h=connectionFixture(false);
+    const listed=await protocol(h.service,{jsonrpc:'2.0',id:2,method:'tools/list',params:{method:'tools/call',...call().params}});
+    expect(listed.body).toHaveProperty('result.tools');noDomain(h);
+    expect(h.mapping).not.toHaveBeenCalled();
+  });
+
+  it.each(toolInputs.flatMap(([name,args])=>
+    ['no-config','no-jwt','bad-signature','numeric-subject','wrong-agent','expired','no-mapping','namespace'].map(reason=>({name,args,reason}))))(
+    'refuses $name before SDK/domain when $reason',async({name,args,reason})=>{
+      const h=connectionFixture(reason!=='no-config');let jwt:unknown=h.jwt();
+      if(reason==='no-jwt')jwt=undefined;
+      if(reason==='bad-signature')jwt='synthetic-private-invalid-jwt';
+      if(reason==='numeric-subject')jwt=h.jwt({user_id:123});
+      if(reason==='wrong-agent')jwt=h.jwt({agent_id:'agent_other'});
+      if(reason==='expired')jwt=h.jwt({exp:0});
+      if(reason==='no-mapping')h.mapping.mockResolvedValue(null);
+      if(reason==='namespace')h.state.configuration.mcp.subjectNamespace=null;
+      const code=reason==='no-config'||reason==='namespace'?'AILY_MCP_IDENTITY_NOT_CONFIGURED':
+        reason==='no-mapping'?'AILY_MCP_SUBJECT_MAPPING_REQUIRED':'AILY_MCP_JWT_INVALID';
+      await expect(protocol(h.service,call(name,args),jwt)).rejects.toThrow(code);
+      expect(discoveryLog).not.toHaveBeenCalled();noDomain(h);
+    });
+
+  it.each(toolInputs)('revalidates mapping after HTTP precheck before the actual %s callback',async(name,args)=>{
+    const h=connectionFixture();
+    h.mapping.mockResolvedValueOnce({id:'synthetic-mapping',revision:1,miaodaUserId:'synthetic-owner',miaodaTenantId:'synthetic-tenant'})
+      .mockResolvedValue(null);
+    const result=await protocol(h.service,call(name,args),h.jwt());
+    expect(result.body).toMatchObject({id:3,result:{isError:true,content:[{type:'text',
+      text:JSON.stringify({code:'AILY_MCP_SUBJECT_MAPPING_REQUIRED'})}]}});
+    expect(h.mapping).toHaveBeenCalledTimes(2);expect(discoveryLog).not.toHaveBeenCalled();noDomain(h);
+  });
+
+  it('freshly verifies both actual callbacks in one authenticated HTTP batch',async()=>{
+    const h=connectionFixture();h.domain.sources.mockResolvedValue({syntheticRead:true});
+    const result=await protocolWire(h.service,[call(undefined,undefined,31),call(undefined,undefined,32)],h.jwt());
+    expect(result.status).toBe(200);expect(result.wire).toContain('"id":31');expect(result.wire).toContain('"id":32');
+    expect(h.mapping).toHaveBeenCalledTimes(3);expect(h.domain.sources).toHaveBeenCalledTimes(2);
+    const actors=h.domain.sources.mock.calls.map(([actor])=>actor);
+    expect(actors[0]).not.toBe(actors[1]);for(const actor of actors)expect(()=>h.identity.assertVerified(actor)).not.toThrow();
+    expect(discoveryLog).not.toHaveBeenCalled();
+  });
+
+  it('keeps concurrent HTTP requests bound to their own original JWT and new mapped actor',async()=>{
+    const h=connectionFixture();h.domain.sources.mockResolvedValue({syntheticRead:true});
+    h.mapping.mockImplementation(async input=>({id:`synthetic-${input.feishuOpenId}`,revision:1,
+      miaodaUserId:input.feishuOpenId,miaodaTenantId:'synthetic-tenant'}));
+    const results=await Promise.all(['synthetic-reader-a','synthetic-reader-b'].map(user_id=>
+      protocol(h.service,call(),h.jwt({user_id}))));
+    for(const result of results)expect(result.body).toMatchObject({result:{content:[{text:JSON.stringify({syntheticRead:true})}]}});
+    expect(h.mapping).toHaveBeenCalledTimes(4);
+    const actors=h.domain.sources.mock.calls.map(([actor])=>actor);
+    expect(actors.map(actor=>actor.actorUserId).sort()).toEqual(['synthetic-reader-a','synthetic-reader-b']);
+    for(const actor of actors)expect(actor.feishuOpenId).toBe(actor.actorUserId);
+    expect(actors[0]).not.toBe(actors[1]);expect(discoveryLog).not.toHaveBeenCalled();
   });
 });
 
