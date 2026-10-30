@@ -1,6 +1,6 @@
 # WiseLink 主线流程图契约
 
-**现行目标：正式自动化主链为企业授权范围内、具备OpenAPI与MCP接入能力的Aily企业智能体，GLM-5.3可用时优先，否则使用DeepSeek V4 Pro，不强制备用；Host保有工程业务权威。** 企业伙伴执行完整Agent Loop和平台会话，Host现有接入承接可信任务、MCP领域工具、原保存恢复与只读过程投影。保留本机v1.11结构及业务边界；本地维护：2026-10-29。
+**现行目标：正式自动化主链为企业授权范围内、具备OpenAPI与MCP接入能力的Aily企业智能体，GLM-5.3可用时优先，否则使用DeepSeek V4 Pro，不强制备用；Host保有工程业务权威。** 企业伙伴执行完整Agent Loop和平台会话，Host现有接入承接可信任务、MCP领域工具、原保存恢复与只读过程投影。保留本机v1.11结构及业务边界；本地维护：2026-10-31。
 
 本文“企业伙伴”是企业授权范围内、具备OpenAPI与MCP接入能力的Aily自主智能体这一职责的简称，不限定旧Team页面或某一创建入口。具体对象的企业类别、额度适用性、发布版和渠道按该对象核证。
 
@@ -83,7 +83,7 @@ flowchart LR
 
 工程任务沿用ENG-SCOPE-01/02、ENG-EVIDENCE-01、ENG-METHOD-01、ENG-RISK-01、ENG-ACTION-01、ENG-STATUS-01、ENG-CLOSE-01八项。RC1保留独立版本及TRIAL_CANDIDATE状态；INCLUDE／WHEN_TRIGGERED／EXCLUDE_OPTIONAL沿原定义，未知不当false，核心项不因缺材料自判跳过。checklistBinding由Host拥有，checklistResults指向最终合并正文和真实证据，methodUsage按issueKey及准确methodRef表达REFERENCE_ONLY／APPLIED／UNDETERMINED；三扩展随正文同存同读，不复制勾选正文、不无声清空或陈旧保留。ANSWERED不表示措施实施，OPEN可保存不自动允许结束，DEFERRED只用于被允许延后的分析。
 
-工程任务、Host request／attempt、平台agent／session／chat及阶段revision各有身份，不能按名称合并；Host OAuth session也不是平台session。可信MCP身份先映射原Host主体，再由获权任务、原service-scope和当前执行权派生tenant／actor／来源／attempt；模型的任务引用只是选择器，不取最近任务补空。lease／generation、owner／fence、原CAS基线和操作身份由可信侧注入，不从模型自报或hash伪恢复；凭据及授权wrapper不进提示词，不另造保存API或授权平台。
+工程任务、Host request／attempt、平台agent／session／chat及阶段revision各有身份，不能按名称合并；Host OAuth session也不是平台session。Aily以专用固定服务身份执行Host已受理任务；Host从正常受理时封存的实际发起用户及当前有效授权核定tenant／actor、task／attempt、来源版本与执行权，并分别记录服务执行与用户审计。任务引用仅作选择器；服务路由的获准凭据证明该服务访问能力，不代表终端用户身份，也不代表远端指定Agent实例已获加密认证。固定服务模式须显式配置，不能把JWT校验失败静默降为服务授权；agent／session／chat用于准确目标和实际回执关联，不能代替原用户／任务授权。服务执行与终端用户审计分离，Team仍只读。不取最近任务补空。lease／generation、owner／fence、原CAS基线和操作身份由可信侧注入，不从模型自报或hash伪恢复；凭据及授权wrapper不进提示词，不另造保存API或授权平台。
 
 阶段seal只固定该revision及同key payload，不终结任务或session。原任务仍获权、期限有效且合同允许时，将A独立Host READ的实际物化正文、引用、准确revision和保存引用沿既有full／view提供获权投影给B；候选副本、摘要或成功文字不能替代，可信身份／凭据wrapper不进入模型。B按自身合法操作身份及CAS保存，不暗改A；合同不支持继续、目标变化或任务已结束才按既有入口受理合法后继，不强制每SAVE新请求／session。任务final后不暗起修补模型。
 

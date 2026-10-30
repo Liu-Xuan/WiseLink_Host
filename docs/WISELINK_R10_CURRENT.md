@@ -1,6 +1,6 @@
 # WiseLink R10 当前产品与技术规则
 
-**2026-10-29 当前目标职责：** 以同树[主线图契约](WISELINK_MAINLINE_GRAPH_CONTRACT.md)、[实施计划](WISELINK_R10_EXECUTION_PLAN.md)及本机唯一图源为准，本地按用户v2.6直接Goal语义维护正式企业链与团队只读入口。企业授权范围内、具备OpenAPI与MCP接入能力的Aily自主智能体为唯一目标主harness，模型策略：GLM-5.3可用时优先，否则使用DeepSeek V4 Pro，不强制备用；运行完整Agent Loop；Host保有主体／租户、任务、检查单／方法／成果标准、来源／版本、owner／fence／期限、原SAVE/CAS、准确READ、确定性Overall、请求收尾及正式采用权威。可信MCP接原业务服务，模型不取得凭据或授权wrapper。INITIAL、Review、CHAT／UPDATE与ordinary／isolated合同保留；旧Codex／OpenClaw／Native／LiteLLM消费者与回执保持原身份，逐入口迁出，不作为第二条新任务主链。目标职责不证明配置、迁移或真实业务已完成，开发助手设置不改变产品配置和授权。
+**2026-10-31 当前目标职责：** 以同树[主线图契约](WISELINK_MAINLINE_GRAPH_CONTRACT.md)、[实施计划](WISELINK_R10_EXECUTION_PLAN.md)及本机唯一图源为准，本地按用户v2.6直接Goal语义维护正式企业链与团队只读入口。企业授权范围内、具备OpenAPI与MCP接入能力的Aily自主智能体为唯一目标主harness，模型策略：GLM-5.3可用时优先，否则使用DeepSeek V4 Pro，不强制备用；运行完整Agent Loop；Host保有主体／租户、任务、检查单／方法／成果标准、来源／版本、owner／fence／期限、原SAVE/CAS、准确READ、确定性Overall、请求收尾及正式采用权威。可信MCP接原业务服务，模型不取得凭据或授权wrapper。INITIAL、Review、CHAT／UPDATE与ordinary／isolated合同保留；旧Codex／OpenClaw／Native／LiteLLM消费者与回执保持原身份，逐入口迁出，不作为第二条新任务主链。目标职责不证明配置、迁移或真实业务已完成，开发助手设置不改变产品配置和授权。
 
 本文“企业伙伴”是企业授权范围内、具备OpenAPI与MCP接入能力的Aily自主智能体这一职责的简称，不限定旧Team页面或某一创建入口。具体对象的企业类别、额度适用性、发布版和渠道按该对象核证。
 
@@ -283,7 +283,7 @@ Gap Ledger承接决定性未知和证据需求，不是开发缺陷总表。每�
 
 工程任务沿用ENG-SCOPE-01/02、ENG-EVIDENCE-01、ENG-METHOD-01、ENG-RISK-01、ENG-ACTION-01、ENG-STATUS-01、ENG-CLOSE-01八项及RC1独立版本／TRIAL_CANDIDATE状态。INCLUDE／WHEN_TRIGGERED／EXCLUDE_OPTIONAL按原定义，未知不当false，核心项不因缺材料跳过。checklistBinding由Host拥有，checklistResults指向最终正文与真实证据，methodUsage按issueKey／methodRef表达REFERENCE_ONLY／APPLIED／UNDETERMINED，随正文同存同读；翻译／摘要用自身标准，不强套八项。模型复述要求不能代替实际输入绑定、分析中的依据与方法应用。
 
-企业伙伴只产领域候选，可信MCP主体经原Host映射、task／attempt和service-scope核权；任务引用只是选择器。lease／generation、owner／fence、原CAS基线及保存操作身份由可信服务端注入，凭据与授权wrapper不入模型，不取最近任务或从hash伪恢复token。已有候选直交和BEGIN修复直接复用，旧Provider字节、封存结果及历史reader保留原身份，不重列首修或冒称企业已验。
+企业伙伴只产领域候选。Aily以专用固定服务身份执行Host已受理任务；Host从正常受理时封存的实际发起用户及当前有效授权核定tenant／actor、task／attempt、来源版本与执行权，并分别记录服务执行与用户审计。任务引用仅作选择器；服务路由的获准凭据证明该服务访问能力，不代表终端用户身份，也不代表远端指定Agent实例已获加密认证。固定服务模式须显式配置，不能把JWT校验失败静默降为服务授权；agent／session／chat用于准确目标和实际回执关联，不能代替原用户／任务授权。服务执行与终端用户审计分离，Team仍只读。lease／generation、owner／fence、原CAS基线及保存操作身份由可信服务端注入，凭据与授权wrapper不入模型，不取最近任务或从hash伪恢复token。已有候选直交和BEGIN修复直接复用，旧Provider字节、封存结果及历史reader保留原身份，不重列首修或冒称企业已验。
 
 复用同源明确规则：可用已有无写预检或原SAVE写前校验，不要求固定多一次预检。可修内容反馈回活跃企业循环，candidateDigest／ruleset／checkPhase绑定准确候选，候选变化后重验；权限拒绝不能靠改答案规避。阶段seal只固定该revision及同key payload，任务final后不暗起模型；UNKNOWN／COMMITTING先查原操作。结构接受不替代NOT_MACHINE_ASSESSED的工程语义评审。
 
