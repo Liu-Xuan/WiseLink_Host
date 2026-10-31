@@ -1,4 +1,22 @@
 import type { AilyInitialAnalysisStatus, CanonicalWorkItemProjection } from '@shared/api.interface';
+import type { Provider } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
+import { SqlExecutionContextMiddleware } from '@lark-apaas/fullstack-nestjs-core';
+import { CanonicalHostModule } from '../../server/modules/canonical-host/canonical-host.module';
+import { CanonicalInitialAnalysisContinuationController } from '../../server/modules/canonical-host/canonical-initial-analysis-continuation.controller';
+import { CanonicalHostInitialAnalysisStatusService } from '../../server/modules/canonical-host/canonical-host-initial-analysis-status.service';
+import { CanonicalHostOpenClawTranslationService } from '../../server/modules/canonical-host/canonical-host-openclaw-translation.service';
+import { AutomaticWorkItemDispatchService } from '../../server/modules/canonical-host/automatic-work-item-dispatch.service';
+import { EngineeringMatterWorkingRepository } from '../../server/modules/canonical-host/engineering-matter-working.repository';
+import { SessionResolver } from '../../server/modules/identity/session-resolver.service';
+import { SessionStore } from '../../server/modules/identity/session.store';
+import { OAUTH_CONFIG, type OAuthConfigPort } from '../../server/modules/identity/oauth-config.port';
+import { AILY_ENTERPRISE_CONFIGURATION, type AilyEnterpriseConfigurationState } from '../../server/modules/canonical-host/aily-enterprise-configuration';
+import { AILY_TASK_CONFIGURATION } from '../../server/modules/canonical-host/aily-task-admission';
+import { AILY_TASK_CHAT_CLIENT } from '../../server/modules/canonical-host/aily-task-execution.service';
+import { AILY_HOST_INVOCATION_IDENTITY } from '../../server/modules/canonical-host/aily-host-invocation-identity.port';
+import { AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION } from '../../server/modules/canonical-host/automatic-work-item-source-authorization.port';
+import { CANONICAL_AUTHORIZATION, CANONICAL_PERMISSION_SNAPSHOT, CANONICAL_WORK_ITEM_REGISTRAR } from '../../server/modules/canonical-host/canonical-host.constants';
 import type { JobAidWorkRevision } from '@shared/jobaid-problem-assessment.interface';
 import { JOBAID_PROBLEM_WORK_SCHEMA } from '@shared/jobaid-problem-assessment.interface';
 import { JOBAID_CHECKLIST_RC1, JOBAID_CHECKLIST_RC1_CONTENT_HASH } from '@shared/jobaid-checklist-rc1';
@@ -39,7 +57,7 @@ import { AilyBackgroundDispatchService } from '../../server/modules/canonical-ho
 import { AilyTaskLifecycleService } from '../../server/modules/canonical-host/aily-task-lifecycle.service';
 import { HierarchicalWikiAutomation } from '../../server/modules/canonical-host/hierarchical-wiki.automation';
 import { AILY_TASK_CHAT_ADAPTER } from '../../server/modules/canonical-host/aily-task-execution.service';
-import { syntheticAilyEnterpriseConfiguration } from '../support/aily-enterprise-configuration.fixture';
+import { syntheticAilyEnterpriseConfiguration, syntheticAilyHostServiceConfiguration } from '../support/aily-enterprise-configuration.fixture';
 import { ailyInitialSuccessorFixture } from '../support/aily-initial-successor.fixture';
 import { MiaodaDocumentVersionSourceResolver } from '../../server/modules/work-item/miaoda-document-version-source.resolver';
 import type { Request } from 'express';
@@ -52,7 +70,7 @@ const actor = {userId: 'owner-test', tenantId: 'tenant-test', appId: 'app_17bzc5
 /** In-memory repository exercises real reservation/preparation/claim/consumer code.
  * All identity/config/client inputs are synthetic; this is not PostgreSQL or platform proof.
  */
-function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JWT') {
+function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JWT', initialAilySessionId:string|null=sessionId) {
   const original = originalFixture();
   original.source.units[0].payload = {text: `完整原文起点${'原始条件不得截断。'.repeat(12000)}完整原文终点`};
   const workItem = {schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
@@ -198,7 +216,7 @@ function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JW
     run: {...original.binding, manifestArtifact: {relativePath: 'original/manifest.json', readback: 'VERIFIED', sha256: 'b'.repeat(64), byteLength: 100}}}))};
   const jobAid = new CanonicalJobAidProblemService(registrar as never, artifacts as never, {} as never,
     authorization as never, permissions as never, attempts, {loadTenantScopedProjection: async () => ({
-      row: {requestedByUserId: actor.userId, initialAilySessionId: sessionId, documentVersionId: workItem.source.documentVersionId}, projection: workItem})} as never,
+      row: {requestedByUserId: actor.userId, initialAilySessionId, documentVersionId: workItem.source.documentVersionId}, projection: workItem})} as never,
     {hasActiveOfficialActorMapping: async () => true} as never,
     {buildForWorkItemWithEvidence: async () => ({common: projectCommonAssessmentContext(workItem,
       {context: {status: 'UNAVAILABLE', reason: 'SYNTHETIC_TEST'}, documentReadingStatus: 'AVAILABLE', items: [], sections: [], resourceRefs: []}, []),
@@ -289,12 +307,89 @@ function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JW
   const continuation = new CanonicalInitialAnalysisContinuationService(authorization as never, permissions as never,
     registrar as never, attempts, initial as never, {} as never, jobAid, sessions as never, undefined, sourceAuthorization as never, admission, execution,dispatch as never);
   const command = {requestId, expectedRevision: 5, operation: 'EVALUATE_JOBAID' as const, executionMode: 'AILY_AGENT_V1' as const, modelRef: 'aily/deepseek-v4-pro'};
-  return {repository, attempts, jobAid, execution, client, grantLimit, actors, initial, config, session, command,
+  return {repository, attempts, jobAid, execution, client, grantLimit, actors, initial, config, session, command, authorization, permissions,
     original, previous, capture, order, work, artifacts, saved, commands, domain, identity, mcp, jwt, outer, dispatch,sqlStatements,registrar,
     continuation,sessions,httpRequest,sourceAuthorization,
     revoke:()=>{authorized=false;},row: () => row!, run: () => run!, setRow: (value: ActionAttemptRow) => {row = value;},
     setRun: (value: AilyExecutorRun) => {run = value;}, workItem, admission,
     send: (payload=command) => continuation.request(workItem.workItemId, payload, actor, session,httpRequest)};
+}
+
+/** Production provider definitions and real native/session/command/executor classes;
+ * only SQL/artifact ports and fetch are synthetic. No application is bootstrapped.
+ */
+async function nativeCommandComposition(entry:'static'|'forRoot',mode:'READY'|'MCP_ONLY'='READY') {
+  const h=harness('HOST_SERVICE',null);
+  const state=syntheticAilyHostServiceConfiguration();state.configuration.task=h.config;
+  state.configuration.background={enabled:false,allowOriginalRequest:false};
+  process.env.SANDBOX_ID='synthetic-hosted-process';delete process.env.MIAODA_LOCAL_DEV;
+  process.env.FEISHU_OAUTH_CLIENT_ID=state.configuration.caller.appId;
+  process.env.FEISHU_OAUTH_CLIENT_SECRET='synthetic-application-secret';
+  process.env.WL_AILY_ENTERPRISE_CONFIGURATION_JSON=JSON.stringify({
+    schemaVersion:'wiselink.aily-enterprise-configuration.v1',enabled:true,...state.configuration,
+    ...(mode==='MCP_ONLY'?{caller:undefined,task:{enabled:false}}:{}),
+  });
+  const counts={token:0,create:0,get:0};let postUnknown=false;
+  const http=jest.spyOn(globalThis,'fetch').mockImplementation(async(url,init)=>{
+    if(String(url)==='https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal') {
+      counts.token++;expect(init?.method).toBe('POST');
+      return Response.json({code:0,tenant_access_token:'synthetic-application-token',expire:7200});
+    }
+    expect(String(url)).toMatch(/^https:\/\/open[.]feishu[.]cn\/open-apis\/aily\/v1\/agents\/agent_synthetic\/chats(?:\/3333333333333333333)?$/u);
+    expect(init?.headers).toMatchObject({authorization:'Bearer synthetic-application-token'});
+    if(init?.method==='POST') {
+      counts.create++;expect(h.run().post.state).toBe('STARTED');expect(String(init.body)).toBe(h.run().post.requestBody);
+      const body=JSON.parse(String(init.body));expect(body.stream).toBe(false);
+      const message=JSON.parse(body.user_message.content[0].text);
+      expect(message.taskContextRef).toBe(h.row().operationRef);
+      if(postUnknown)throw new Error('SYNTHETIC_REPLY_LOST');
+      return Response.json({code:0,data:{agent_chat_id:'3333333333333333333',session_id:'synthetic-remote'}});
+    }
+    expect(init?.method).toBe('GET');counts.get++;
+    return Response.json({code:0,data:{agent_chat_id:'3333333333333333333',session_id:'synthetic-remote',status:'Running'}});
+  });
+  h.grantLimit.mockRejectedValue(new Error('USER_GRANT_MUST_NOT_BE_READ'));
+  const workItems={loadAutoProcessingProjection:jest.fn(async()=>({projection:h.workItem,
+    row:{requestedByUserId:actor.userId,revision:h.workItem.revision}}))};
+  const sessionStore={validate:jest.fn(async()=>{throw new Error('NO_OAUTH_COOKIE_EXPECTED');})};
+  const sqlScopes:Array<{userId:unknown;isSystemAccount:unknown}>=[];
+  const sqlContext={use:jest.fn((input:Request,_response:unknown,next:()=>void)=>{
+    sqlScopes.push({userId:input.userContext?.userId,isSystemAccount:input.userContext?.isSystemAccount});next();
+  })};
+  const oauth:OAuthConfigPort={clientId:null,redirectUri:null,tokenApiVersion:'v3',mappingBootstrap:{kind:'DISABLED'},
+    configured:false,applicationScopeId:'app_17bzc551rsg',sessionEnvironment:'runtime'};
+  const dynamic=CanonicalHostModule.forRoot();
+  const declared:Provider[]=entry==='static'?Reflect.getMetadata('providers',CanonicalHostModule):dynamic.providers??[];
+  const required:unknown[]=[CanonicalInitialAnalysisContinuationService,AilyTaskAdmissionService,AilyTaskExecutionService,
+    AilyHostInvocationIdentityProvider,AILY_ENTERPRISE_CONFIGURATION,AILY_TASK_CONFIGURATION,AILY_TASK_CHAT_CLIENT,
+    AILY_HOST_INVOCATION_IDENTITY];
+  const token=(provider:Provider):unknown=>typeof provider==='function'?provider:provider.provide;
+  const providers=declared.filter(provider=>required.includes(token(provider)));
+  for(const expected of required)expect(providers.filter(provider=>token(provider)===expected)).toHaveLength(1);
+  const controllers:unknown[]=entry==='static'?Reflect.getMetadata('controllers',CanonicalHostModule):dynamic.controllers??[];
+  expect(controllers).toContain(CanonicalInitialAnalysisContinuationController);
+  const module=await Test.createTestingModule({controllers:[CanonicalInitialAnalysisContinuationController],providers:[
+    ...providers,SessionResolver,{provide:SessionStore,useValue:sessionStore},{provide:OAUTH_CONFIG,useValue:oauth},
+    {provide:SqlExecutionContextMiddleware,useValue:sqlContext},
+    {provide:CANONICAL_AUTHORIZATION,useValue:h.authorization},{provide:CANONICAL_PERMISSION_SNAPSHOT,useValue:h.permissions},
+    {provide:CANONICAL_WORK_ITEM_REGISTRAR,useValue:h.registrar},{provide:ActionAttemptLifecycleService,useValue:h.attempts},
+    {provide:ActionAttemptRepository,useValue:h.repository},{provide:CanonicalHostInitialAnalysisStatusService,useValue:h.initial},
+    {provide:CanonicalHostOpenClawTranslationService,useValue:{}},{provide:CanonicalJobAidProblemService,useValue:h.jobAid},
+    {provide:EngineeringMatterWorkingRepository,useValue:h.actors},{provide:MiaodaWorkItemRepository,useValue:workItems},
+    {provide:AutomaticWorkItemDispatchService,useValue:h.dispatch},
+    {provide:AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION,useValue:h.sourceAuthorization},
+  ]}).compile();
+  const configured=module.get<AilyEnterpriseConfigurationState>(AILY_ENTERPRISE_CONFIGURATION);
+  expect(configured.status).toBe(mode);
+  if(configured.status==='READY')expect(configured.configuration.background).toEqual({enabled:false,allowOriginalRequest:false});
+  const request=Object.assign(h.httpRequest,{userContext:{userId:actor.userId,tenantId:actor.tenantId,
+    appId:actor.appId,env:'runtime',roles:[],isSystemAccount:false},headers:{},body:h.command});
+  const sessions=module.get(SessionResolver);const native=jest.spyOn(sessions,'nativeBrowserIdentity');
+  const controller=module.get(CanonicalInitialAnalysisContinuationController);
+  const enqueue=jest.spyOn(h.jobAid,'enqueueContinuation');const reserve=jest.spyOn(h.attempts,'reserve');
+  return {h,module,configured,controller,request,sessions,native,sessionStore,sqlScopes,http,counts,enqueue,reserve,
+    invocation:module.get(AilyHostInvocationIdentityProvider),
+    send:()=>controller.request(h.workItem.workItemId,h.command,request),setPostUnknown:()=>{postUnknown=true;}};
 }
 
 /** Actual reservation + successor/claim repositories; only the DB driver and
@@ -365,6 +460,94 @@ describe('normal enterprise task consumer', () => {
     jest.spyOn(grantCodec, 'openAilyUserGrant').mockReturnValue('synthetic-user-token');
   });
   afterEach(() => {process.env = {...env}; jest.restoreAllMocks();});
+
+  it.each(['static','forRoot'] as const)('assembles the actual %s native command without OAuth or background and sends once',async entry=>{
+    const f=await nativeCommandComposition(entry);
+    try {
+      expect(await f.send()).toMatchObject({requestId,replayed:false,ailyDispatch:{dispatchStatus:'ACCEPTED'}});
+      expect(f.native.mock.results.some(result=>result.type==='return'&&result.value.oauthSession===null)).toBe(true);
+      expect(await f.sessions.resolve(f.request)).toBeNull();expect(f.sessionStore.validate).not.toHaveBeenCalled();
+      expect(f.enqueue.mock.calls[0][5]).toBeUndefined();
+      expect(f.reserve.mock.calls[0][0].initialKnowledgeSession).toEqual({expectedSessionId:null});
+      expect(f.h.run()).toMatchObject({hostSessionId:null,invocation:{purpose:'BROWSER',callerAppId:'cli_synthetic',
+        identityRef:'synthetic-approved-caller'},post:{state:'ACCEPTED'}});
+      expect(f.h.dispatch.claimAilyWorkItem).toHaveBeenCalledTimes(1);expect(f.counts).toEqual({token:1,create:1,get:0});
+      expect(f.sqlScopes).toEqual(expect.arrayContaining([{userId:actor.userId,isSystemAccount:false},
+        {userId:actor.userId,isSystemAccount:true}]));
+      const sealed=f.h.row().taskEnvelopeJson;const persisted=canonicalJson(f.h.run());
+      expect(await f.send()).toMatchObject({requestId,replayed:true,ailyDispatch:{dispatchStatus:'ACCEPTED'}});
+      expect(f.counts).toEqual({token:1,create:1,get:1});expect(f.h.row().taskEnvelopeJson).toBe(sealed);
+      expect(canonicalJson(f.h.run())).toBe(persisted);expect(f.h.grantLimit).not.toHaveBeenCalled();
+    } finally {await f.module.close();}
+  });
+
+  it('keeps actual MCP-only composition closed before reservation, claim or transport',async()=>{
+    const f=await nativeCommandComposition('forRoot','MCP_ONLY');
+    try {
+      await expect(f.send()).rejects.toThrow('INITIAL_CONTINUATION_AILY_NOT_CONFIGURED');
+      expect(f.h.repository.reserve).not.toHaveBeenCalled();expect(f.h.dispatch.claimAilyWorkItem).not.toHaveBeenCalled();
+      expect(f.h.run()).toBeNull();expect(f.http).not.toHaveBeenCalled();
+    } finally {await f.module.close();}
+  });
+
+  it('rejects a native actor change after the status read before any queue or application transport',async()=>{
+    const f=await nativeCommandComposition('forRoot');
+    try {
+      const project=f.h.initial.project.getMockImplementation()!;
+      f.h.initial.project.mockImplementationOnce(async()=>{
+        Object.assign(f.request.userContext,{userId:'other-synthetic-owner'});return project();
+      });
+      await expect(f.send()).rejects.toThrow('DIALOGUE_BROWSER_IDENTITY_MISMATCH');
+      expect(f.h.repository.reserve).not.toHaveBeenCalled();expect(f.h.dispatch.claimAilyWorkItem).not.toHaveBeenCalled();
+      expect(f.h.run()).toBeNull();expect(f.http).not.toHaveBeenCalled();
+    } finally {await f.module.close();}
+  });
+
+  it('requires the formal application identity for a native command with no OAuth and reads no user grant',async()=>{
+    const f=await nativeCommandComposition('forRoot');
+    try {
+      delete process.env.FEISHU_OAUTH_CLIENT_SECRET;
+      await expect(f.send()).rejects.toThrow('AILY_APPLICATION_CALLER_NOT_CONFIGURED');
+      expect(f.h.repository.reserve).not.toHaveBeenCalled();expect(f.h.dispatch.claimAilyWorkItem).not.toHaveBeenCalled();
+      expect(f.h.grantLimit).not.toHaveBeenCalled();expect(f.h.run()).toBeNull();expect(f.http).not.toHaveBeenCalled();
+    } finally {await f.module.close();}
+  });
+
+  it('does not accept a READY caller without application provenance for a native null-session command',async()=>{
+    const f=await nativeCommandComposition('forRoot');
+    try {
+      jest.spyOn(f.invocation,'resolve').mockImplementation(async input=>({...input,status:'READY',
+        identityRef:'synthetic-approved-caller',accessToken:'synthetic-only-token'}));
+      await expect(f.send()).rejects.toThrow('AILY_INVOCATION_IDENTITY_BINDING_CHANGED');
+      expect(f.h.repository.reserve).not.toHaveBeenCalled();expect(f.h.dispatch.claimAilyWorkItem).not.toHaveBeenCalled();
+      expect(f.h.grantLimit).not.toHaveBeenCalled();expect(f.http).not.toHaveBeenCalled();
+    } finally {await f.module.close();}
+  });
+
+  it('rejects a changed application caller on the original native request without GET or another POST',async()=>{
+    const f=await nativeCommandComposition('forRoot');
+    try {
+      await f.send();const original=canonicalJson(f.h.run());
+      jest.spyOn(f.invocation,'resolve').mockImplementation(async input=>({...input,status:'READY',transport:'APPLICATION',
+        identityRef:'other-synthetic-caller',callerAppId:'cli_other_synthetic',accessToken:'synthetic-only-token'}));
+      await expect(f.send()).rejects.toThrow('AILY_INVOCATION_CALLER_CHANGED');
+      expect(f.counts).toEqual({token:1,create:1,get:0});expect(canonicalJson(f.h.run())).toBe(original);
+      expect(f.h.grantLimit).not.toHaveBeenCalled();
+    } finally {await f.module.close();}
+  });
+
+  it('keeps the original native UNKNOWN post and UUID without a second create or new claim',async()=>{
+    const f=await nativeCommandComposition('forRoot');
+    try {
+      f.setPostUnknown();
+      expect(await f.send()).toMatchObject({requestId,replayed:false,ailyDispatch:{dispatchStatus:'UNKNOWN'}});
+      const original=canonicalJson(f.h.run());const sealed=f.h.row().taskEnvelopeJson;
+      expect(await f.send()).toMatchObject({requestId,replayed:true,ailyDispatch:{dispatchStatus:'UNKNOWN'}});
+      expect(f.counts).toEqual({token:1,create:1,get:0});expect(canonicalJson(f.h.run())).toBe(original);
+      expect(f.h.row().taskEnvelopeJson).toBe(sealed);expect(f.h.dispatch.claimAilyWorkItem).toHaveBeenCalledTimes(1);
+      expect(f.h.repository.claimExact).toHaveBeenCalledTimes(1);expect(f.h.grantLimit).not.toHaveBeenCalled();
+    } finally {await f.module.close();}
+  });
 
   it('uses the normal UUID reservation, explicit owner authorization, actual g2→g3 claim and one POST',async()=>{
     const h=harness();const f=legacySuccessor(h);const history=canonicalJson(f.history);

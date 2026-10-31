@@ -47,7 +47,7 @@ interface ExecuteContext {
   row: ActionAttemptRow;
   reauthorize: () => Promise<void>;
 }
-type InvocationInput = {purpose?: 'BROWSER'; sessionId: string; identityRef?: never} |
+type InvocationInput = {purpose?: 'BROWSER'; sessionId: string | null; identityRef?: never} |
   {purpose: 'BACKGROUND'; identityRef: string; callerAppId: string; sessionId?: never};
 type ExecuteInput = ExecuteContext & InvocationInput;
 type PreflightInput = Pick<ExecuteContext, 'workItem' | 'actor'> & InvocationInput;
@@ -198,7 +198,8 @@ export class AilyTaskExecutionService {
           errorCode: run.post.state === 'UNKNOWN' ? run.post.errorCode : 'AILY_POST_RESULT_UNCONFIRMED'};
   }
 
-  private async accessToken(actor: ExecuteInput['actor'], sessionId: string): Promise<string> {
+  private async accessToken(actor: ExecuteInput['actor'], sessionId: string | null): Promise<string> {
+    if (sessionId === null) throw new ConflictException('INITIAL_CONTINUATION_AILY_USER_GRANT_REQUIRED');
     const grant = await this.actors.withActorTransaction(actor.userId, async ({database}) => {
       const rows = await database.select({sealed: identitySession.ailyAccessTokenSealed,
         tokenHash: identitySession.sessionTokenHash, mappingId: identitySession.subjectMappingId})
@@ -225,6 +226,9 @@ export class AilyTaskExecutionService {
       workItemId: input.workItem.workItemId, principalId: config.principalId, agentId: config.agentId};
     const identity = await this.invocation.resolve(request);
     if (identity.status === 'READY') {
+      if (input.purpose !== 'BACKGROUND' && input.sessionId === null &&
+          (identity.transport !== 'APPLICATION' || !identity.callerAppId))
+        throw new ConflictException('AILY_INVOCATION_IDENTITY_BINDING_CHANGED');
       if (input.purpose === 'BACKGROUND' && (identity.identityRef !== input.identityRef || identity.callerAppId !== input.callerAppId))
         throw new ConflictException('AILY_INVOCATION_IDENTITY_BINDING_CHANGED');
       if (identity.transport === 'APPLICATION' && !identity.callerAppId)
@@ -234,7 +238,8 @@ export class AilyTaskExecutionService {
     }
     // This existing short grant remains a browser-only path. Background tick
     // consumes the formal port and never falls back to a user's login cookie.
-    if (applicationRequired || input.purpose === 'BACKGROUND' || identity.transport === 'APPLICATION') throw new ConflictException(identity.reason);
+    if (applicationRequired || input.purpose === 'BACKGROUND' || input.sessionId === null ||
+        identity.transport === 'APPLICATION') throw new ConflictException(identity.reason);
     return {accessToken: await this.accessToken(input.actor, input.sessionId)};
   }
 }

@@ -49,7 +49,7 @@ export const ailyExecutorRunSchema = z.strictObject({
     remoteFinishReason: z.string().max(200).optional()}).optional(),
 }).superRefine((value, context) => {
   if (value.invocation?.purpose === 'BACKGROUND' ? value.hostSessionId !== null :
-      value.hostSessionId === null || originalRequest.test(value.requestId))
+      (value.hostSessionId === null && value.invocation?.purpose !== 'BROWSER') || originalRequest.test(value.requestId))
     context.addIssue({code: 'custom', message: 'Exact browser or background invocation required'});
 });
 

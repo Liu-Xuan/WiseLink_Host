@@ -23,6 +23,15 @@ describe('private Aily executor run', () => {
     expect(() => parseAilyExecutorRun({...old, requestId: 'original-2'})).toThrow('AILY_EXECUTOR_RUN_INVALID');
   });
 
+  it('records native application browser provenance without inventing an OAuth session',()=>{
+    const value:AilyExecutorRun={...run(),hostSessionId:null,invocation:{purpose:'BROWSER',identityRef:'synthetic-caller',
+      callerAppId:'cli_synthetic',configurationSource:'synthetic-proof'}};
+    expect(parseAilyExecutorRun(serializeAilyExecutorRun(value))).toEqual(value);
+    expect(()=>parseAilyExecutorRun({...value,invocation:undefined})).toThrow('AILY_EXECUTOR_RUN_INVALID');
+    expect(()=>parseAilyExecutorRun({...value,invocation:{...value.invocation,callerAppId:undefined}})).toThrow('AILY_EXECUTOR_RUN_INVALID');
+    expect(()=>parseAilyExecutorRun({...value,requestId:'original-2'})).toThrow('AILY_EXECUTOR_RUN_INVALID');
+  });
+
   it('requires the original producer request and sealed parse identity, never arbitrary strings or takeover hashes', () => {
     const task = {workItemId: 'WI', documentVersionId: 'DV', idempotencyKey: 'openclaw-v2:dynamic:WI:DV:original-2',
       modelInput: {requestId: 'original-2', originalParseRunId: 'PR-2'}};

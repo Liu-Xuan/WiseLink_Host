@@ -1,6 +1,7 @@
 import { isProgramAssessmentMode, type ProgramAssessmentAdmission } from './program-agent-policy';
 import { AilyTaskAdmissionService, type AilyAssessmentAdmission } from './aily-task-admission';
 import { AilyTaskExecutionService } from './aily-task-execution.service';
+import { AILY_ENTERPRISE_CONFIGURATION, type AilyEnterpriseConfigurationState } from './aily-enterprise-configuration';
 import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
 import type { ActionAttemptRow } from '../action-attempt/action-attempt.types';
 import type { Request } from 'express';
@@ -107,6 +108,8 @@ export class CanonicalInitialAnalysisContinuationService {
     @Optional() private readonly ailyAdmission?: AilyTaskAdmissionService,
     @Optional() private readonly ailyExecution?: AilyTaskExecutionService,
     @Optional() private readonly automaticDispatch?: AutomaticWorkItemDispatchService,
+    @Optional() @Inject(AILY_ENTERPRISE_CONFIGURATION)
+    private readonly enterpriseState?: AilyEnterpriseConfigurationState,
   ) {}
 
   async request(
@@ -318,10 +321,16 @@ export class CanonicalInitialAnalysisContinuationService {
   private async runAily(workItem: CanonicalWorkItemProjection, input: z.infer<typeof command>,
     actor: CanonicalHostActor, permissionSnapshotVersion: string, session?: ResolvedSession | null,
     existing?: ActionAttemptRow, httpRequest?: Request): Promise<CanonicalInitialAnalysisContinuationReceipt> {
-    if (!this.ailyAdmission || !this.ailyExecution || !this.sessions || !session || input.operation !== 'EVALUATE_JOBAID')
+    const nativeApplication = this.enterpriseState?.status === 'READY' &&
+      this.enterpriseState.configuration.mcp.authenticationMode === 'HOST_SERVICE' &&
+      this.enterpriseState.configuration.caller.browserTransport === 'APPLICATION';
+    if (!this.ailyAdmission || !this.ailyExecution || !this.sessions || (!session && !nativeApplication) ||
+        input.operation !== 'EVALUATE_JOBAID')
       throw continuationConflict('AILY_NOT_CONFIGURED');
-    if (session.actor.canonicalSubject.id !== actor.userId || session.actor.tenantId !== actor.tenantId ||
-        session.actor.applicationScopeId !== actor.appId)
+    if (!session && !httpRequest) throw new ForbiddenException('INITIAL_CONTINUATION_IDENTITY_MISMATCH');
+    const browserActor = session?.actor ?? this.sessions.nativeBrowserIdentity(httpRequest!).actor;
+    if (browserActor.canonicalSubject.id !== actor.userId || browserActor.tenantId !== actor.tenantId ||
+        browserActor.applicationScopeId !== actor.appId)
       throw new ForbiddenException('INITIAL_CONTINUATION_IDENTITY_MISMATCH');
     const selected = existing ? null : this.ailyAdmission.require(actor.tenantId, workItem, input.modelRef);
     if (existing) this.ailyAdmission.requireScope(actor.tenantId, workItem);
@@ -337,13 +346,14 @@ export class CanonicalInitialAnalysisContinuationService {
     };
     return this.sessions.withVerifiedReviewServiceSql(async () => {
       await reauthorize();
-      const context = {workItem, actor, sessionId: session.session.id};
+      const context = {workItem, actor, sessionId: session?.session.id ?? null};
       await this.ailyExecution!.preflight(context, input.modelRef!, !!existing);
       if (!existing) {
         const admission: AilyAssessmentAdmission = {...selected!, executionMode: 'AILY_AGENT_V1',
           modelRef: selected!.model.modelRef, actorUserId: actor.userId};
         await this.jobAid.enqueueContinuation(workItem, actor.tenantId, permissionSnapshotVersion, input.requestId,
-          'INITIAL_PROBLEM_ASSESSMENT', {sessionId: session.session.id, actorId: actor.userId, tenantId: actor.tenantId},
+          'INITIAL_PROBLEM_ASSESSMENT', session
+            ? {sessionId: session.session.id, actorId: actor.userId, tenantId: actor.tenantId} : undefined,
           undefined, undefined, admission);
       }
       const key = `openclaw-v2:dynamic:${workItem.workItemId}:${workItem.source.documentVersionId}:${input.requestId}`;
