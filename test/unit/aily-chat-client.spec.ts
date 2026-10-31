@@ -1,4 +1,5 @@
 import { types } from 'node:util';
+import { Logger } from '@nestjs/common';
 import {
   createAilyChat,
   serializeAilyChatRequest,
@@ -9,8 +10,11 @@ import {
 
 describe('Host Aily transport', () => {
   const originalFetch = globalThis.fetch;
+  let warnings: jest.SpyInstance;
+  beforeEach(() => { warnings = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined); });
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    warnings.mockRestore();
   });
   const request = {
     agentId: 'agent_test',
@@ -126,8 +130,11 @@ describe('Host Aily transport', () => {
     expect(error.message).toBe(test.message);expect(numericMetadata(error)).toEqual({status:200,code:0});
   });
 
-  it('sends the exact persisted full task once with stream false and no model or lease fields', async () => {
-    const full = {...request, message: `完整安全任务${'完整原文'.repeat(16000)}`};
+  it('sends a complete synthetic task at the observed 243865-character scale through one bounded multipart CREATE', async () => {
+    const task = {taskContextRef: 'AQ-synthetic-full', modelInput: {requirements: '按原检查单完整核对。',
+      original: `原文起点\n${'完整原文条件'.repeat(44000)}原文终点😀`, previousWork: '保留此前真实已读的合成认识。'}};
+    const full = {...request, message: JSON.stringify(task)};
+    expect(full.message.length).toBeGreaterThanOrEqual(243865);
     const expectedRequestBody = serializeAilyChatRequest(full);
     globalThis.fetch = jest.fn().mockResolvedValue(Response.json({code: 0,
       data: {agent_chat_id: '9'.repeat(64), session_id: request.remoteSessionId}}));
@@ -135,9 +142,124 @@ describe('Host Aily transport', () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     const [, init] = (globalThis.fetch as jest.Mock).mock.calls[0];
     expect(init.body).toBe(expectedRequestBody);
-    expect(JSON.parse(init.body)).toEqual({user_message: {content: [{type: 'text', text: full.message}]},
-      stream: false, session_id: request.remoteSessionId});
-    expect(init.redirect).toBe('error');
+    const body = JSON.parse(init.body);
+    const content: Array<{type: string; text: string}> = body.user_message.content;
+    expect(content.length).toBeGreaterThan(1); expect(content.length).toBeLessThanOrEqual(100);
+    for (const entry of content) {
+      expect(Object.keys(entry).sort()).toEqual(['text', 'type']); expect(entry.type).toBe('text');
+      expect(entry.text.length).toBeLessThanOrEqual(10000);
+    }
+    const reconstructed = content.map(entry => entry.text).join('');
+    expect(reconstructed).toBe(full.message); expect(Buffer.from(reconstructed)).toEqual(Buffer.from(full.message));
+    expect(JSON.parse(reconstructed)).toEqual(task);
+    expect(body).toEqual({user_message: {content}, stream: false, session_id: request.remoteSessionId});
+    expect(init.redirect).toBe('error'); expect(warnings).not.toHaveBeenCalled();
+  });
+
+  it.each([10000, 10001])('preserves all %s code units at the official per-text boundary', length => {
+    const message = 'x'.repeat(length);
+    const body = JSON.parse(serializeAilyChatRequest({message}));
+    const content: Array<{type: string; text: string}> = body.user_message.content;
+    expect(content.map(entry => entry.text.length)).toEqual(length === 10000 ? [10000] : [10000, 1]);
+    expect(content.map(entry => entry.text).join('')).toBe(message);
+    expect(body.stream).toBe(false);
+  });
+
+  it('never cuts a surrogate pair and preserves whitespace, escaping and ordered bytes', () => {
+    const message = `${'x'.repeat(9999)}😀\n\t  引用\\路径"原文"  `;
+    const content: Array<{type: string; text: string}> = JSON.parse(serializeAilyChatRequest({message})).user_message.content;
+    expect(content[0].text).toBe('x'.repeat(9999)); expect(content[1].text.startsWith('😀')).toBe(true);
+    expect(content.every(entry => entry.text.length <= 10000)).toBe(true);
+    const reconstructed = content.map(entry => entry.text).join('');
+    expect(reconstructed).toBe(message); expect(Buffer.from(reconstructed)).toEqual(Buffer.from(message));
+  });
+
+  it('keeps exactly 100 content items and refuses a 101st before any transport without truncation', async () => {
+    const message = 'x'.repeat(1000000);
+    const content: Array<{type: string; text: string}> = JSON.parse(serializeAilyChatRequest({message})).user_message.content;
+    expect(content).toHaveLength(100); expect(content.every(entry => entry.text.length === 10000)).toBe(true);
+    expect(content.map(entry => entry.text).join('')).toBe(message);
+    globalThis.fetch = jest.fn();
+    await expect(createAilyChat({...request, message: `${message}x`})).rejects.toThrow('AILY_MESSAGE_API_CAPACITY_EXCEEDED');
+    expect(globalThis.fetch).not.toHaveBeenCalled(); expect(warnings).not.toHaveBeenCalled();
+  });
+
+  it('keeps short CREATE bytes and the existing private-stream limit unchanged', async () => {
+    expect(serializeAilyChatRequest(request)).toBe(JSON.stringify({user_message: {content: [{type: 'text', text: request.message}]},
+      stream: false, session_id: request.remoteSessionId}));
+    globalThis.fetch = jest.fn();
+    await expect(streamAilyChat({...request, message: 'x'.repeat(60001)}, async () => undefined))
+      .rejects.toThrow('AILY_MESSAGE_INVALID');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not rewrite or POST an old persisted single-text body after multipart serialization changes', async () => {
+    const message = 'x'.repeat(10001);
+    const original = JSON.stringify({user_message: {content: [{type: 'text', text: message}]}, stream: false});
+    globalThis.fetch = jest.fn();
+    await expect(createAilyChat({agentId: request.agentId, accessToken: request.accessToken, message,
+      expectedRequestBody: original})).rejects.toThrow('AILY_DISPATCH_BODY_CHANGED');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  async function createFailure(response: Response): Promise<Error> {
+    globalThis.fetch = jest.fn().mockResolvedValue(response);
+    try { await createAilyChat(request); throw new Error('SYNTHETIC_CREATE_REJECTION_REQUIRED'); }
+    catch (cause) {
+      if (!types.isNativeError(cause)) throw cause;
+      expect(cause.message).not.toBe('SYNTHETIC_CREATE_REJECTION_REQUIRED');
+      expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+      expect(globalThis.fetch).toHaveBeenCalledWith('https://open.feishu.cn/open-apis/aily/v1/agents/agent_test/chats',
+        expect.objectContaining({method: 'POST', redirect: 'error', body: serializeAilyChatRequest(request)}));
+      return cause;
+    }
+  }
+  function createWarning(status: number, code: number | null, category: 'HTTP_REJECTED' | 'HTTP_BODY_UNREADABLE'): void {
+    expect(warnings).toHaveBeenCalledTimes(1);
+    expect(warnings).toHaveBeenCalledWith(JSON.stringify({event: 'AILY_CHAT_CREATE_REJECTED',
+      httpStatus: status, platformCode: code, category}));
+  }
+
+  it.each([0, 2700001])('keeps HTTP400 rejected with its verified code %s and a fixed safe log only', async code => {
+    const marker = 'SYNTHETIC_SECRET_TOKEN_ID_STACK https://synthetic.invalid/?token=SYNTHETIC_SECRET';
+    const error = await createFailure(Response.json({code, msg: marker, error_msg: marker, data: {token: marker,
+      agent_chat_id: '1'.repeat(19), session_id: marker}, headers: {authorization: marker}, stack: marker}, {status: 400}));
+    expect(error.message).toBe('AILY_HTTP_400'); expect(numericMetadata(error)).toEqual({status: 400, code});
+    expect(JSON.stringify(error)).toBe(JSON.stringify({status: 400, code}));
+    for (const name of ['body', 'response', 'cause', 'msg', 'token', 'headers', 'sessionId', 'chatId'])
+      expect(Object.hasOwn(error, name)).toBe(false);
+    createWarning(400, code, 'HTTP_REJECTED');
+    expect(JSON.stringify(warnings.mock.calls)).not.toContain('SYNTHETIC_SECRET');
+    expect(String(error)).not.toContain('SYNTHETIC_SECRET');
+  });
+
+  it.each([
+    {name: 'non-JSON reflection', response: () => new Response('SYNTHETIC_SECRET_BODY ?token=SYNTHETIC_SECRET', {status: 400})},
+    {name: 'over-boundary reflection', response: () => new Response('SYNTHETIC_SECRET_BODY'.repeat(100001), {status: 400})},
+    {name: 'invalid UTF-8', response: () => new Response(new Uint8Array([0xc3, 0x28]), {status: 400})},
+    {name: 'missing body', response: () => new Response(null, {status: 400})},
+    {name: 'stream failure', response: () => new Response(new ReadableStream<Uint8Array>({start(controller) {
+      controller.error(new Error('SYNTHETIC_SECRET_STREAM_TOKEN')); }}), {status: 400})},
+  ])('keeps numeric HTTP status and no body leakage for CREATE $name', async test => {
+    const error = await createFailure(test.response());
+    expect(error.message).toBe('AILY_HTTP_400'); expect(numericMetadata(error)).toEqual({status: 400, code: null});
+    expect(JSON.stringify(error)).toBe(JSON.stringify({status: 400, code: null}));
+    createWarning(400, null, 'HTTP_BODY_UNREADABLE');
+    expect(JSON.stringify(warnings.mock.calls)).not.toContain('SYNTHETIC_SECRET');
+  });
+
+  it.each(['2700001', 2700001.5, Number.MAX_SAFE_INTEGER + 1, -1, null, true])(
+    'keeps an unverified CREATE platform code %s unknown rather than coercing it', async code => {
+      const error = await createFailure(Response.json({code, msg: 'SYNTHETIC_SECRET_BODY'}, {status: 400}));
+      expect(error.message).toBe('AILY_HTTP_400'); expect(numericMetadata(error)).toEqual({status: 400, code: null});
+      createWarning(400, null, 'HTTP_REJECTED');
+    });
+
+  it('keeps HTTP200 platform rejection and own numeric fields without logging response text', async () => {
+    const error = await createFailure(Response.json({code: 2700002, msg: 'SYNTHETIC_SECRET_BODY'}));
+    expect(error.message).toBe('AILY_API_REJECTED_2700002'); expect(numericMetadata(error)).toEqual({status: 200, code: 2700002});
+    expect(JSON.stringify(error)).toBe(JSON.stringify({status: 200, code: 2700002}));
+    expect(warnings).not.toHaveBeenCalled();
   });
 
   it('rejects changed original POST bytes before sending and never retries a missing chat receipt', async () => {

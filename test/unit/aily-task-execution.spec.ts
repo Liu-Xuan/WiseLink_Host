@@ -340,7 +340,7 @@ async function nativeCommandComposition(entry:'static'|'forRoot',mode:'READY'|'M
     if(init?.method==='POST') {
       counts.create++;expect(h.run().post.state).toBe('STARTED');expect(String(init.body)).toBe(h.run().post.requestBody);
       const body=JSON.parse(String(init.body));expect(body.stream).toBe(false);
-      const message=JSON.parse(body.user_message.content[0].text);
+      const message=JSON.parse(body.user_message.content.map((entry:{text:string})=>entry.text).join(''));
       expect(message.taskContextRef).toBe(h.row().operationRef);
       if(postUnknown)throw new Error('SYNTHETIC_REPLY_LOST');
       return Response.json({code:0,data:{agent_chat_id:'3333333333333333333',session_id:'synthetic-remote'}});
@@ -707,7 +707,7 @@ describe('normal enterprise task consumer', () => {
       if (init?.method === 'POST') {
         postEntered();
         expect(h.run().post.state).toBe('STARTED'); expect(String(init.body)).toBe(h.run().post.requestBody);
-        const body = JSON.parse(String(init.body)); const message = JSON.parse(body.user_message.content[0].text);
+        const body = JSON.parse(String(init.body)); const message = JSON.parse(body.user_message.content.map((entry:{text:string})=>entry.text).join(''));
         expect(body.stream).toBe(false); expect(message.taskContextRef).toBe(h.row().operationRef);
         expect(message.modelInput.checklistBinding.selection).toHaveLength(8);
         expect(message.modelInput.checklistBinding.definitionContentHash).toBe(JOBAID_CHECKLIST_RC1_CONTENT_HASH);
@@ -859,7 +859,10 @@ describe('normal enterprise task consumer', () => {
       expect(h.order).toContain('STARTED');
       const message = JSON.parse(request.message);
       expect(message.taskContextRef).toBe(h.row().operationRef);
-      expect(JSON.parse(request.expectedRequestBody).user_message.content).toEqual([{type:'text',text:request.message}]);
+      const content:Array<{type:string;text:string}>=JSON.parse(request.expectedRequestBody).user_message.content;
+      expect(content.map(entry=>entry.text).join('')).toBe(request.message);
+      expect(content.length).toBeLessThanOrEqual(100);
+      expect(content.every(entry=>entry.type==='text'&&entry.text.length<=10000)).toBe(true);
       expect(message.modelInput).toEqual(parseJobAidProblemTask(parseTaskEnvelope(h.row().taskEnvelopeJson)).modelInput);
       expect(message).not.toHaveProperty('task');
       expect(request.message).not.toContain(leaseToken);

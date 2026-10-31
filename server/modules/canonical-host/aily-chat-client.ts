@@ -1,9 +1,30 @@
 import { types } from 'node:util';
+import { Logger } from '@nestjs/common';
 import {
   consumeAilyChatStream,
   isAilyChatId,
   type AilyStreamProgress,
 } from './aily-chat-stream';
+
+const createLogger = new Logger('AilyChatClient');
+const AILY_CREATE_TEXT_MAX_CODE_UNITS = 10_000;
+const AILY_CREATE_MAX_CONTENT_ITEMS = 100;
+
+/** Conservative API character bound, preserving every original code unit and pair. */
+function createMessageContent(message: string): Array<{type: 'text'; text: string}> {
+  const content: Array<{type: 'text'; text: string}> = [];
+  let start = 0;
+  while (start < message.length) {
+    if (content.length === AILY_CREATE_MAX_CONTENT_ITEMS)
+      throw new Error('AILY_MESSAGE_API_CAPACITY_EXCEEDED');
+    let end = Math.min(start + AILY_CREATE_TEXT_MAX_CODE_UNITS, message.length);
+    if (end < message.length && message.charCodeAt(end - 1) >= 0xd800 && message.charCodeAt(end - 1) <= 0xdbff &&
+        message.charCodeAt(end) >= 0xdc00 && message.charCodeAt(end) <= 0xdfff) end--;
+    content.push({type: 'text', text: message.slice(start, end)});
+    start = end;
+  }
+  return content;
+}
 
 /** Transport only. The caller must authorize and persist the request before dispatch.
  * Tokens and remote session bindings are supplied by the Host, never model tools.
@@ -32,7 +53,7 @@ function requestBody(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId
   )
     throw new Error('AILY_SESSION_INVALID');
   return JSON.stringify({
-    user_message: { content: [{ type: 'text', text: request.message }] },
+    user_message: { content: stream ? [{ type: 'text', text: request.message }] : createMessageContent(request.message) },
     stream,
     ...(request.remoteSessionId ? { session_id: request.remoteSessionId } : {}),
   });
@@ -59,21 +80,36 @@ export async function createAilyChat(request: AilyChatRequest & {expectedRequest
     signal: AbortSignal.timeout(30_000),
     redirect: 'error',
   });
-  if (!response.ok) throw new Error(`AILY_HTTP_${response.status}`);
-  const responseBody = await readResultBody(response);
-  if (!responseBody || typeof responseBody !== 'object' || Array.isArray(responseBody)) throw new Error('AILY_CHAT_RECEIPT_INVALID');
-  const envelope = responseBody as Record<string, unknown>;
+  let code: number | null = null;
+  const failure = (message: string, category: 'HTTP_REJECTED' | 'HTTP_BODY_UNREADABLE' = 'HTTP_REJECTED') => {
+    if (!response.ok) createLogger.warn(JSON.stringify({event: 'AILY_CHAT_CREATE_REJECTED',
+      httpStatus: response.status, platformCode: code, category}));
+    return Object.assign(new Error(message), {status: response.status, code});
+  };
+  let responseBody: unknown;
+  try { responseBody = await readResultBody(response); }
+  catch (cause) {
+    if (!response.ok) throw failure(`AILY_HTTP_${response.status}`, 'HTTP_BODY_UNREADABLE');
+    if (types.isNativeError(cause)) throw Object.assign(cause, {status: response.status, code});
+    throw failure('AILY_RESULT_INVALID');
+  }
+  const envelope = responseBody && typeof responseBody === 'object' && !Array.isArray(responseBody)
+    ? responseBody as Record<string, unknown> : null;
+  if (envelope && typeof envelope.code === 'number' && Number.isSafeInteger(envelope.code) && envelope.code >= 0)
+    code = envelope.code;
+  if (!response.ok) throw failure(`AILY_HTTP_${response.status}`);
+  if (!envelope) throw failure('AILY_CHAT_RECEIPT_INVALID');
   if (typeof envelope.code === 'number' && Number.isSafeInteger(envelope.code) && envelope.code > 0)
-    throw new Error(`AILY_API_REJECTED_${envelope.code}`);
+    throw failure(`AILY_API_REJECTED_${envelope.code}`);
   if (envelope.code !== 0 || !envelope.data || typeof envelope.data !== 'object' || Array.isArray(envelope.data))
-    throw new Error('AILY_CHAT_RECEIPT_INVALID');
+    throw failure('AILY_CHAT_RECEIPT_INVALID');
   const receipt = envelope.data as Record<string, unknown>;
-  if (!isAilyChatId(receipt.agent_chat_id)) throw new Error('AILY_CHAT_RECEIPT_INVALID');
+  if (!isAilyChatId(receipt.agent_chat_id)) throw failure('AILY_CHAT_RECEIPT_INVALID');
   if (receipt.session_id !== undefined &&
       (typeof receipt.session_id !== 'string' || !/^[A-Za-z0-9_-]{1,96}$/u.test(receipt.session_id)))
-    throw new Error('AILY_CHAT_RECEIPT_INVALID');
+    throw failure('AILY_CHAT_RECEIPT_INVALID');
   if (request.remoteSessionId && receipt.session_id !== undefined && receipt.session_id !== request.remoteSessionId)
-    throw new Error('AILY_RESULT_SESSION_MISMATCH');
+    throw failure('AILY_RESULT_SESSION_MISMATCH');
   return {chatId: receipt.agent_chat_id,
     ...(typeof receipt.session_id === 'string' ? {remoteSessionId: receipt.session_id} : {})};
 }
