@@ -11,6 +11,20 @@ import { AILY_TASK_CONFIGURATION, AilyTaskAdmissionService } from '../../server/
 import { AUTOMATIC_WORK_ITEM_SOURCE_AUTHORIZATION } from '../../server/modules/canonical-host/automatic-work-item-source-authorization.port';
 import { MiaodaAutomaticWorkItemSourceAuthorizationAdapter } from '../../server/modules/canonical-host/miaoda-automatic-work-item-source-authorization.adapter';
 import { DocumentManagementRuntimeModule } from '../../server/modules/document-management-runtime/document-management-runtime.module';
+import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
+import { buildJobAidChecklistBinding } from '../../server/modules/canonical-host/jobaid-checklist-binding';
+import { originalFixture } from './document-parsing/fixtures/document-original.fixture';
+import type { AilyAssessmentMaterialBinding } from '../../server/modules/canonical-host/aily-task-admission';
+
+function syntheticMaterialBinding(): AilyAssessmentMaterialBinding {
+  const original = originalFixture().binding;
+  const checklist = buildJobAidChecklistBinding({workItemId: 'WI-test', documentVersionId: original.documentVersionId,
+    basedOnWorkItemRevision: 5});
+  return {workItemId: 'WI-test', basedOnWorkItemRevision: 5, expectedWorkRevision: 0,
+    originalBinding: original, checklistBinding: {definitionId: checklist.definitionId, definitionVersion: checklist.definitionVersion,
+      definitionContentHash: checklist.definitionContentHash, contractVersion: checklist.contractVersion},
+    methodBinding: structuredClone(JOBAID_METHOD_BINDING), documentRevision: 9, materialFormat: 'HOST_TASK_SNAPSHOT_V1'};
+}
 
 function mcpOnlyJson():Record<string,unknown> {
   const full=syntheticAilyEnterpriseJson();
@@ -65,6 +79,40 @@ describe('strict server enterprise configuration', () => {
     expect(state).toMatchObject({status: 'READY', configuration: {task: {referenceAttachments: references},
       caller: {browserTransport: 'APPLICATION'}}});
   });
+
+  it('retains an explicitly checked complete material binding using existing original, checklist and method versions', () => {
+    const value = syntheticAilyEnterpriseJson(); const materialBinding = syntheticMaterialBinding();
+    (value.task as Record<string, unknown>).referenceAttachments = [{attachmentId: 'synthetic-checked-material',
+      documentUrl: 'https://tenant.example.com/docx/SYNTHETIC', registeredCallerAppId: 'cli_synthetic',
+      expectedDocumentVersionId: materialBinding.originalBinding.documentVersionId, purpose: 'REFERENCE_SNAPSHOT',
+      registrationSource: 'synthetic-registration-and-material-check', materialBinding}];
+    const state = loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON: JSON.stringify(value),
+      WL_AILY_MCP_SIGNING_SECRET: 'synthetic-only-key'});
+    expect(state).toMatchObject({status: 'READY', configuration: {task: {referenceAttachments: [{materialBinding}]}}});
+  });
+
+  it.each(['work-item', 'document-version', 'expected-revision', 'document-revision', 'format', 'missing-original',
+    'missing-checklist-version', 'missing-method-limitation', 'missing-method-document-version', 'unknown-complete-flag', 'duplicate-material'] as const)(
+    'refuses incomplete or ambiguous declared material %s instead of reverting to legacy references', changed => {
+      const value = syntheticAilyEnterpriseJson(); const materialBinding = syntheticMaterialBinding();
+      const reference = {attachmentId: 'synthetic-checked-material', documentUrl: 'https://tenant.example.com/docx/SYNTHETIC',
+        registeredCallerAppId: 'cli_synthetic', expectedDocumentVersionId: 'DV-TEST', purpose: 'REFERENCE_SNAPSHOT',
+        registrationSource: 'synthetic-material-check', materialBinding};
+      if (changed === 'work-item') materialBinding.workItemId = 'WI-OTHER';
+      if (changed === 'document-version') materialBinding.originalBinding.documentVersionId = 'DV-OTHER';
+      if (changed === 'expected-revision') Object.assign(materialBinding, {expectedWorkRevision: 1});
+      if (changed === 'document-revision') materialBinding.documentRevision = 0;
+      if (changed === 'format') Object.assign(materialBinding, {materialFormat: 'UNVERIFIED_URL'});
+      if (changed === 'missing-original') delete (materialBinding as unknown as Record<string, unknown>).originalBinding;
+      if (changed === 'missing-checklist-version') delete (materialBinding.checklistBinding as unknown as Record<string, unknown>).contractVersion;
+      if (changed === 'missing-method-limitation') delete (materialBinding.methodBinding as unknown as Record<string, unknown>).attachment5;
+      if (changed === 'missing-method-document-version') delete (materialBinding.methodBinding.sources[0] as unknown as Record<string, unknown>).documentVersionId;
+      if (changed === 'unknown-complete-flag') Object.assign(materialBinding, {complete: true});
+      (value.task as Record<string, unknown>).referenceAttachments = changed === 'duplicate-material'
+        ? [reference, {...reference, attachmentId: 'synthetic-second-material'}] : [reference];
+      expect(loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON: JSON.stringify(value),
+        WL_AILY_MCP_SIGNING_SECRET: 'synthetic-only-key'})).toEqual({status: 'UNAVAILABLE', reason: 'AILY_ENTERPRISE_CONFIGURATION_INVALID'});
+    });
 
   it.each(['missing-id', 'empty-id', 'duplicate', 'too-many', 'empty-list', 'purpose', 'caller', 'user-transport',
     'document-url', 'document-version', 'registration-source', 'unknown-field'])(

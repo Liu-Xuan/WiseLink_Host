@@ -1,9 +1,25 @@
 import { ConflictException, Inject, Injectable, Optional } from '@nestjs/common';
 import type { CanonicalAilyTaskAdmission, CanonicalExecutionModelSelection, CanonicalWorkItemProjection } from '@shared/api.interface';
+import type { DocumentOriginalBinding } from '@shared/document-original.interface';
+import type { JobAidChecklistBinding } from '@shared/jobaid-checklist.interface';
+import type { JobAidMethodBinding } from '@shared/jobaid-problem-assessment.interface';
 
 export const AILY_TASK_CONFIGURATION = Symbol('AILY_TASK_CONFIGURATION');
 export const AILY_TASK_MODE = 'AILY_AGENT_V1' as const;
 export type AilyTaskModelRef = 'aily/glm-5.3' | 'aily/deepseek-v4-pro';
+
+/** Previously checked material values; registrationSource retains the actual check receipt. */
+export interface AilyAssessmentMaterialBinding {
+  workItemId: string;
+  basedOnWorkItemRevision: number;
+  expectedWorkRevision: 0;
+  originalBinding: DocumentOriginalBinding;
+  checklistBinding: Pick<JobAidChecklistBinding,
+    'definitionId' | 'definitionVersion' | 'definitionContentHash' | 'contractVersion'>;
+  methodBinding: JobAidMethodBinding;
+  documentRevision: number;
+  materialFormat: 'HOST_TASK_SNAPSHOT_V1';
+}
 
 /** Server-approved registration evidence for this exact task scope. */
 export interface AilyReferenceAttachment {
@@ -13,6 +29,11 @@ export interface AilyReferenceAttachment {
   expectedDocumentVersionId: string;
   purpose: 'REFERENCE_SNAPSHOT';
   registrationSource: string;
+  materialBinding?: AilyAssessmentMaterialBinding;
+}
+
+export interface AilyAssessmentAttachment extends AilyReferenceAttachment {
+  materialBinding: AilyAssessmentMaterialBinding;
 }
 
 /** Supplied only after the exact profile/channel/tool binding is approved.

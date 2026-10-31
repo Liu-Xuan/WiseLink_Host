@@ -27,7 +27,8 @@ import type { OpenClawTaskEnvelope } from '../../server/modules/action-attempt/a
 import { ActionAttemptLifecycleService } from '../../server/modules/action-attempt/action-attempt-lifecycle.service';
 import { ActionAttemptRepository } from '../../server/modules/action-attempt/action-attempt.repository';
 import type { ActionAttemptRow } from '../../server/modules/action-attempt/action-attempt.types';
-import { AilyTaskAdmissionService, type AilyTaskConfiguration, type AilyReferenceAttachment } from '../../server/modules/canonical-host/aily-task-admission';
+import { AilyTaskAdmissionService, type AilyTaskConfiguration, type AilyReferenceAttachment,
+  type AilyAssessmentAttachment } from '../../server/modules/canonical-host/aily-task-admission';
 import { AilyTaskExecutionService } from '../../server/modules/canonical-host/aily-task-execution.service';
 import { type AilyExecutorRun, AILY_TASK_ROLE_MAPPING } from '../../server/modules/canonical-host/aily-executor-run';
 import { serializeAilyChatRequest, type AilyChatRequest } from '../../server/modules/canonical-host/aily-chat-client';
@@ -36,7 +37,10 @@ import { CanonicalJobAidProblemService } from '../../server/modules/canonical-ho
 import { projectCommonAssessmentContext } from '../../server/modules/canonical-host/canonical-host-common-context.service';
 import { JOBAID_METHOD_BINDING } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { assertJobAidProblemTaskBinding, parseJobAidProblemTask } from '../../server/modules/canonical-host/jobaid-problem-task';
-import { AILY_REGISTERED_PRIMARY_SOURCE_READ, ailyTaskDeliveryModelInput } from '../../server/modules/canonical-host/aily-task-delivery';
+import { AILY_REGISTERED_PRIMARY_SOURCE_READ, AILY_REGISTERED_ASSESSMENT_ATTACHMENT,
+  ailyTaskDeliveryModelInput } from '../../server/modules/canonical-host/aily-task-delivery';
+import { buildJobAidChecklistBinding } from '../../server/modules/canonical-host/jobaid-checklist-binding';
+import { JOBAID_CORE_METHOD_REFS } from '../../server/modules/canonical-host/jobaid-method-pack';
 import { overallModelEvidenceRegistry } from '../../server/modules/canonical-host/overall-assessment-reading';
 import * as grantCodec from '../../server/modules/identity/aily-user-grant.codec';
 import type { ResolvedSession } from '../../server/modules/identity/session-resolver.service';
@@ -74,7 +78,8 @@ const actor = {userId: 'owner-test', tenantId: 'tenant-test', appId: 'app_17bzc5
 /** In-memory repository exercises real reservation/preparation/claim/consumer code.
  * All identity/config/client inputs are synthetic; this is not PostgreSQL or platform proof.
  */
-function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JWT', initialAilySessionId:string|null=sessionId) {
+function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JWT', initialAilySessionId:string|null=sessionId,
+  firstAssessment = false) {
   const original = originalFixture();
   original.source.units[0].payload = {text: `完整原文起点${'原始条件不得截断。'.repeat(12000)}完整原文终点`};
   const workItem = {schemaVersion: 'wiselink.3_1.canonical_work_item_projection.v0.candidate',
@@ -183,11 +188,13 @@ function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JW
       expect(database).toBe(grantDatabase);
       return {parseRunId:original.binding.parseRunId,parseRevision:2};
     }),
-    listHeadersForRuntime: jest.fn(async () => [{workRevisionRef: previous.workRevisionRef, workRevision: 3}]),
-    readByRefForRuntime: jest.fn(async (input:{workRevisionRef:string}) => [...saved,previous].find(item => item.workRevisionRef === input.workRevisionRef) ?? null),
-    listForRuntime:jest.fn(async () => [...saved,previous]),
+    listHeadersForRuntime: jest.fn(async () => firstAssessment ? saved.map(item => ({workRevisionRef: item.workRevisionRef,
+      workRevision: item.workRevision})) : [{workRevisionRef: previous.workRevisionRef, workRevision: 3}]),
+    readByRefForRuntime: jest.fn(async (input:{workRevisionRef:string}) => [...saved,...(firstAssessment ? [] : [previous])]
+      .find(item => item.workRevisionRef === input.workRevisionRef) ?? null),
+    listForRuntime:jest.fn(async () => [...saved,...(firstAssessment ? [] : [previous])]),
     readValidationSnapshot:jest.fn(async (input:{fence:Parameters<typeof assertJobAidWorkFence>[1]}) => {
-      assertJobAidWorkFence(row!,input.fence);return {reviewActivityJson:row!.reviewActivityJson,previous:saved[0] ?? previous};
+      assertJobAidWorkFence(row!,input.fence);return {reviewActivityJson:row!.reviewActivityJson,previous:saved[0] ?? (firstAssessment ? null : previous)};
     }),
     readAilySave:jest.fn(async (input:{requestId:string;command:unknown}) => {
       const found = saved.find(item => item.requestId === input.requestId);
@@ -196,9 +203,9 @@ function harness(authenticationMode:'AILY_USER_JWT'|'HOST_SERVICE'='AILY_USER_JW
     }),
     save:jest.fn(async (input:{requestId:string;expectedWorkRevision:number;content:JobAidWorkRevision['content'];command:unknown;fence:Parameters<typeof assertJobAidWorkFence>[1]}) => {
       assertJobAidWorkFence(row!,input.fence);
-      if (input.expectedWorkRevision !== (saved[0]?.workRevision ?? previous.workRevision)) throw new Error('JOBAID_WORK_REVISION_CONFLICT');
+      if (input.expectedWorkRevision !== (saved[0]?.workRevision ?? (firstAssessment ? 0 : previous.workRevision))) throw new Error('JOBAID_WORK_REVISION_CONFLICT');
       const revision:JobAidWorkRevision = {workRevisionRef:`JAWR-synthetic-${input.expectedWorkRevision+1}`,workItemId:workItem.workItemId,
-        workRevision:input.expectedWorkRevision+1,previousWorkRevisionRef:saved[0]?.workRevisionRef ?? previous.workRevisionRef,
+        workRevision:input.expectedWorkRevision+1,previousWorkRevisionRef:saved[0]?.workRevisionRef ?? (firstAssessment ? null : previous.workRevisionRef),
         requestId:input.requestId,actionAttemptId:row!.attemptId,basedOnWorkItemRevision:row!.baseRevision!,
         documentVersionId:row!.documentVersionId!,createdAt:new Date().toISOString(),content:input.content};
       commands.set(input.requestId,canonicalJson(input.command));saved.unshift(revision);return {revision,replayed:false};
@@ -446,6 +453,16 @@ function referenceAttachment(h: ReturnType<typeof harness>): AilyReferenceAttach
   return {attachmentId: 'synthetic:registered/doc-one', documentUrl: 'https://tenant.example.com/docx/SYNTHETIC',
     registeredCallerAppId: 'cli_synthetic', expectedDocumentVersionId: h.original.binding.documentVersionId,
     purpose: 'REFERENCE_SNAPSHOT', registrationSource: 'synthetic-registration-receipt'};
+}
+
+function assessmentAttachment(h: ReturnType<typeof harness>): AilyAssessmentAttachment {
+  const checklist = buildJobAidChecklistBinding({workItemId: h.workItem.workItemId,
+    documentVersionId: h.original.binding.documentVersionId, basedOnWorkItemRevision: h.workItem.revision});
+  return {...referenceAttachment(h), materialBinding: {workItemId: h.workItem.workItemId,
+    basedOnWorkItemRevision: h.workItem.revision, expectedWorkRevision: 0, originalBinding: structuredClone(h.original.binding),
+    checklistBinding: {definitionId: checklist.definitionId, definitionVersion: checklist.definitionVersion,
+      definitionContentHash: checklist.definitionContentHash, contractVersion: checklist.contractVersion},
+    methodBinding: structuredClone(JOBAID_METHOD_BINDING), documentRevision: 9, materialFormat: 'HOST_TASK_SNAPSHOT_V1'}};
 }
 
 async function validateCandidate(h:ReturnType<typeof harness>,actor:AilyMcpVerifiedActor,label:string) {
@@ -845,6 +862,172 @@ describe('normal enterprise task consumer', () => {
     const source = sealed.sourceCatalog.find(item => item.kind === 'DOCUMENT_PASSAGE')!;
     await expect(h.domain.validate(caller, {taskContextRef: h.row().operationRef,
       workJson: JSON.stringify(assessmentCandidate(sealed, source.evidenceRef, 'reference-only'))})).rejects.toThrow('SOURCE_NOT_DELIVERED');
+  });
+
+  it('launches checked complete material through a short real CREATE while the private task and original SAVE chain stay complete', async () => {
+    const h = harness('HOST_SERVICE', sessionId, true); const material = assessmentAttachment(h);
+    h.config.referenceAttachments = [material, {...referenceAttachment(h), attachmentId: 'synthetic-ordinary-reference'}];
+    const primaryRefId = h.original.source.units[0].sourceRefIds[0];
+    h.common.relatedMaterials = {status: 'AVAILABLE', reason: null, items: [{documentCode: 'SYNTHETIC',
+      documentVersionRef: h.original.binding.documentVersionId, documentType: 'SB', contributionRoles: ['GENERAL_BACKGROUND'],
+      sourceAuthority: 'UNKNOWN', targetApplicability: 'UNKNOWN', currentness: 'UNKNOWN', availability: 'AVAILABLE',
+      contextUse: 'BACKGROUND_ONLY', selection: 'BACKGROUND_CANDIDATE', reasonCodes: [],
+      availableSourceRefIds: [primaryRefId], readFragments: [{sourceRefId: primaryRefId, excerpt: 'Synthetic directory entry'}]}]};
+    h.common.discussion = {status: 'AVAILABLE', totalPriorTurns: 1, omittedEarlierTurns: 0, usage: 'DISCUSSION_NOT_ADOPTION',
+      turns: [{turnNo: 1, fromCurrentRevision: true, question: '本轮当前问题不能被旧快照覆盖。', selectedEvaluationItemId: null,
+        attachmentNames: [], workingAnswer: null, missingInputs: ['当前配置仍待核'], warnings: []}]};
+    Object.assign(h.execution, {client: AILY_TASK_CHAT_ADAPTER});
+    const http = jest.spyOn(globalThis, 'fetch').mockResolvedValue(Response.json({code: 0,
+      data: {agent_chat_id: '1234', session_id: 'synthetic-file-first-session'}}));
+    await h.send();
+    expect(http).toHaveBeenCalledTimes(1); expect(h.grantLimit).not.toHaveBeenCalled();
+    const bodyBytes = String(http.mock.calls[0][1]?.body);
+    expect(bodyBytes).toBe(h.run().post.requestBody);
+    const body = JSON.parse(bodyBytes);
+    expect(body.user_message.agent_attachment_ids).toEqual([material.attachmentId]);
+    const content: Array<{text: string}> = body.user_message.content;
+    const messageText = content.map(item => item.text).join('');
+    const message = JSON.parse(messageText);
+    const sealedBytes = h.row().taskEnvelopeJson;
+    const sealed = parseJobAidProblemTask(parseTaskEnvelope(sealedBytes));
+    expect(sealed.ailyInputDelivery).toBe(AILY_REGISTERED_ASSESSMENT_ATTACHMENT);
+    expect(sealed.ailyAssessmentAttachment).toEqual(material);
+    expect(sealed.previousWork).toBeNull(); expect(sealed.modelInput.expectedWorkRevision).toBe(0);
+    expect(sealed.modelInput.programOriginal?.units).toEqual(h.original.source.units);
+    expect(sealed.checklistBinding?.definition).toEqual(JOBAID_CHECKLIST_RC1);
+    expect(sealed.modelInput.contextPackage?.supplementaryMaterials.items[0]).toMatchObject({
+      availableEvidenceRefs: [expect.any(String)], deliveredEvidenceRefs: []});
+    expect(sealed.initiallyDeliveredRefs).toEqual(JOBAID_CORE_METHOD_REFS);
+    expect(message.taskContextRef).toBe(h.row().operationRef);
+    expect(message.modelInput).toEqual(ailyTaskDeliveryModelInput(sealed));
+    expect(h.row().taskEnvelopeJson).toBe(sealedBytes);
+    expect(message.modelInput.schemaVersion).toBe('wiselink.aily-assessment-launch.v1');
+    expect(message.modelInput.material).toEqual({attachmentId: material.attachmentId, documentUrl: material.documentUrl,
+      purpose: 'REFERENCE_SNAPSHOT', documentRevision: material.materialBinding.documentRevision,
+      materialFormat: material.materialBinding.materialFormat});
+    expect(message.modelInput.goal).toBe(sealed.modelInput.preparation?.goal);
+    expect(message.modelInput.currentContext.discussion).toEqual(h.common.discussion);
+    expect(message.modelInput.currentContext.capabilities).toEqual(sealed.modelInput.capabilities);
+    expect(message.modelInput.methodBinding).toEqual(sealed.modelInput.methodBinding);
+    expect(message.modelInput.deliveredEvidence).toEqual(sealed.modelInput.deliveredEvidence);
+    expect(message.modelInput.checklist.selection).toEqual(sealed.checklistBinding?.selection.map(({itemId, mode}) => ({itemId, mode})));
+    expect(message.modelInput.checklist.acceptance).toEqual(sealed.checklistBinding?.acceptance);
+    expect(message.modelInput.checklist).not.toHaveProperty('definition');
+    for (const key of ['availableSources', 'programOriginal', 'documentOverview', 'contextPackage', 'previousWork'])
+      expect(message.modelInput).not.toHaveProperty(key);
+    expect(messageText).not.toContain('完整原文终点'); expect(messageText).not.toContain('sourceOrigins');
+    const remaining: string[] = sealed.sourceCatalog.filter(item => item.kind === 'METHOD_CLAUSE' &&
+      !sealed.initiallyDeliveredRefs.includes(item.evidenceRef)).map(item => item.evidenceRef);
+    expect(remaining).toHaveLength(4); expect(message.modelInput.requiredMethodReadRefs).toEqual(remaining);
+    const falselyDelivered = structuredClone(sealed);
+    falselyDelivered.initiallyDeliveredRefs.push(remaining[0]);
+    falselyDelivered.modelInput.deliveredEvidence = overallModelEvidenceRegistry(falselyDelivered.sourceCatalog.filter(item =>
+      falselyDelivered.initiallyDeliveredRefs.includes(item.evidenceRef)), falselyDelivered.modelInput.evidenceProjectionVersion);
+    expect(() => assertJobAidProblemTaskBinding(falselyDelivered)).toThrow('JOBAID_AILY_INPUT_DELIVERY_BINDING_INVALID');
+    expect(message.modelInput.readingContract).toContain('平台原生附件解析/读取');
+    expect(message.modelInput.readingContract).toContain('正文不全或材料身份不符');
+    expect(h.work.recordSourceRead).not.toHaveBeenCalled();
+    const caller = await h.identity.authorizeCaller(h.jwt);
+    const source = sealed.sourceCatalog.find(item => item.kind === 'DOCUMENT_PASSAGE')!;
+    const candidate = assessmentCandidate(sealed, source.evidenceRef, 'first');
+    candidate.issues[0].body += ' [[method:controls]]';
+    candidate.issues[0].methodUsage.push({methodRef: 'method:controls', usage: 'REFERENCE_ONLY', basisRefs: []});
+    const command = {taskContextRef: h.row().operationRef, workJson: JSON.stringify(candidate)};
+    const unreadMethods = await h.domain.validate(caller, command);
+    expect(unreadMethods).toMatchObject({status: 'REPAIR_REQUIRED', violations: expect.arrayContaining([
+      expect.objectContaining({code: 'JOBAID_CHECKLIST_SOURCE_NOT_DELIVERED', fieldPath: '/issues/0/methodUsage/1/methodRef'}),
+    ])});
+    expect(unreadMethods).not.toHaveProperty('candidateRef');
+    expect(h.run().pending).toBeUndefined(); expect(h.work.save).not.toHaveBeenCalled(); expect(h.saved).toHaveLength(0);
+    expect(h.work.recordSourceRead).not.toHaveBeenCalled();
+    const methods = await h.domain.sources(caller, {taskContextRef: command.taskContextRef, sourceRefs: remaining,
+      purpose: '真实读取其余四条方法', context: 'EXACT'});
+    expect(methods.evidence.map(item => item.evidenceRef)).toEqual(remaining);
+    expect(methods.evidence).toEqual(overallModelEvidenceRegistry(sealed.sourceCatalog.filter(item =>
+      remaining.includes(item.evidenceRef)), sealed.modelInput.evidenceProjectionVersion));
+    expect(h.work.recordSourceRead).toHaveBeenNthCalledWith(1, expect.objectContaining({sourceRefs: remaining}));
+    await expect(h.domain.validate(caller, command)).rejects.toThrow(`SOURCE_NOT_DELIVERED:${source.evidenceRef}`);
+    expect(h.run().pending).toBeUndefined(); expect(h.work.save).not.toHaveBeenCalled(); expect(h.saved).toHaveLength(0);
+    const original = await h.domain.sources(caller, {taskContextRef: command.taskContextRef, sourceRefs: [source.evidenceRef],
+      purpose: '核对当前完整原文', context: 'EXACT'});
+    expect(original.evidence[0].excerpt).toBe(source.excerpt);
+    expect(h.work.recordSourceRead).toHaveBeenNthCalledWith(2, expect.objectContaining({sourceRefs: [source.evidenceRef]}));
+    const validation = await h.domain.validate(caller, command);
+    expect(validation).toMatchObject({status: 'VALID', violations: []});
+    if (validation.status !== 'VALID' || !('candidateRef' in validation)) throw new Error('SYNTHETIC_VALIDATION_REQUIRED');
+    const save = await h.domain.save(caller, {taskContextRef: command.taskContextRef, candidateRef: validation.candidateRef});
+    const read = await h.domain.read(caller, {taskContextRef: command.taskContextRef, saveRequestId: save.saveRequestId});
+    if (!read.revision) throw new Error('SYNTHETIC_READ_REQUIRED');
+    expect(read.revision.content.issues[0].body).toBe(candidate.issues[0].body);
+    await h.domain.stageOverall(caller, {taskContextRef: command.taskContextRef, workRevisionRef: read.revision.workRevisionRef});
+    await h.domain.finish(caller, {taskContextRef: command.taskContextRef, workRevisionRef: read.revision.workRevisionRef});
+    expect(h.row().status).toBe('SUCCEEDED'); expect(h.saved).toHaveLength(1);
+    expect(h.row().taskEnvelopeJson).toBe(sealedBytes);
+    expect(h.work.recordSourceRead).toHaveBeenCalledTimes(2);
+    process.stdout.write(`AILY_SYNTHETIC_FILE_FIRST_METRICS ${JSON.stringify({unicodeChars: Array.from(messageText).length,
+      utf16CodeUnits: messageText.length, utf8Bytes: Buffer.byteLength(messageText), contentItems: content.length,
+      maxItemChars: Math.max(...content.map(item => Array.from(item.text).length)),
+      maxItemBytes: Math.max(...content.map(item => Buffer.byteLength(item.text))), requestBodyBytes: Buffer.byteLength(bodyBytes)})}\n`);
+  });
+
+  it.each(['work-item', 'input-revision', 'expected-revision', 'document-version', 'parse', 'parse-revision', 'artifact', 'source-hash', 'byte-count',
+    'checklist', 'method', 'caller', 'format', 'document-revision', 'previous-work', 'duplicate', 'missing-field'] as const)(
+    'refuses declared complete material with mismatched %s instead of falling back to a large CREATE', async changed => {
+      const h = harness('HOST_SERVICE', sessionId, changed !== 'previous-work');
+      const material = assessmentAttachment(h); h.config.referenceAttachments = [material];
+      const binding = material.materialBinding;
+      if (changed === 'work-item') binding.workItemId = 'WI-OTHER';
+      if (changed === 'input-revision') binding.basedOnWorkItemRevision++;
+      if (changed === 'expected-revision') Object.assign(binding, {expectedWorkRevision: 1});
+      if (changed === 'document-version') binding.originalBinding.documentVersionId = 'DV-OTHER';
+      if (changed === 'parse') binding.originalBinding.parseRunId = 'PR-OTHER';
+      if (changed === 'parse-revision') binding.originalBinding.parseRevision++;
+      if (changed === 'artifact') binding.originalBinding.sourceArtifactId = 'ART-OTHER';
+      if (changed === 'source-hash') binding.originalBinding.sourceSha256 = 'b'.repeat(64);
+      if (changed === 'byte-count') binding.originalBinding.sourceByteLength++;
+      if (changed === 'checklist') binding.checklistBinding.definitionContentHash = 'sha256:synthetic-other';
+      if (changed === 'method') binding.methodBinding.sources[0].versionLabel = 'OTHER';
+      if (changed === 'caller') material.registeredCallerAppId = 'cli_other';
+      if (changed === 'format') Object.assign(binding, {materialFormat: 'UNVERIFIED_LINK'});
+      if (changed === 'document-revision') binding.documentRevision = 0;
+      if (changed === 'duplicate') h.config.referenceAttachments.push({...material, attachmentId: 'synthetic-second-material'});
+      if (changed === 'missing-field') delete (binding as unknown as Record<string, unknown>).originalBinding;
+      await expect(h.send()).rejects.toThrow(changed === 'caller' ? 'AILY_REFERENCE_ATTACHMENT_CALLER_CHANGED'
+        : 'JOBAID_AILY_ASSESSMENT_MATERIAL_BINDING_INVALID');
+      expect(h.client.create).not.toHaveBeenCalled(); expect(h.repository.compareAndSetAilyExecutorRun).not.toHaveBeenCalled();
+      expect(h.grantLimit).not.toHaveBeenCalled();
+    });
+
+  it.each(['attachment-id', 'document-revision', 'registration-source', 'missing'] as const)(
+    'refuses a sealed launch when its current material configuration changes %s before CREATE', async changed => {
+      const h = harness('HOST_SERVICE', sessionId, true); h.config.referenceAttachments = [assessmentAttachment(h)];
+      const begin = h.jobAid.beginAily.bind(h.jobAid);
+      jest.spyOn(h.jobAid, 'beginAily').mockImplementation(async input => {
+        const result = await begin(input); const replacement = assessmentAttachment(h);
+        if (changed === 'attachment-id') replacement.attachmentId = 'synthetic-replacement';
+        if (changed === 'document-revision') replacement.materialBinding.documentRevision++;
+        if (changed === 'registration-source') replacement.registrationSource = 'synthetic-replacement-receipt';
+        h.config.referenceAttachments = changed === 'missing' ? undefined : [replacement];
+        return result;
+      });
+      await expect(h.send()).rejects.toThrow('AILY_ASSESSMENT_ATTACHMENT_CHANGED');
+      expect(parseJobAidProblemTask(parseTaskEnvelope(h.row().taskEnvelopeJson)).ailyInputDelivery).toBe(AILY_REGISTERED_ASSESSMENT_ATTACHMENT);
+      expect(h.client.create).not.toHaveBeenCalled(); expect(h.repository.compareAndSetAilyExecutorRun).not.toHaveBeenCalled();
+    });
+
+  it('does not upgrade an already sealed primary-source task from later material configuration', async () => {
+    const h = harness('HOST_SERVICE', sessionId, true); const begin = h.jobAid.beginAily.bind(h.jobAid);
+    jest.spyOn(h.jobAid, 'beginAily').mockImplementation(async input => {
+      const result = await begin(input); h.config.referenceAttachments = [assessmentAttachment(h)]; return result;
+    });
+    await h.send();
+    const sealed = parseJobAidProblemTask(parseTaskEnvelope(h.row().taskEnvelopeJson));
+    const message = JSON.parse(h.client.create.mock.calls[0][0].message);
+    expect(sealed.ailyInputDelivery).toBe(AILY_REGISTERED_PRIMARY_SOURCE_READ);
+    expect(sealed).not.toHaveProperty('ailyAssessmentAttachment');
+    expect(message.modelInput.schemaVersion).toBe(sealed.modelInput.schemaVersion);
+    expect(message.modelInput.checklistBinding.definition).toEqual(JOBAID_CHECKLIST_RC1);
+    expect(message.modelInput.availableSources).toEqual(sealed.modelInput.availableSources);
   });
 
   it.each(['version', 'registered-caller', 'final-caller'] as const)(

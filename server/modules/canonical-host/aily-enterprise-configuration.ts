@@ -17,6 +17,19 @@ const jwtMcpSchema = z.strictObject({
 const serviceMcpSchema = z.strictObject({authenticationMode:z.literal('HOST_SERVICE'),enabled:z.literal(true),
   agentId,expectedClientId:callerAppId,tenantId:text,principalId});
 const mcpSchema=z.union([jwtMcpSchema,serviceMcpSchema]);
+const materialBindingSchema = z.strictObject({
+  workItemId: text, basedOnWorkItemRevision: z.number().int().nonnegative(), expectedWorkRevision: z.literal(0),
+  originalBinding: z.strictObject({documentVersionId: text, parseRunId: text, parseRevision: z.number().int().positive(),
+    sourceArtifactId: text, sourceSha256: z.string().regex(/^[0-9a-f]{64}$/u), sourceByteLength: z.number().int().nonnegative()}),
+  checklistBinding: z.strictObject({definitionId: z.literal('wiselink.engineering-assessment'),
+    definitionVersion: z.literal('0.1.0-rc1'), definitionContentHash: text, contractVersion: z.literal('0.1.0-rc1')}),
+  methodBinding: z.strictObject({packRef: text, version: text,
+    sources: z.array(z.strictObject({sourceIdentity: text, versionLabel: text, documentVersionId: text.nullable(),
+      status: z.enum(['CONFIRMED', 'VERSION_UNCONFIRMED'])})
+      .transform(source => ({...source, documentVersionId: source.documentVersionId}))).min(1),
+    attachment5: z.literal('R00_CONTENT_REPORTED_R01_LINK_UNCONFIRMED')}),
+  documentRevision: z.number().int().positive(), materialFormat: z.literal('HOST_TASK_SNAPSHOT_V1'),
+});
 const referenceAttachmentSchema = z.strictObject({
   attachmentId: z.string().min(1).refine(value => value === value.trim()),
   documentUrl: z.string().url().refine(value => new URL(value).protocol === 'https:' && value === value.trim()),
@@ -24,6 +37,7 @@ const referenceAttachmentSchema = z.strictObject({
   expectedDocumentVersionId: text,
   purpose: z.literal('REFERENCE_SNAPSHOT'),
   registrationSource: text,
+  materialBinding: materialBindingSchema.optional(),
 });
 const taskSchema = z.strictObject({
   enabled: z.literal(true), tenantId: text, workItemId: text, intakeRequestId: text,
@@ -61,6 +75,13 @@ const configurationSchema = z.strictObject({
       attachments.some(item => item.registeredCallerAppId !== value.caller.appId) ||
       new Set(attachments.map(item => item.attachmentId)).size !== attachments.length))
     context.addIssue({code: 'custom', message: 'Exact application attachment registration required'});
+  const materials = attachments?.filter(item => item.materialBinding !== undefined) ?? [];
+  if (materials.length > 1 || materials.some(item => {
+    const binding = item.materialBinding;
+    return !binding || binding.workItemId !== value.task.workItemId ||
+      binding.originalBinding.documentVersionId !== item.expectedDocumentVersionId;
+  }))
+    context.addIssue({code: 'custom', message: 'One exact assessment material binding required'});
 });
 
 // Explicit connection setup only. It cannot inherit a rejected task/caller

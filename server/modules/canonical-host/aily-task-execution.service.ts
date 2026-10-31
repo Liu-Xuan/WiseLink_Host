@@ -16,7 +16,7 @@ import { createAilyChat, observeAilyChat, serializeAilyChatRequest, type AilyCha
 import { AILY_HOST_INVOCATION_IDENTITY, UNAVAILABLE_AILY_HOST_INVOCATION_IDENTITY, assertAilyInvocationBinding,
   type AilyHostInvocationIdentityPort } from './aily-host-invocation-identity.port';
 import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
-import { ailyTaskDeliveryModelInput } from './aily-task-delivery';
+import { ailyTaskDeliveryModelInput, AILY_REGISTERED_ASSESSMENT_ATTACHMENT, selectAilyAssessmentAttachment } from './aily-task-delivery';
 import { parseJobAidProblemTask } from './jobaid-problem-task';
 
 export const AILY_TASK_CHAT_CLIENT = Symbol('AILY_TASK_CHAT_CLIENT');
@@ -123,7 +123,8 @@ export class AilyTaskExecutionService {
     // A queued intent can outlive the initiating request's transport identity.
     // Reject unavailable credentials before claiming; the final check below
     // still reauthorizes immediately before STARTED CAS and the unique POST.
-    await this.invocationToken(input, false, selected.configuration.referenceAttachments !== undefined);
+    await this.invocationToken(input, false, selected.configuration.referenceAttachments !== undefined ||
+      task.modelInput.ailyInputDelivery === AILY_REGISTERED_ASSESSMENT_ATTACHMENT);
     const outer = await this.dispatch.claimAilyWorkItem({tenantId: input.actor.tenantId,
       actorUserId: input.actor.userId, workItem: input.workItem});
     const begin = await this.jobAid.beginAily({workItem: input.workItem, tenantId: input.actor.tenantId,
@@ -137,13 +138,20 @@ export class AilyTaskExecutionService {
     // New Aily tasks deliver complete requirements and registered-source navigation;
     // their private original bodies remain available through the authorized reader.
     // Historical tasks retain their sealed modelInput projection.
-    const delivery = ailyTaskDeliveryModelInput(parseJobAidProblemTask(begin.task));
+    const sealedInput = parseJobAidProblemTask(begin.task);
+    const delivery = ailyTaskDeliveryModelInput(sealedInput);
     const config = structuredClone(selected.configuration);
-    const references = config.referenceAttachments ?? [];
+    let references = config.referenceAttachments ?? [];
+    if (sealedInput.ailyInputDelivery === AILY_REGISTERED_ASSESSMENT_ATTACHMENT) {
+      const selectedMaterial = selectAilyAssessmentAttachment(sealedInput, references);
+      if (!selectedMaterial || canonicalJson(selectedMaterial) !== canonicalJson(sealedInput.ailyAssessmentAttachment))
+        throw new ConflictException('AILY_ASSESSMENT_ATTACHMENT_CHANGED');
+      references = [selectedMaterial];
+    }
     if (references.some(item => item.expectedDocumentVersionId !== begin.task.documentVersionId ||
         item.expectedDocumentVersionId !== input.workItem.source.documentVersionId))
       throw new ConflictException('AILY_REFERENCE_ATTACHMENT_VERSION_CHANGED');
-    if (references.length) {
+    if (references.length && delivery.schemaVersion !== 'wiselink.aily-assessment-launch.v1') {
       delivery.referenceSnapshots = references.map(item => ({attachmentId: item.attachmentId,
         documentUrl: item.documentUrl, documentVersionId: item.expectedDocumentVersionId, purpose: item.purpose}));
       delivery.referenceSnapshotInstruction = '附件云文档仅为 REFERENCE_SNAPSHOT 参考快照。当前 Host taskContextRef、任务要求、'

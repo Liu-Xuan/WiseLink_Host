@@ -1,7 +1,9 @@
 import type { JobAidChecklistBinding } from '@shared/jobaid-checklist.interface';
 import { assertJobAidChecklistBinding } from './jobaid-checklist-binding';
 import { AILY_TASK_ROLE_MAPPING } from './aily-executor-run';
-import { AILY_REGISTERED_PRIMARY_SOURCE_READ, registeredAilyPrimarySourceRefs } from './aily-task-delivery';
+import { AILY_REGISTERED_PRIMARY_SOURCE_READ, AILY_REGISTERED_ASSESSMENT_ATTACHMENT, registeredAilyPrimarySourceRefs,
+  assertAilyAssessmentMaterialBinding, ailyInlineCoreMethodRefs } from './aily-task-delivery';
+import type { AilyAssessmentAttachment } from './aily-task-admission';
 import { assertProgramAgentPolicyModel, isProgramAssessmentMode, readProgramAgentPolicy } from './program-agent-policy';
 import type { JobAidPreparationScope, JobAidPreparationView } from './jobaid-preparation-view';
 import { automaticWorkItemTaskLease, type AutomaticWorkItemTaskLease } from '../action-attempt/automatic-work-item-attempt-lease';
@@ -172,7 +174,8 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
   executionMode?: CanonicalAssessmentExecutionMode;
   /** New Aily CREATE delivery only; absent on historical sealed tasks. */
-  ailyInputDelivery?: typeof AILY_REGISTERED_PRIMARY_SOURCE_READ;
+  ailyInputDelivery?: typeof AILY_REGISTERED_PRIMARY_SOURCE_READ | typeof AILY_REGISTERED_ASSESSMENT_ATTACHMENT;
+  ailyAssessmentAttachment?: AilyAssessmentAttachment;
   requestedModelRef?: string;
   agentPolicy?: CanonicalProgramAgentPolicy;
   contentValidationVersion?: 'jobaid-semantic.v1';
@@ -256,9 +259,12 @@ export function assertJobAidProblemTaskBinding(
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
   if (Object.hasOwn(input, 'ailyInputDelivery') &&
-      (input.ailyInputDelivery !== AILY_REGISTERED_PRIMARY_SOURCE_READ || input.executionMode !== 'AILY_AGENT_V1' ||
+      ((input.ailyInputDelivery !== AILY_REGISTERED_PRIMARY_SOURCE_READ && input.ailyInputDelivery !== AILY_REGISTERED_ASSESSMENT_ATTACHMENT) ||
+        input.executionMode !== 'AILY_AGENT_V1' ||
         input.modelInput.executionMode !== 'AILY_AGENT_V1' || input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT'))
     throw new Error('JOBAID_AILY_INPUT_DELIVERY_BINDING_INVALID');
+  if (Object.hasOwn(input, 'ailyAssessmentAttachment') !== (input.ailyInputDelivery === AILY_REGISTERED_ASSESSMENT_ATTACHMENT))
+    throw new Error('JOBAID_AILY_ASSESSMENT_MATERIAL_BINDING_INVALID');
   if (canonicalJson(input.checklistBinding ?? null) !== canonicalJson(input.modelInput.checklistBinding ?? null))
     throw new Error('JOBAID_CHECKLIST_BINDING_INVALID');
   if (input.checklistBinding) {
@@ -376,12 +382,25 @@ export function assertJobAidProblemTaskBinding(
       (input.previousWork?.workRevision ?? 0)
   )
     throw new Error('JOBAID_TASK_SOURCE_BINDING_INVALID');
-  if (input.ailyInputDelivery === AILY_REGISTERED_PRIMARY_SOURCE_READ) {
+  if (input.ailyInputDelivery === AILY_REGISTERED_PRIMARY_SOURCE_READ || input.ailyInputDelivery === AILY_REGISTERED_ASSESSMENT_ATTACHMENT) {
     const primaryRefs = registeredAilyPrimarySourceRefs(input);
     const delivered = new Set(input.initiallyDeliveredRefs);
     if (input.initiallyDeliveredRefs.some(ref => primaryRefs.has(ref)) ||
         input.modelInput.contextPackage?.supplementaryMaterials.items.some(item =>
           item.deliveredEvidenceRefs.some(ref => !delivered.has(ref) || !item.availableEvidenceRefs.includes(ref))))
+      throw new Error('JOBAID_AILY_INPUT_DELIVERY_BINDING_INVALID');
+  }
+  if (input.ailyInputDelivery === AILY_REGISTERED_ASSESSMENT_ATTACHMENT) {
+    if (!input.ailyAssessmentAttachment) throw new Error('JOBAID_AILY_ASSESSMENT_MATERIAL_BINDING_INVALID');
+    assertAilyAssessmentMaterialBinding(input, input.ailyAssessmentAttachment);
+    const preparation = input.modelInput.preparation;
+    if (!preparation || preparation.taskPurpose !== 'INITIAL_PROBLEM_ASSESSMENT' || preparation.currentInputChanged ||
+        preparation.taskInputRevision !== input.checklistBinding?.goal.basedOnWorkItemRevision ||
+        preparation.currentInputRevision !== preparation.taskInputRevision || preparation.lastSaved !== null ||
+        preparation.documentVersionId !== input.ailyAssessmentAttachment.expectedDocumentVersionId ||
+        canonicalJson(preparation.originalBinding) !== canonicalJson(input.ailyAssessmentAttachment.materialBinding.originalBinding))
+      throw new Error('JOBAID_AILY_ASSESSMENT_MATERIAL_BINDING_INVALID');
+    if (canonicalJson([...input.initiallyDeliveredRefs].sort()) !== canonicalJson(ailyInlineCoreMethodRefs(input).sort()))
       throw new Error('JOBAID_AILY_INPUT_DELIVERY_BINDING_INVALID');
   }
   return input;
