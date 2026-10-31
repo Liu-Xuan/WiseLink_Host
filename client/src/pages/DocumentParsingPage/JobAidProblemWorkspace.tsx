@@ -184,11 +184,14 @@ export function JobAidProblemReading({
                 workItemId={data.workItemId}
                 expectedRevision={initialAnalysis.workItemRevision}
                 operation={operation}
-                executionMode={operation === 'EVALUATE_JOBAID' ? 'PROGRAM_CONTROLLED_V1' : undefined}
+                executionMode={operation === 'EVALUATE_JOBAID'
+                  ? initialAnalysis.ailyTaskAdmission?.executionMode ?? 'PROGRAM_CONTROLLED_V1'
+                  : undefined}
+                ailyTaskAdmission={operation === 'EVALUATE_JOBAID' ? initialAnalysis.ailyTaskAdmission : undefined}
                 analysisModelName={initialAnalysis.analysisModel?.displayName}
                 label={
                   operation === 'EVALUATE_JOBAID'
-                    ? '开始程序评估'
+                    ? initialAnalysis.ailyTaskAdmission ? '开始评估' : '开始程序评估'
                     : '继续形成整体意见'
                 }
                 onQueued={() => onContinue?.()}

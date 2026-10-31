@@ -1,6 +1,8 @@
 import { assessmentDom } from './fixtures/document-assessment-dom';
 import { act, createElement, type ReactNode } from 'react';
 import type { Root } from 'react-dom/client';
+import type { CanonicalAilyTaskAdmission, CanonicalDocumentParsingPageResponse,
+  CanonicalInitialAnalysisContinuationRequest, CanonicalTaskModelOptions } from '@shared/api.interface';
 import { createMemoryRouter, RouterProvider } from 'react-router-dom';
 import DocumentVersionReadingPage from '../../client/src/pages/DocumentParsingPage/DocumentVersionReadingPage';
 import { assessmentAssociationFixture, assessmentFixtureRead, assessmentOriginalFixture, assessmentPageFixture,
@@ -13,6 +15,12 @@ import { isTemporaryJobAidReadFailure } from '../../client/src/pages/DocumentPar
 import documentParsingPlatformError from './fixtures/document-parsing-platform-error.json';
 
 const mockApi = jest.fn();
+const mockContinuationHttp = jest.fn();
+jest.mock('@lark-apaas/client-toolkit/utils/getAxiosForBackend', () => ({
+  axiosForBackend: (...args: unknown[]) => mockContinuationHttp(...args),
+}));
+jest.mock('@lark-apaas/client-toolkit/utils/resolveAppUrl', () => ({ resolveAppUrl: (value: string) => value }));
+jest.mock('@lark-apaas/client-toolkit/logger', () => ({ logger: { error: jest.fn() } }));
 jest.mock('@client/src/api/canonical-host', () => {
   let generation = 1, required = false; const sessions = new Set<() => void>();
   const methods = ['getDocumentParsingPage', 'readJobAidAssessmentWork', 'readDocumentParsingStatus', 'readParsedDocument',
@@ -23,6 +31,9 @@ jest.mock('@client/src/api/canonical-host', () => {
     'readDocumentTranslationReading', 'recordEngineerReview', 'confirmIntegratedOverallForAeo', 'generateAeoCandidate',
     'startDocumentParsing', 'startReviewConversation', 'appendReviewTurn', 'confirmReviewActionDraft'];
   return Object.assign(Object.fromEntries(methods.map(name => [name, (...args: unknown[]) => mockApi(name, ...args)])), {
+    requestInitialAnalysisContinuation: jest.requireActual<typeof import('@client/src/api/canonical-host')>(
+      '@client/src/api/canonical-host',
+    ).requestInitialAnalysisContinuation,
     getCanonicalHostClientSessionGeneration: () => generation,
     isCanonicalHostClientSessionAuthenticationRequired: () => required,
     subscribeCanonicalHostClientSession: (callback: () => void) => { sessions.add(callback); return () => sessions.delete(callback); },
@@ -31,7 +42,24 @@ jest.mock('@client/src/api/canonical-host', () => {
   });
 });
 jest.mock('@client/src/api', () => ({ canonicalHost: jest.requireMock('@client/src/api/canonical-host') }));
-jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({ sessionGeneration: 1, authenticationRequired: false }) }));
+// Jest renders the real page/components; these imports contain presentation-only CSS.
+jest.mock('@client/src/features/matter/saved-jobaid-reading.css', () => ({}));
+jest.mock('@client/src/features/review/review-materials.css', () => ({}));
+jest.mock('@client/src/pages/DocumentParsingPage/document-version-reading.css', () => ({}));
+jest.mock('@client/src/pages/DocumentParsingPage/document-assessment-workspace.css', () => ({}));
+jest.mock('@client/src/pages/DocumentParsingPage/jobaid-problem-workspace.css', () => ({}));
+jest.mock('@client/src/pages/DocumentParsingPage/work-item-process-workspace.css', () => ({}));
+jest.mock('@client/src/pages/DocumentParsingPage/applicability-selection-panel.css', () => ({}));
+jest.mock('@client/src/pages/DocumentParsingPage/reference-mention-preview.css', () => ({}));
+jest.mock('@client/src/pages/DocumentParsingPage/assessment-rule-workspace.css', () => ({}));
+jest.mock('@client/src/features/review/review-loop.css', () => ({}));
+jest.mock('@client/src/features/review/continuous-review-panel.css', () => ({}));
+jest.mock('@client/src/features/workitem/workitem-overview.css', () => ({}));
+jest.mock('@client/src/app/providers/CurrentUserSessionProvider', () => ({ useCurrentUserSession: () => ({
+  sessionGeneration: jest.requireMock<typeof import('@client/src/api/canonical-host')>(
+    '@client/src/api/canonical-host',
+  ).getCanonicalHostClientSessionGeneration(), authenticationRequired: false,
+}) }));
 jest.mock('@client/src/features/matter/useEngineeringMatter', () => ({ useEngineeringMatterQueryIdentity: () => ({
   identity: { appId: 'fixture', tenantId: 'fixture', actorId: 'fixture', sessionGeneration: 1 },
   identityQuery: { isFetching: false, error: null, refetch: async () => ({ error: null }) },
@@ -94,7 +122,8 @@ afterAll(() => {
   dom.window.close(); for (const [key, descriptor] of globals) { if (descriptor) Object.defineProperty(globalThis, key, descriptor); else Reflect.deleteProperty(globalThis, key); }
 });
 beforeEach(() => {
-  host.__reset(); mockApi.mockReset();
+  host.__reset(); mockApi.mockReset(); mockContinuationHttp.mockReset();
+  mockContinuationHttp.mockImplementation(() => { throw new Error('Unexpected continuation during reading'); });
   mockApi.mockImplementation(async (name: string, ...args: unknown[]) => assessmentFixtureRead(name, ...args));
   container = document.createElement('div'); document.body.appendChild(container);
   root = (require('react-dom/client') as typeof import('react-dom/client')).createRoot(container);
@@ -124,6 +153,129 @@ it('shows a verified work with no saved result and waits for independent page au
   expect(calls('getDocumentParsingPage')[0].slice(1)).toEqual(['WI-OLD', '', { freshness: 'mutation' }]);
   await act(async () => resolve(assessmentPageFixture())); expect(draft()).not.toBeNull();
   expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+});
+
+function assessmentContinuationPage(admission?: CanonicalAilyTaskAdmission): CanonicalDocumentParsingPageResponse {
+  const page = assessmentPageFixture();
+  page.initialAnalysis = {
+    workItemId: page.workItem.workItemId, workItemRevision: page.workItem.revision,
+    documentVersionId: page.workItem.source.documentVersionId, status: 'WAITING_INPUT',
+    nextOperation: 'EVALUATE_JOBAID', continuationOperations: ['EVALUATE_JOBAID'], candidateOnly: true,
+    analysisModel: { modelRef: 'miaoda/glm-5.3', displayName: 'GLM 5.3', providerKind: 'BUILT_IN',
+      settingsRevision: 0, selectedAt: '2026-10-29T00:00:00Z' },
+    ...(admission ? { ailyTaskAdmission: admission } : {}),
+    stages: { translation: { status: 'SUCCEEDED', terminalCode: null },
+      applicability: { status: 'WAITING_INPUT', terminalCode: null },
+      jobAid: { status: 'PENDING', terminalCode: null }, overall: { status: 'PENDING', terminalCode: null } },
+  };
+  return page;
+}
+
+function setAssessmentContinuationPage(page: CanonicalDocumentParsingPageResponse): void {
+  const catalog: CanonicalTaskModelOptions = { defaultModelRef: 'miaoda/glm-5.3', options: [
+    { modelRef: 'miaoda/glm-5.3', displayName: 'GLM 5.3', providerKind: 'BUILT_IN', providerLabel: 'Hosted', available: true },
+  ] };
+  mockApi.mockImplementation(async (name: string, ...args: unknown[]) => name === 'getDocumentParsingPage' ? page
+    : name === 'getCanonicalTaskModelOptions' ? catalog : assessmentFixtureRead(name, ...args));
+}
+
+function continuationInput(): CanonicalInitialAnalysisContinuationRequest {
+  expect(mockContinuationHttp).toHaveBeenCalledTimes(1);
+  const request = mockContinuationHttp.mock.calls[0][0];
+  expect(request).toEqual({
+    url: '/api/canonical-host/work-items/WI-OLD/initial-analysis/continue', method: 'POST',
+    data: expect.objectContaining({ requestId: expect.stringMatching(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+    ), expectedRevision: 7 }),
+  });
+  return request.data;
+}
+
+const enterpriseAdmission: CanonicalAilyTaskAdmission = {
+  executionMode: 'AILY_AGENT_V1', modelRef: 'aily/deepseek-v4-pro', modelName: 'DeepSeek V4 Pro', available: true,
+};
+
+it('uses the exact enterprise mode and model through the real library workspace, button and continuation client', async () => {
+  setAssessmentContinuationPage(assessmentContinuationPage(enterpriseAdmission));
+  mockContinuationHttp.mockImplementation(async ({ data }: { data: CanonicalInitialAnalysisContinuationRequest }) => ({
+    status: 200, data: { requestId: data.requestId, operation: data.operation, status: 'RUNNING',
+      replayed: false, candidateOnly: true,
+      ailyDispatch: { attemptRef: 'AQ-synthetic', dispatchStatus: 'ACCEPTED', chatId: '123', remoteSessionId: '456' } },
+  }));
+  await mount('panel=assessment&assessmentTab=investigation&parseRunId=PR1');
+  expect(container.querySelector('.document-assessment-workspace .wl-jobaid-workspace')).not.toBeNull();
+  expect(calls('getDocumentParsingPage')[0].slice(1)).toEqual(['WI-OLD', '', { freshness: 'mutation' }]);
+  expect(container.querySelector('[aria-label="本次程序评估模型"]')).toBeNull();
+  expect(container.textContent).toContain('本次由企业智能体评估，所选模型：DeepSeek V4 Pro');
+  expect(button('开始评估').disabled).toBe(false);
+  expect(container.textContent).not.toContain('开始程序评估');
+  await panel('原文'); await panel('评估');
+  expect(mockContinuationHttp).not.toHaveBeenCalled();
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+  await act(async () => { button('开始评估').click(); button('开始评估').click(); });
+  const input = continuationInput();
+  expect(input).toEqual({ requestId: input.requestId, expectedRevision: 7, operation: 'EVALUATE_JOBAID',
+    executionMode: 'AILY_AGENT_V1', modelRef: 'aily/deepseek-v4-pro' });
+  expect(container.textContent).toContain('企业智能体已受理本次请求');
+  expect(container.textContent).toContain(assessmentWorkingFixture().current!.content.headline);
+});
+
+it('keeps an unavailable enterprise admission closed without offering the conflicting legacy model', async () => {
+  setAssessmentContinuationPage(assessmentContinuationPage({ ...enterpriseAdmission, available: false }));
+  await mount('panel=assessment&assessmentTab=investigation');
+  expect(container.textContent).toContain('当前评估入口暂不可用');
+  expect(container.querySelector('[aria-label="本次程序评估模型"]')).toBeNull();
+  expect(container.textContent).not.toContain('开始程序评估');
+  expect(button('开始评估').disabled).toBe(true);
+  await click('开始评估');
+  expect(mockContinuationHttp).not.toHaveBeenCalled();
+  expect(mockApi.mock.calls.filter(call => writes.test(call[0]))).toEqual([]);
+  expect(container.textContent).toContain(assessmentWorkingFixture().current!.content.headline);
+});
+
+it('preserves the existing program choice when the exact page has no enterprise admission', async () => {
+  setAssessmentContinuationPage(assessmentContinuationPage());
+  mockContinuationHttp.mockResolvedValue({ status: 200, data: { status: 'QUEUED' } });
+  await mount('panel=assessment&assessmentTab=investigation');
+  const picker = container.querySelector<HTMLSelectElement>('[aria-label="本次程序评估模型"]');
+  expect(picker?.value).toBe('miaoda/glm-5.3');
+  expect(button('开始程序评估').disabled).toBe(false);
+  expect(mockContinuationHttp).not.toHaveBeenCalled();
+  await click('开始程序评估');
+  const input = continuationInput();
+  expect(input).toEqual({ requestId: input.requestId, expectedRevision: 7, operation: 'EVALUATE_JOBAID',
+    executionMode: 'PROGRAM_CONTROLLED_V1', modelRef: 'miaoda/glm-5.3' });
+});
+
+it('keeps Overall continuation on its existing route even when the page advertises enterprise assessment', async () => {
+  const page = assessmentContinuationPage(enterpriseAdmission);
+  page.initialAnalysis!.nextOperation = 'SYNTHESIZE_OVERALL';
+  page.initialAnalysis!.continuationOperations = ['SYNTHESIZE_OVERALL'];
+  setAssessmentContinuationPage(page);
+  mockContinuationHttp.mockResolvedValue({ status: 200, data: { status: 'QUEUED' } });
+  await mount('panel=assessment&assessmentTab=investigation');
+  expect(mockContinuationHttp).not.toHaveBeenCalled();
+  await click('继续形成整体意见');
+  const input = continuationInput();
+  expect(input).toEqual({ requestId: input.requestId, expectedRevision: 7, operation: 'SYNTHESIZE_OVERALL' });
+});
+
+it('retains the same enterprise UUID, mode and model while the original dispatch remains UNKNOWN', async () => {
+  setAssessmentContinuationPage(assessmentContinuationPage(enterpriseAdmission));
+  mockContinuationHttp.mockImplementation(async ({ data }: { data: CanonicalInitialAnalysisContinuationRequest }) => ({
+    status: 200, data: { requestId: data.requestId, operation: data.operation, status: 'TIMED_OUT',
+      replayed: true, candidateOnly: true,
+      ailyDispatch: { attemptRef: 'AQ-synthetic', dispatchStatus: 'UNKNOWN', chatId: null, remoteSessionId: null } },
+  }));
+  await mount('panel=assessment&assessmentTab=investigation');
+  await click('开始评估');
+  const original = structuredClone(mockContinuationHttp.mock.calls[0][0]);
+  expect(original.data).toMatchObject({ executionMode: 'AILY_AGENT_V1', modelRef: 'aily/deepseek-v4-pro' });
+  expect(container.textContent).toContain('投递结果待核');
+  expect(container.querySelector('[aria-label="本次程序评估模型"]')).toBeNull();
+  await click('核对原请求结果');
+  expect(mockContinuationHttp).toHaveBeenCalledTimes(2);
+  expect(mockContinuationHttp.mock.calls[1][0]).toEqual(original);
 });
 
 it('uses an explicit task only after an independent same-version Quicklook and page read', async () => {
