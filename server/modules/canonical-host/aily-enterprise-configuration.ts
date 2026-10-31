@@ -17,6 +17,14 @@ const jwtMcpSchema = z.strictObject({
 const serviceMcpSchema = z.strictObject({authenticationMode:z.literal('HOST_SERVICE'),enabled:z.literal(true),
   agentId,expectedClientId:callerAppId,tenantId:text,principalId});
 const mcpSchema=z.union([jwtMcpSchema,serviceMcpSchema]);
+const referenceAttachmentSchema = z.strictObject({
+  attachmentId: z.string().min(1).refine(value => value === value.trim()),
+  documentUrl: z.string().url().refine(value => new URL(value).protocol === 'https:' && value === value.trim()),
+  registeredCallerAppId: callerAppId,
+  expectedDocumentVersionId: text,
+  purpose: z.literal('REFERENCE_SNAPSHOT'),
+  registrationSource: text,
+});
 const taskSchema = z.strictObject({
   enabled: z.literal(true), tenantId: text, workItemId: text, intakeRequestId: text,
   agentId,
@@ -26,6 +34,7 @@ const taskSchema = z.strictObject({
   modelOptions: z.array(z.strictObject({
     modelRef: z.enum(['aily/glm-5.3', 'aily/deepseek-v4-pro']), platformBuiltIn: z.literal(true),
   })).min(1).max(2),
+  referenceAttachments: z.array(referenceAttachmentSchema).min(1).max(8).optional(),
 }) satisfies z.ZodType<AilyTaskConfiguration>;
 
 const configurationSchema = z.strictObject({
@@ -47,6 +56,11 @@ const configurationSchema = z.strictObject({
         value.mcp.principalId!==value.task.principalId || value.caller.browserTransport!=='APPLICATION')) ||
       new Set(value.task.modelOptions.map(option => option.modelRef)).size !== value.task.modelOptions.length)
     context.addIssue({code: 'custom', message: 'Exact enterprise bindings required'});
+  const attachments = value.task.referenceAttachments;
+  if (attachments && (value.caller.browserTransport !== 'APPLICATION' ||
+      attachments.some(item => item.registeredCallerAppId !== value.caller.appId) ||
+      new Set(attachments.map(item => item.attachmentId)).size !== attachments.length))
+    context.addIssue({code: 'custom', message: 'Exact application attachment registration required'});
 });
 
 // Explicit connection setup only. It cannot inherit a rejected task/caller

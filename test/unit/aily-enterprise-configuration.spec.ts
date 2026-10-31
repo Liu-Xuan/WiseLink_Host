@@ -54,6 +54,45 @@ describe('strict server enterprise configuration', () => {
       mcp: {signingSecret: 'synthetic-only-key', expectedClientId: 'cli_synthetic'}}});
   });
 
+  it('accepts reference registrations only within the exact application task configuration', () => {
+    const value = syntheticAilyEnterpriseJson();
+    const references = [{attachmentId: 'synthetic:registered/doc-one', documentUrl: 'https://tenant.example.com/docx/SYNTHETIC',
+      registeredCallerAppId: 'cli_synthetic', expectedDocumentVersionId: 'DV-TEST', purpose: 'REFERENCE_SNAPSHOT',
+      registrationSource: 'synthetic-registration-receipt'}];
+    (value.task as Record<string, unknown>).referenceAttachments = references;
+    const state = loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON: JSON.stringify(value),
+      WL_AILY_MCP_SIGNING_SECRET: 'synthetic-only-key'});
+    expect(state).toMatchObject({status: 'READY', configuration: {task: {referenceAttachments: references},
+      caller: {browserTransport: 'APPLICATION'}}});
+  });
+
+  it.each(['missing-id', 'empty-id', 'duplicate', 'too-many', 'empty-list', 'purpose', 'caller', 'user-transport',
+    'document-url', 'document-version', 'registration-source', 'unknown-field'])(
+    'rejects invalid reference attachment %s without falling back to a text-only configuration', reason => {
+      const value = syntheticAilyEnterpriseJson();
+      const reference: Record<string, unknown> = {attachmentId: 'synthetic:registered/doc-one',
+        documentUrl: 'https://tenant.example.com/docx/SYNTHETIC', registeredCallerAppId: 'cli_synthetic',
+        expectedDocumentVersionId: 'DV-TEST', purpose: 'REFERENCE_SNAPSHOT', registrationSource: 'synthetic-registration-receipt'};
+      let references: Record<string, unknown>[] = [reference];
+      if (reason === 'missing-id') delete reference.attachmentId;
+      if (reason === 'empty-id') reference.attachmentId = ' ';
+      if (reason === 'duplicate') references = [reference, {...reference}];
+      if (reason === 'too-many') references = Array.from({length: 9}, (_, index) => ({...reference, attachmentId: `synthetic-${index}`}));
+      if (reason === 'empty-list') references = [];
+      if (reason === 'purpose') reference.purpose = 'PRIMARY_SOURCE_READ';
+      if (reason === 'caller') reference.registeredCallerAppId = 'cli_other';
+      if (reason === 'user-transport') (value.caller as Record<string, unknown>).browserTransport = 'USER_GRANT';
+      if (reason === 'document-url') reference.documentUrl = 'http://tenant.example.com/docx/SYNTHETIC';
+      if (reason === 'document-version') reference.expectedDocumentVersionId = '';
+      if (reason === 'registration-source') reference.registrationSource = '';
+      if (reason === 'unknown-field') reference.accessToken = 'synthetic-do-not-leak';
+      (value.task as Record<string, unknown>).referenceAttachments = references;
+      const state = loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON: JSON.stringify(value),
+        WL_AILY_MCP_SIGNING_SECRET: 'synthetic-only-key'});
+      expect(state).toEqual({status: 'UNAVAILABLE', reason: 'AILY_ENTERPRISE_CONFIGURATION_INVALID'});
+      expect(JSON.stringify(state)).not.toContain('synthetic-do-not-leak');
+    });
+
   it('injects only MCP in both real module factories and refuses formal identity/background before any I/O',async()=>{
     const state=loadAilyEnterpriseConfiguration({WL_AILY_ENTERPRISE_CONFIGURATION_JSON:JSON.stringify(mcpOnlyJson()),
       WL_AILY_MCP_SIGNING_SECRET:'synthetic-only-key'});

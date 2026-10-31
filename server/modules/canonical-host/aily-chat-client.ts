@@ -34,6 +34,7 @@ export interface AilyChatRequest {
   accessToken: string;
   message: string;
   remoteSessionId?: string;
+  agentAttachmentIds?: string[];
 }
 
 function chatUrl(agentId: string) {
@@ -42,7 +43,7 @@ function chatUrl(agentId: string) {
   return `https://open.feishu.cn/open-apis/aily/v1/agents/${agentId}/chats`;
 }
 
-function requestBody(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId'>, stream: boolean) {
+function requestBody(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId' | 'agentAttachmentIds'>, stream: boolean) {
   // Keep the private streamed-chat boundary. A full enterprise task must never
   // be truncated to that UI limit; provider rejection stays explicit.
   if (!request.message.trim() || (stream && request.message.length > 60_000))
@@ -52,8 +53,14 @@ function requestBody(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId
     !/^[A-Za-z0-9_-]{1,96}$/u.test(request.remoteSessionId)
   )
     throw new Error('AILY_SESSION_INVALID');
+  const attachmentIds = request.agentAttachmentIds;
+  if (attachmentIds !== undefined && (!Array.isArray(attachmentIds) || attachmentIds.length > 8 ||
+      attachmentIds.some(id => typeof id !== 'string' || !id.trim() || id !== id.trim()) ||
+      new Set(attachmentIds).size !== attachmentIds.length))
+    throw new Error('AILY_ATTACHMENT_IDS_INVALID');
   return JSON.stringify({
-    user_message: { content: stream ? [{ type: 'text', text: request.message }] : createMessageContent(request.message) },
+    user_message: { content: stream ? [{ type: 'text', text: request.message }] : createMessageContent(request.message),
+      ...(attachmentIds?.length ? {agent_attachment_ids: attachmentIds} : {}) },
     stream,
     ...(request.remoteSessionId ? { session_id: request.remoteSessionId } : {}),
   });
@@ -64,7 +71,7 @@ export interface AilyChatReceipt {
   remoteSessionId?: string;
 }
 
-export function serializeAilyChatRequest(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId'>): string {
+export function serializeAilyChatRequest(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId' | 'agentAttachmentIds'>): string {
   return requestBody(request, false);
 }
 

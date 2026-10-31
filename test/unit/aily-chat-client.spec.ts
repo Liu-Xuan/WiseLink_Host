@@ -6,6 +6,7 @@ import {
   readAilyChatResult,
   observeAilyChat,
   streamAilyChat,
+  type AilyChatRequest,
 } from '../../server/modules/canonical-host/aily-chat-client';
 
 describe('Host Aily transport', () => {
@@ -187,11 +188,36 @@ describe('Host Aily transport', () => {
   it('keeps short CREATE bytes and the existing private-stream limit unchanged', async () => {
     expect(serializeAilyChatRequest(request)).toBe(JSON.stringify({user_message: {content: [{type: 'text', text: request.message}]},
       stream: false, session_id: request.remoteSessionId}));
+    expect(serializeAilyChatRequest({...request, agentAttachmentIds: []})).toBe(serializeAilyChatRequest(request));
     globalThis.fetch = jest.fn();
     await expect(streamAilyChat({...request, message: 'x'.repeat(60001)}, async () => undefined))
       .rejects.toThrow('AILY_MESSAGE_INVALID');
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
+
+  it('sends up to eight registered opaque attachment IDs in the same exact CREATE body', async () => {
+    const agentAttachmentIds = Array.from({length: 8}, (_, index) => `synthetic:registered/document-${index}`);
+    const expectedRequestBody = serializeAilyChatRequest({...request, agentAttachmentIds});
+    globalThis.fetch = jest.fn().mockResolvedValue(Response.json({code: 0,
+      data: {agent_chat_id: '1234', session_id: request.remoteSessionId}}));
+    await expect(createAilyChat({...request, agentAttachmentIds, expectedRequestBody})).resolves.toMatchObject({chatId: '1234'});
+    expect(JSON.parse(expectedRequestBody).user_message.agent_attachment_ids).toEqual(agentAttachmentIds);
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(globalThis.fetch).toHaveBeenCalledWith(expect.any(String), expect.objectContaining({body: expectedRequestBody}));
+    globalThis.fetch = jest.fn();
+    await expect(createAilyChat({...request, agentAttachmentIds: ['synthetic:changed'], expectedRequestBody}))
+      .rejects.toThrow('AILY_DISPATCH_BODY_CHANGED');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it.each([{ids: null}, {ids: 'synthetic-not-an-array'}, {ids: ['']}, {ids: [' synthetic ']}, {ids: [1]},
+    {ids: ['same', 'same']}, {ids: Array.from({length: 9}, (_, index) => `synthetic-${index}`)}])(
+    'refuses invalid attachment IDs before transport: %p', async ({ids}) => {
+    globalThis.fetch = jest.fn();
+    const malformed = {...request, agentAttachmentIds: ids} as unknown as AilyChatRequest;
+    await expect(createAilyChat(malformed)).rejects.toThrow('AILY_ATTACHMENT_IDS_INVALID');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
 
   it('does not rewrite or POST an old persisted single-text body after multipart serialization changes', async () => {
     const message = 'x'.repeat(10001);

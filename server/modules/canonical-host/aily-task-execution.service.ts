@@ -16,11 +16,13 @@ import { createAilyChat, observeAilyChat, serializeAilyChatRequest, type AilyCha
 import { AILY_HOST_INVOCATION_IDENTITY, UNAVAILABLE_AILY_HOST_INVOCATION_IDENTITY, assertAilyInvocationBinding,
   type AilyHostInvocationIdentityPort } from './aily-host-invocation-identity.port';
 import { AutomaticWorkItemDispatchService } from './automatic-work-item-dispatch.service';
+import { ailyTaskDeliveryModelInput } from './aily-task-delivery';
+import { parseJobAidProblemTask } from './jobaid-problem-task';
 
 export const AILY_TASK_CHAT_CLIENT = Symbol('AILY_TASK_CHAT_CLIENT');
 export interface AilyTaskChatClient {
   configured: boolean;
-  serialize(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId'>): string;
+  serialize(request: Pick<AilyChatRequest, 'message' | 'remoteSessionId' | 'agentAttachmentIds'>): string;
   create(request: AilyChatRequest & {expectedRequestBody: string}): Promise<AilyChatReceipt>;
   read(request: {agentId: string; accessToken: string; chatId: string; remoteSessionId?: string}):
     Promise<{chatId: string; remoteStatus: string; remoteFinishReason?: string}>;
@@ -53,6 +55,7 @@ type ExecuteInput = ExecuteContext & InvocationInput;
 type PreflightInput = Pick<ExecuteContext, 'workItem' | 'actor'> & InvocationInput;
 interface InvocationCredentials {
   accessToken: string;
+  transport?: 'APPLICATION';
   application?: {identityRef: string; callerAppId: string};
 }
 
@@ -71,13 +74,13 @@ export class AilyTaskExecutionService {
 
   async preflight(input: PreflightInput,
     modelRef: string, originalRequest = false): Promise<void> {
-    if (originalRequest) this.admission.requireScope(input.actor.tenantId, input.workItem);
-    else this.admission.require(input.actor.tenantId, input.workItem, modelRef);
+    const configuration = originalRequest ? this.admission.requireScope(input.actor.tenantId, input.workItem)
+      : this.admission.require(input.actor.tenantId, input.workItem, modelRef).configuration;
     if (!this.client.configured) throw new ConflictException('INITIAL_CONTINUATION_AILY_TRANSPORT_UNAVAILABLE');
     await this.repository.assertAilyExecutorStorage();
     // Existing requests select transport from their persisted run in execute.
     // A current application preference cannot migrate an old browser grant.
-    if (!originalRequest) await this.invocationToken(input);
+    if (!originalRequest) await this.invocationToken(input, false, configuration.referenceAttachments !== undefined);
   }
 
   async execute(input: ExecuteInput): Promise<CanonicalAilyTaskDispatchReceipt> {
@@ -120,7 +123,7 @@ export class AilyTaskExecutionService {
     // A queued intent can outlive the initiating request's transport identity.
     // Reject unavailable credentials before claiming; the final check below
     // still reauthorizes immediately before STARTED CAS and the unique POST.
-    await this.invocationToken(input);
+    await this.invocationToken(input, false, selected.configuration.referenceAttachments !== undefined);
     const outer = await this.dispatch.claimAilyWorkItem({tenantId: input.actor.tenantId,
       actorUserId: input.actor.userId, workItem: input.workItem});
     const begin = await this.jobAid.beginAily({workItem: input.workItem, tenantId: input.actor.tenantId,
@@ -131,13 +134,27 @@ export class AilyTaskExecutionService {
     if (current.leaseOwner !== selected.configuration.principalId || current.leaseToken !== begin.leaseToken ||
         current.leaseGeneration !== begin.leaseGeneration)
       throw new ConflictException('INITIAL_CONTINUATION_AILY_LEASE_CHANGED');
-    // The full safe modelInput is the sole task source. The task/claim wrapper,
-    // actor permissions and lease are never serialized into the model message.
+    // New Aily tasks deliver complete requirements and registered-source navigation;
+    // their private original bodies remain available through the authorized reader.
+    // Historical tasks retain their sealed modelInput projection.
+    const delivery = ailyTaskDeliveryModelInput(parseJobAidProblemTask(begin.task));
+    const config = structuredClone(selected.configuration);
+    const references = config.referenceAttachments ?? [];
+    if (references.some(item => item.expectedDocumentVersionId !== begin.task.documentVersionId ||
+        item.expectedDocumentVersionId !== input.workItem.source.documentVersionId))
+      throw new ConflictException('AILY_REFERENCE_ATTACHMENT_VERSION_CHANGED');
+    if (references.length) {
+      delivery.referenceSnapshots = references.map(item => ({attachmentId: item.attachmentId,
+        documentUrl: item.documentUrl, documentVersionId: item.expectedDocumentVersionId, purpose: item.purpose}));
+      delivery.referenceSnapshotInstruction = '附件云文档仅为 REFERENCE_SNAPSHOT 参考快照。当前 Host taskContextRef、任务要求、'
+        + '来源版本、owner 和期限优先；快照内旧 taskContextRef、owner、期限及已读标记均无效。'
+        + '附件不授予原文已读或引用资格；仍须通过 read_assessment_sources 真实读取当前准确来源。';
+    }
+    const attachments = references.length ? {agentAttachmentIds: references.map(item => item.attachmentId)} : {};
     const message = canonicalJson({taskContextRef: begin.attemptRef,
       responsibility: '完成本轮工程候选分析；通过已授权Host工具核对和保存。平台完成不等于Host保存或正式采用。',
-      roleMapping: AILY_TASK_ROLE_MAPPING, modelInput: begin.modelInput});
-    const requestBody = this.client.serialize({message});
-    const config = {...selected.configuration};
+      roleMapping: AILY_TASK_ROLE_MAPPING, modelInput: delivery});
+    const requestBody = this.client.serialize({message, ...attachments});
     let started: AilyExecutorRun = {schemaVersion: 'wiselink.aily-executor-run.v1', executor: 'AILY_AGENT_V1',
       requestId: input.requestId, agentId: config.agentId, publicationRef: config.publicationRef,
       configurationSource: config.configurationSource, hostSessionId: input.purpose === 'BACKGROUND' ? null : input.sessionId,
@@ -151,7 +168,10 @@ export class AilyTaskExecutionService {
     // Finish all asynchronous authorization work before the final original
     // lease/status/deadline CAS. Its success is followed directly by one POST.
     await input.reauthorize();
-    const identity = await this.invocationToken(input);
+    const identity = await this.invocationToken(input, false, references.length > 0);
+    if (references.some(item => identity.transport !== 'APPLICATION' ||
+        item.registeredCallerAppId !== identity.application?.callerAppId))
+      throw new ConflictException('AILY_REFERENCE_ATTACHMENT_CALLER_CHANGED');
     if (input.purpose !== 'BACKGROUND' && identity.application) started = {...started,
       invocation: {purpose: 'BROWSER', ...identity.application, configurationSource: config.configurationSource}};
     const owned = await this.repository.compareAndSetAilyExecutorRun({row: current, principalId: config.principalId, expected: null, next: started});
@@ -167,7 +187,8 @@ export class AilyTaskExecutionService {
     }
     let next: AilyExecutorRun;
     try {
-      const accepted = await this.client.create({agentId: started.agentId, accessToken: identity.accessToken, message, expectedRequestBody: requestBody});
+      const accepted = await this.client.create({agentId: started.agentId, accessToken: identity.accessToken,
+        message, ...attachments, expectedRequestBody: requestBody});
       next = {...started, post: {...started.post, state: 'ACCEPTED', acceptedAt: new Date().toISOString(),
         chatId: accepted.chatId, remoteSessionId: accepted.remoteSessionId ?? null}};
     } catch (cause) {
@@ -220,12 +241,15 @@ export class AilyTaskExecutionService {
       : run.invocation?.purpose !== 'BACKGROUND' && run.hostSessionId === input.sessionId;
   }
 
-  private async invocationToken(input: PreflightInput, applicationRequired = false): Promise<InvocationCredentials> {
+  private async invocationToken(input: PreflightInput, applicationRequired = false,
+    referenceApplicationRequired = false): Promise<InvocationCredentials> {
     const config = this.admission.requireScope(input.actor.tenantId, input.workItem);
     const request = {purpose: input.purpose ?? 'BROWSER', tenantId: input.actor.tenantId, actorUserId: input.actor.userId,
       workItemId: input.workItem.workItemId, principalId: config.principalId, agentId: config.agentId};
     const identity = await this.invocation.resolve(request);
     if (identity.status === 'READY') {
+      if (referenceApplicationRequired && (identity.transport !== 'APPLICATION' || !identity.callerAppId))
+        throw new ConflictException('AILY_REFERENCE_ATTACHMENT_APPLICATION_REQUIRED');
       if (input.purpose !== 'BACKGROUND' && input.sessionId === null &&
           (identity.transport !== 'APPLICATION' || !identity.callerAppId))
         throw new ConflictException('AILY_INVOCATION_IDENTITY_BINDING_CHANGED');
@@ -233,12 +257,13 @@ export class AilyTaskExecutionService {
         throw new ConflictException('AILY_INVOCATION_IDENTITY_BINDING_CHANGED');
       if (identity.transport === 'APPLICATION' && !identity.callerAppId)
         throw new ConflictException('AILY_INVOCATION_IDENTITY_BINDING_CHANGED');
-      return {accessToken: assertAilyInvocationBinding(identity, request), ...(identity.callerAppId ? {
+      return {accessToken: assertAilyInvocationBinding(identity, request),
+        ...(identity.transport === 'APPLICATION' ? {transport: identity.transport} : {}), ...(identity.callerAppId ? {
         application: {identityRef: identity.identityRef, callerAppId: identity.callerAppId}} : {})};
     }
     // This existing short grant remains a browser-only path. Background tick
     // consumes the formal port and never falls back to a user's login cookie.
-    if (applicationRequired || input.purpose === 'BACKGROUND' || input.sessionId === null ||
+    if (applicationRequired || referenceApplicationRequired || input.purpose === 'BACKGROUND' || input.sessionId === null ||
         identity.transport === 'APPLICATION') throw new ConflictException(identity.reason);
     return {accessToken: await this.accessToken(input.actor, input.sessionId)};
   }

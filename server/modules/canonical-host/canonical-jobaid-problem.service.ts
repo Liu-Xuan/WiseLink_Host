@@ -31,6 +31,7 @@ import { isJobAidConsumerStoppedReport, type JobAidConsumerStoppedReport } from 
 import { projectJobAidActivity } from './jobaid-activity';
 import { originalApplicabilityResultMatches } from './original-applicability-currentness';
 import { InitialAssessmentKnowledgeService } from './initial-assessment-knowledge.service';
+import { AILY_REGISTERED_PRIMARY_SOURCE_READ, registeredAilyPrimarySourceRefs } from './aily-task-delivery';
 import { UnifiedReaderService } from '../unified-reader/unified-reader.service';
 import { DocumentSemanticService } from './document-semantic.service';
 import {
@@ -1154,7 +1155,16 @@ export class CanonicalJobAidProblemService {
       taskInput.modelInput.programOriginal = { binding: original.original.binding, coverage: original.original.coverage,
         units: original.structuredSource.units, sourceLocators: original.structuredSource.sourceLocators,
         findings: original.structuredSource.findings };
-      taskInput.initiallyDeliveredRefs = [...new Set([...taskInput.initiallyDeliveredRefs, ...primaryByRef.keys()])];
+      if (executionMode === 'AILY_AGENT_V1') {
+        taskInput.ailyInputDelivery = AILY_REGISTERED_PRIMARY_SOURCE_READ;
+        const primaryRefs = registeredAilyPrimarySourceRefs(taskInput);
+        taskInput.initiallyDeliveredRefs = taskInput.initiallyDeliveredRefs.filter(ref => !primaryRefs.has(ref));
+        const delivered = new Set(taskInput.initiallyDeliveredRefs);
+        for (const item of taskInput.modelInput.contextPackage?.supplementaryMaterials.items ?? [])
+          item.deliveredEvidenceRefs = item.deliveredEvidenceRefs.filter(ref => delivered.has(ref));
+      } else {
+        taskInput.initiallyDeliveredRefs = [...new Set([...taskInput.initiallyDeliveredRefs, ...primaryByRef.keys()])];
+      }
       taskInput.modelInput.deliveredEvidence = overallModelEvidenceRegistry(taskInput.sourceCatalog.filter(
         item => taskInput.initiallyDeliveredRefs.includes(item.evidenceRef)), taskInput.modelInput.evidenceProjectionVersion);
     }

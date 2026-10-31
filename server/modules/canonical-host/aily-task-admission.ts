@@ -5,6 +5,16 @@ export const AILY_TASK_CONFIGURATION = Symbol('AILY_TASK_CONFIGURATION');
 export const AILY_TASK_MODE = 'AILY_AGENT_V1' as const;
 export type AilyTaskModelRef = 'aily/glm-5.3' | 'aily/deepseek-v4-pro';
 
+/** Server-approved registration evidence for this exact task scope. */
+export interface AilyReferenceAttachment {
+  attachmentId: string;
+  documentUrl: string;
+  registeredCallerAppId: string;
+  expectedDocumentVersionId: string;
+  purpose: 'REFERENCE_SNAPSHOT';
+  registrationSource: string;
+}
+
 /** Supplied only after the exact profile/channel/tool binding is approved.
  * B registers null. Test fixtures are explicitly synthetic, not platform proof.
  */
@@ -21,6 +31,7 @@ export interface AilyTaskConfiguration {
   apiAccessVerified: boolean;
   trustedToolsVerified: boolean;
   modelOptions: Array<{modelRef: AilyTaskModelRef; platformBuiltIn: true}>;
+  referenceAttachments?: AilyReferenceAttachment[];
 }
 
 export interface AilyTaskSelection {

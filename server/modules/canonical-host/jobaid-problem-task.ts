@@ -1,6 +1,7 @@
 import type { JobAidChecklistBinding } from '@shared/jobaid-checklist.interface';
 import { assertJobAidChecklistBinding } from './jobaid-checklist-binding';
 import { AILY_TASK_ROLE_MAPPING } from './aily-executor-run';
+import { AILY_REGISTERED_PRIMARY_SOURCE_READ, registeredAilyPrimarySourceRefs } from './aily-task-delivery';
 import { assertProgramAgentPolicyModel, isProgramAssessmentMode, readProgramAgentPolicy } from './program-agent-policy';
 import type { JobAidPreparationScope, JobAidPreparationView } from './jobaid-preparation-view';
 import { automaticWorkItemTaskLease, type AutomaticWorkItemTaskLease } from '../action-attempt/automatic-work-item-attempt-lease';
@@ -170,6 +171,8 @@ export function jobAidProblemModelWorkContent(content: JobAidProblemWorkContent)
 
 export interface JobAidProblemTaskInput extends Record<string, unknown> {
   executionMode?: CanonicalAssessmentExecutionMode;
+  /** New Aily CREATE delivery only; absent on historical sealed tasks. */
+  ailyInputDelivery?: typeof AILY_REGISTERED_PRIMARY_SOURCE_READ;
   requestedModelRef?: string;
   agentPolicy?: CanonicalProgramAgentPolicy;
   contentValidationVersion?: 'jobaid-semantic.v1';
@@ -252,6 +255,10 @@ export function assertJobAidProblemTaskBinding(
     !isJobAidMethodBinding(input.modelInput.methodBinding)
   )
     throw new Error('JOBAID_TASK_BINDING_INVALID');
+  if (Object.hasOwn(input, 'ailyInputDelivery') &&
+      (input.ailyInputDelivery !== AILY_REGISTERED_PRIMARY_SOURCE_READ || input.executionMode !== 'AILY_AGENT_V1' ||
+        input.modelInput.executionMode !== 'AILY_AGENT_V1' || input.modelInput.purpose !== 'INITIAL_PROBLEM_ASSESSMENT'))
+    throw new Error('JOBAID_AILY_INPUT_DELIVERY_BINDING_INVALID');
   if (canonicalJson(input.checklistBinding ?? null) !== canonicalJson(input.modelInput.checklistBinding ?? null))
     throw new Error('JOBAID_CHECKLIST_BINDING_INVALID');
   if (input.checklistBinding) {
@@ -369,6 +376,14 @@ export function assertJobAidProblemTaskBinding(
       (input.previousWork?.workRevision ?? 0)
   )
     throw new Error('JOBAID_TASK_SOURCE_BINDING_INVALID');
+  if (input.ailyInputDelivery === AILY_REGISTERED_PRIMARY_SOURCE_READ) {
+    const primaryRefs = registeredAilyPrimarySourceRefs(input);
+    const delivered = new Set(input.initiallyDeliveredRefs);
+    if (input.initiallyDeliveredRefs.some(ref => primaryRefs.has(ref)) ||
+        input.modelInput.contextPackage?.supplementaryMaterials.items.some(item =>
+          item.deliveredEvidenceRefs.some(ref => !delivered.has(ref) || !item.availableEvidenceRefs.includes(ref))))
+      throw new Error('JOBAID_AILY_INPUT_DELIVERY_BINDING_INVALID');
+  }
   return input;
 }
 
